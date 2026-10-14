@@ -28,6 +28,8 @@ import { logger } from "../../utils/logger";
 import { OrderRequest, OrderResponse } from "../../types/strategy";
 import {
   DEFAULT_EXCHANGE_HTTP_TIMEOUT_MS,
+  ExchangeDepthLevel,
+  ExchangeMarketDepth,
   ExchangeOpenOrder,
   MarketRules,
   OrderLookup,
@@ -82,6 +84,10 @@ interface OrderlyConfig {
 /** Cancel is eventually consistent: poll until the exchange confirms. */
 const CANCEL_CONFIRM_ATTEMPTS = 6;
 const CANCEL_CONFIRM_DELAY_MS = 500;
+
+/** Depth snapshot discipline (P0.1): levels per side + accepted `limit`. */
+const DEFAULT_DEPTH_LEVELS = 50;
+const MAX_DEPTH_LEVELS = 100;
 
 /** Map an Orderly `GET /v1/orders` row onto the shared open-order shape. */
 function toExchangeOpenOrder(
@@ -482,6 +488,75 @@ export class OrderlyClient {
     const path = `/v1/public/ticker?symbol=${symbol}`;
     const response = await this.client.get(path);
     return response.data.data;
+  }
+
+  /**
+   * Resting book depth via Orderly's PUBLIC orderbook — no signature (the
+   * same unauthenticated family as `getTicker`). Wire shape: `{ bids, asks }`
+   * of `[price, qty]` tuples (backend `KodiakOrderbook`), optionally nested
+   * in the Orderly `{ success, data }` envelope — both are accepted.
+   *
+   * A body carrying NEITHER side is not an "empty book", it is an unreadable
+   * answer — fail closed: the caller's flatten sizing must never be steered
+   * by fiction. Transport failures are retryable (a gateway blip is not a
+   * venue verdict).
+   */
+  async getMarketDepth(
+    symbol: string,
+    options?: { limit?: number }
+  ): Promise<ExchangeMarketDepth> {
+    const limit = options?.limit ?? DEFAULT_DEPTH_LEVELS;
+    if (!Number.isInteger(limit) || limit < 1 || limit > MAX_DEPTH_LEVELS) {
+      throw new CommandError(
+        false,
+        `kodiak depth limit must be an integer in [1, ${MAX_DEPTH_LEVELS}] (got ${String(limit)})`
+      );
+    }
+    let payload: unknown;
+    try {
+      const response = await this.client.get(
+        `/v1/public/orderbook?symbol=${encodeURIComponent(symbol)}`
+      );
+      payload = response.data?.data ?? response.data;
+    } catch (error) {
+      throw new CommandError(
+        true,
+        `kodiak depth unreachable for ${symbol}: ${toUnreachableReason(error)}`
+      );
+    }
+    const body = (payload ?? {}) as Record<string, unknown>;
+    if (!Array.isArray(body.bids) && !Array.isArray(body.asks)) {
+      throw new CommandError(
+        false,
+        `kodiak depth malformed for ${symbol} (no bids/asks arrays)`
+      );
+    }
+    const toLevels = (
+      raw: unknown,
+      side: "bids" | "asks"
+    ): ExchangeDepthLevel[] => {
+      const levels: ExchangeDepthLevel[] = [];
+      if (!Array.isArray(raw)) return levels; // a missing side reads as empty
+      for (const entry of raw) {
+        // Orderly answers `[price, qty]` string tuples; anything else is
+        // skipped (D1 — never guess a size).
+        if (!Array.isArray(entry) || entry.length < 2) continue;
+        const price = Number(entry[0]);
+        const quantity = Number(entry[1]);
+        if (!Number.isFinite(price) || price <= 0) continue;
+        if (!Number.isFinite(quantity) || quantity <= 0) continue;
+        levels.push({ price, quantity });
+      }
+      levels.sort((a, b) =>
+        side === "bids" ? b.price - a.price : a.price - b.price
+      );
+      return levels.slice(0, limit);
+    };
+    return {
+      symbol,
+      bids: toLevels(body.bids, "bids"),
+      asks: toLevels(body.asks, "asks"),
+    };
   }
 
   /**

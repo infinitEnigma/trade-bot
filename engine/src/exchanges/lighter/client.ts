@@ -36,7 +36,9 @@ import {
   DEFAULT_EXCHANGE_HTTP_TIMEOUT_MS,
   ExchangeAccountInfo,
   ExchangeClient,
+  ExchangeDepthLevel,
   ExchangeFeeRates,
+  ExchangeMarketDepth,
   ExchangeOpenOrder,
   ExchangeOrderRequest,
   ExchangeOrderResponse,
@@ -59,6 +61,7 @@ import {
   quantizePriceNumber,
 } from "../../utils/price-quantization";
 import { tickSizeFromPriceDecimals } from "./tick-size";
+import { parseOrderBookOrders } from "./depth";
 import { isNonceDrift } from "./refusals";
 import { logger } from "../../utils/logger";
 import { resolveLighterStatus, LighterResolution } from "./status-map";
@@ -102,6 +105,38 @@ const CONFIRM_DELAY_MS = 1000;
  * to cross would silently leave exposure open.
  */
 const MARKET_ORDER_SLIPPAGE_BPS = 100;
+
+/**
+ * Ceiling for an engine-requested crossing band (`maxSlippageBps`). The
+ * panic-flatten ladder escalates within this bound; anything beyond it is a
+ * caller bug and fails closed rather than silently clipping — a band is a
+ * money-safety decision, not a formatting detail.
+ */
+const MAX_MARKET_SLIPPAGE_BPS = 1000;
+
+/** Depth snapshot discipline (P0.1): levels per side + accepted `limit`. */
+const DEFAULT_DEPTH_LEVELS = 50;
+const MAX_DEPTH_LEVELS = 100;
+
+/**
+ * Resolve the crossing band for one MARKET request: the engine-provided
+ * override (the panic-flatten ladder widening through a thin book) or the
+ * fixed default. Fail-closed on anything malformed (B.0 boundary discipline).
+ */
+function resolveMaxSlippageBps(requested: number | undefined): number {
+  if (requested === undefined) return MARKET_ORDER_SLIPPAGE_BPS;
+  if (
+    !Number.isInteger(requested) ||
+    requested < 1 ||
+    requested > MAX_MARKET_SLIPPAGE_BPS
+  ) {
+    throw new CommandError(
+      false,
+      `lighter maxSlippageBps must be an integer in [1, ${MAX_MARKET_SLIPPAGE_BPS}] (got ${String(requested)})`
+    );
+  }
+  return requested;
+}
 
 /** Lighter SDK `time_in_force`: 0 IOC, 1 GTT, 2 post-only (probe-verified). */
 const LIGHTER_TIME_IN_FORCE_IOC = 0;
@@ -408,6 +443,47 @@ export class LighterClient implements ExchangeClient {
   }
 
   /**
+   * Resting book depth via `GET /api/v1/orderBookOrders` — the documented
+   * REST alternative to the WebSocket `order_book` channel (live-probed on
+   * mainnet 2026-10-14: per-order rows, human-unit strings, best-first).
+   *
+   * Read through the shared authorized path so transport failures map to the
+   * usual retryable `CommandError`: an unreachable venue must never read as
+   * an empty book — the flatten's sizing would be steered by fiction. An
+   * empty book is the venue's truth and returns empty arrays (testnet
+   * probe: `market_id=1` answered `{ total_asks: 0, asks: [], … }`).
+   */
+  async getMarketDepth(
+    symbol: string,
+    options?: { limit?: number }
+  ): Promise<ExchangeMarketDepth> {
+    const market = await this.marketOf(symbol);
+    const limit = options?.limit ?? DEFAULT_DEPTH_LEVELS;
+    if (!Number.isInteger(limit) || limit < 1 || limit > MAX_DEPTH_LEVELS) {
+      throw new CommandError(
+        false,
+        `lighter depth limit must be an integer in [1, ${MAX_DEPTH_LEVELS}] (got ${String(limit)})`
+      );
+    }
+    const response = await this.authorizedGet("/api/v1/orderBookOrders", {
+      market_id: market.marketIndex,
+      limit,
+    });
+    let sides: { bids: ExchangeDepthLevel[]; asks: ExchangeDepthLevel[] };
+    try {
+      sides = parseOrderBookOrders(response.data, limit);
+    } catch (error) {
+      // A venue-declared bad code (non-200 `code` in the body) is a business
+      // outcome — non-retryable, never an empty book.
+      throw new CommandError(
+        false,
+        `lighter depth unavailable for ${symbol}: ${messageOf(error)}`
+      );
+    }
+    return { symbol: market.symbol, bids: sides.bids, asks: sides.asks };
+  }
+
+  /**
    * Venue-reported fee rates for this account (`GET /api/v1/accountLimits`,
    * authenticated) — the only account-scoped fee signal the venue exposes
    * (Phase-1 finding, see `fees.ts`): no REST tape carries a per-fill fee, and
@@ -452,7 +528,8 @@ export class LighterClient implements ExchangeClient {
           `lighter has no usable reference price for a MARKET order on ${request.symbol}`
         );
       }
-      const band = MARKET_ORDER_SLIPPAGE_BPS / 10_000;
+      const bandBps = resolveMaxSlippageBps(request.maxSlippageBps);
+      const band = bandBps / 10_000;
       const crossing =
         request.side === "SELL"
           ? reference * (1 - band)
@@ -468,6 +545,15 @@ export class LighterClient implements ExchangeClient {
       );
       timeInForce = LIGHTER_TIME_IN_FORCE_IOC;
     } else {
+      // The crossing band exists only for the adapter-priced MARKET path; on
+      // a LIMIT request the price IS the caller's decision, and an ignored
+      // band would silently mean nothing — fail closed instead (B.0).
+      if (request.maxSlippageBps !== undefined) {
+        throw new CommandError(
+          false,
+          "lighter maxSlippageBps applies only to MARKET orders (a LIMIT price is the caller's)"
+        );
+      }
       if (
         request.orderPrice === undefined ||
         !Number.isFinite(request.orderPrice)

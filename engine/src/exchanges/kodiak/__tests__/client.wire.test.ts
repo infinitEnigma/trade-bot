@@ -26,6 +26,7 @@ import type { AddressInfo } from "net";
 import { OrderlyClient } from "../client";
 import { OrderRequest } from "../../../types/strategy";
 import { ClientOrderIdGenerator } from "../../../utils/client-order-id";
+import { CommandError } from "../../../application/command-error";
 
 /**
  * Replace @noble/ed25519's signing primitive with node:crypto's Ed25519
@@ -105,6 +106,27 @@ async function startOrderlyStub(scripted: ScriptedResponse[] = []) {
         return json(200, {
           success: true,
           data: { symbol: "PERP_BTC_USDC", price: 100 },
+        });
+      }
+      if (req.method === "GET" && path === "/v1/public/orderbook") {
+        const url = new URL(req.url ?? "/", "http://stub");
+        const symbol = url.searchParams.get("symbol");
+        if (symbol === "PERP_BROKEN") {
+          // No bids/asks anywhere — an UNREADABLE answer, not an empty book.
+          return json(200, { success: true, data: "not-a-book" });
+        }
+        if (symbol === "PERP_500") {
+          return json(500, { success: false, message: "gateway exploded" });
+        }
+        return json(200, {
+          success: true,
+          data: {
+            bids: [["2499.1", "7"]],
+            asks: [
+              ["2501", "2"],
+              ["2500.9", "1.5"],
+            ],
+          },
         });
       }
       if (req.method === "POST" && path === "/v1/order") {
@@ -329,6 +351,62 @@ describe("OrderlyClient duplicate client_order_id rejection", () => {
       const secondId = JSON.parse(posts[1].body).client_order_id;
       expect(firstId).toBe(secondId);
       expect(secondId.length).toBeLessThanOrEqual(36);
+    } finally {
+      await stub.close();
+    }
+  });
+});
+
+describe("OrderlyClient market depth (P0.1)", () => {
+  function depthClient(baseUrl: string) {
+    return new OrderlyClient({
+      accountId: "account-id",
+      orderlyKey: "orderly-key",
+      orderlySecret: PRIVATE_KEY_B64,
+      baseUrl,
+    });
+  }
+
+  it("reads the public orderbook and maps tuples to best-first levels", async () => {
+    const stub = await startOrderlyStub();
+    try {
+      const depth = await depthClient(stub.baseUrl).getMarketDepth(
+        "PERP_BTC_USDC"
+      );
+      expect(depth.symbol).toBe("PERP_BTC_USDC");
+      // The wire sent the asks worst-first; the client re-sorts best-first,
+      // and the string tuples become numbers (public endpoint, no signing).
+      expect(depth.asks).toEqual([
+        { price: 2500.9, quantity: 1.5 },
+        { price: 2501, quantity: 2 },
+      ]);
+      expect(depth.bids).toEqual([{ price: 2499.1, quantity: 7 }]);
+    } finally {
+      await stub.close();
+    }
+  });
+
+  it("fails closed when the orderbook body carries no bids/asks", async () => {
+    const stub = await startOrderlyStub();
+    try {
+      // An unreadable body must NEVER read as an empty book — the flatten's
+      // sizing would be steered by fiction.
+      await expect(
+        depthClient(stub.baseUrl).getMarketDepth("PERP_BROKEN")
+      ).rejects.toThrow(/malformed/);
+    } finally {
+      await stub.close();
+    }
+  });
+
+  it("maps a depth transport failure to a retryable CommandError", async () => {
+    const stub = await startOrderlyStub();
+    try {
+      const error = await depthClient(stub.baseUrl)
+        .getMarketDepth("PERP_500")
+        .catch(reason => reason);
+      expect(error).toBeInstanceOf(CommandError);
+      expect((error as CommandError).retryable).toBe(true);
     } finally {
       await stub.close();
     }

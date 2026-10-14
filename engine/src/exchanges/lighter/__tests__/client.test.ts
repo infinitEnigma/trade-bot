@@ -696,3 +696,133 @@ describe("LighterClient.getFeeRates", () => {
     expect(calls).toHaveLength(2);
   });
 });
+
+describe("LighterClient depth + crossing band (P0.1)", () => {
+  it("reads depth via orderBookOrders (best-first, human-unit rows)", async () => {
+    const client = clientWith(
+      {
+        ...BASE_HANDLERS,
+        "/api/v1/orderBookOrders": () => ({
+          code: 200,
+          total_asks: 2,
+          asks: [
+            { price: "2501.0", remaining_base_amount: "3" },
+            { price: "2500.9", remaining_base_amount: "1.5" },
+          ],
+          total_bids: 1,
+          bids: [{ price: "2499.1", remaining_base_amount: "7" }],
+        }),
+      },
+      signerStub()
+    );
+
+    const depth = await client.getMarketDepth("ETH");
+
+    expect(depth.symbol).toBe("ETH");
+    // Asks re-sorted best-first even though the wire sent them worst-first;
+    // bids carry the fillable remainder.
+    expect(depth.asks).toEqual([
+      { price: 2500.9, quantity: 1.5 },
+      { price: 2501, quantity: 3 },
+    ]);
+    expect(depth.bids).toEqual([{ price: 2499.1, quantity: 7 }]);
+  });
+
+  it("fails closed on a bad depth limit and a venue-declared bad code", async () => {
+    const client = clientWith(BASE_HANDLERS, signerStub());
+    await expect(client.getMarketDepth("ETH", { limit: 0 })).rejects.toThrow(
+      /limit/
+    );
+    await expect(client.getMarketDepth("ETH", { limit: 101 })).rejects.toThrow(
+      /limit/
+    );
+
+    const badCode = clientWith(
+      { ...BASE_HANDLERS, "/api/v1/orderBookOrders": () => ({ code: 20001 }) },
+      signerStub()
+    );
+    await expect(badCode.getMarketDepth("ETH")).rejects.toThrow(/20001/);
+  });
+
+  it("maps a depth transport failure to a retryable CommandError", async () => {
+    // No orderBookOrders stub → the REST call fails like a network error.
+    const client = clientWith(BASE_HANDLERS, signerStub());
+    const error = await client.getMarketDepth("ETH").catch(reason => reason);
+    expect(error).toBeInstanceOf(CommandError);
+    expect((error as CommandError).retryable).toBe(true);
+  });
+
+  it("honors an engine-requested crossing band on a MARKET request", async () => {
+    const signed: Array<{ price: number }> = [];
+    const client = clientWith(
+      {
+        ...BASE_HANDLERS,
+        "/api/v1/accountOrders": () => ({
+          orders: [
+            {
+              order_id: "13",
+              client_order_index: "13",
+              status: "filled",
+              is_ask: true,
+              price: "2437.98",
+              initial_base_amount: "2.5",
+            },
+          ],
+        }),
+      },
+      signerStub({
+        createOrder: async (_credentials, request) => {
+          signed.push({ price: request.price });
+          return { txHash: "0xm", clientOrderIndex: request.clientOrderIndex };
+        },
+      })
+    );
+
+    await client.createOrder({
+      symbol: "ETH",
+      side: "SELL",
+      orderType: "MARKET",
+      orderQuantity: 2.5,
+      clientOrderId: "13",
+      maxSlippageBps: 250,
+    });
+
+    // mark 2500.5 × (1 − 2.5%) = 2437.9875 → SELL rounds DOWN to 2437.98
+    // (243798 scaled) — the widened flatten band crossed deeper than the
+    // 100 bps default (2475.49) would have.
+    expect(signed).toEqual([{ price: 243798 }]);
+  });
+
+  it("fails closed on a malformed band and on a band carried by a LIMIT", async () => {
+    const client = clientWith(BASE_HANDLERS, signerStub());
+
+    await expect(
+      client.createOrder({
+        symbol: "ETH",
+        side: "SELL",
+        orderType: "MARKET",
+        orderQuantity: 1,
+        maxSlippageBps: 0,
+      })
+    ).rejects.toThrow(/maxSlippageBps/);
+    await expect(
+      client.createOrder({
+        symbol: "ETH",
+        side: "SELL",
+        orderType: "MARKET",
+        orderQuantity: 1,
+        maxSlippageBps: 1001,
+      })
+    ).rejects.toThrow(/maxSlippageBps/);
+    await expect(
+      client.createOrder({
+        symbol: "ETH",
+        side: "SELL",
+        orderType: "LIMIT",
+        orderPrice: 2500,
+        orderQuantity: 1,
+        maxSlippageBps: 100,
+      })
+    ).rejects.toThrow(/only to MARKET/);
+  });
+});

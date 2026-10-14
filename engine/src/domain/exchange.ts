@@ -37,6 +37,17 @@ export interface ExchangeOrderRequest {
    * requested", not "false".
    */
   reduceOnly?: boolean;
+  /**
+   * Crossing band for an adapter-priced MARKET request, in basis points off
+   * the reference price. Lighter has no signed MARKET type: its adapter
+   * executes MARKET as an IOC limit at mark ∓ band, and this overrides the
+   * fixed default (100 bps) so a panic flatten can escalate its willingness
+   * to cross a thin book — bounded by the adapter's own clamp, never
+   * unbounded. Advisory for adapters with native market orders (they may
+   * ignore it); meaningless on a LIMIT request, where the price is the
+   * caller's (adapters fail closed if it is set there).
+   */
+  maxSlippageBps?: number;
 }
 
 /**
@@ -64,6 +75,39 @@ export interface ExchangePosition {
   position_qty: number;
   mark_price: number;
   [key: string]: unknown;
+}
+
+/**
+ * One price level of the resting book (`getMarketDepth`).
+ *
+ * `quantity` is the level's *remaining* base size — the fillable amount, not
+ * the originally-posted size (Lighter rows `remaining_base_amount`).
+ */
+export interface ExchangeDepthLevel {
+  price: number;
+  quantity: number;
+}
+
+/**
+ * Resting order-book depth snapshot — sizing guidance for slice-based exits
+ * (the emergency flatten's first consumer; the 2026-10-14 prod incident
+ * submitted one full-size IOC into a book thinner than the position and
+ * silently cancelled the remainder).
+ *
+ * Best-first on both sides. This is NOT a precision boundary: float sums over
+ * these levels only size order slices, and the submission boundary (tick
+ * check, venue minimums, the adapter's scaling) still enforces the exact
+ * rules — never derive a submission price from these numbers alone. An EMPTY
+ * snapshot means "the venue reported no resting orders"; a venue that could
+ * not be asked must REJECT instead (an unreachable book must never read as
+ * empty — that would steer sizing on fabricated data).
+ */
+export interface ExchangeMarketDepth {
+  symbol: string;
+  bids: ExchangeDepthLevel[];
+  asks: ExchangeDepthLevel[];
+  /** Epoch ms of the read, when the venue provides one. Absent = "as read". */
+  asOf?: number;
 }
 
 /**
@@ -226,6 +270,22 @@ export interface ExchangeClient {
    * metadata is missing or malformed.
    */
   getMarketRules?(symbol: string): Promise<MarketRules>;
+
+  /**
+   * Resting book depth for a symbol — bids/asks best-first, level quantity =
+   * remaining (fillable) size. Sizing guidance for slice-based exits (panic
+   * flatten), never a submission-precision source.
+   *
+   * Optional on the type so legacy fakes still compile; runtime-optional by
+   * design: consumers must DEGRADE gracefully when it is absent (the flatten
+   * falls back to full-size IOC slices), never fail closed on the capability
+   * itself. Implementations must REJECT on transport failures — an
+   * unreachable venue must never masquerade as an empty book.
+   */
+  getMarketDepth?(
+    symbol: string,
+    options?: { limit?: number }
+  ): Promise<ExchangeMarketDepth>;
 
   /**
    * Look up one order by the client order id the engine assigned at

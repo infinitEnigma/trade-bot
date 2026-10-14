@@ -57,6 +57,31 @@ export const CLEANUP_INCOMPLETE_MARKER = "cleanup_incomplete";
 /** How many cleanup problems are folded into the terminal reason. */
 const MAX_CLEANUP_PROBLEMS_IN_REASON = 3;
 
+/**
+ * Panic-flatten discipline (P0.1 — the 2026-10-14 incident): the old
+ * single-shot full-size MARKET order left 2 BTC open on a thin testnet book
+ * (the IOC filled the depth inside its band and cancelled the rest), while
+ * the engine — one shot, no retry, no re-verification — reported "exposure
+ * may remain" and stopped with the exposure (and the order's market impact)
+ * still live at the venue. The loop in `emergencyClosePosition` re-reads the
+ * POSITION (venue ground truth) before every slice, sizes slices to real
+ * book depth where the adapter reports it, widens the crossing band only
+ * when a slice made no progress, and reports the verified residual — never a
+ * generic "failed", never a silent success.
+ */
+const FLATTEN_MAX_SLICES = 5;
+/** Wall-clock bound across the whole flatten (each slice may poll ~6 s). */
+const FLATTEN_TIME_BUDGET_MS = 45_000;
+/**
+ * Crossing-band ladder (bps off mark) — bounded by construction: exiting a
+ * panic may cost basis points, but the ladder can never exceed the last rung
+ * no matter how the loop behaves, and the Lighter adapter clamps the band
+ * independently (its own 1–1000 bps fail-closed check).
+ */
+const FLATTEN_BAND_RUNGS_BPS = [100, 150, 225, 300] as const;
+/** Consecutive non-shrinking position reads before the honest give-up. */
+const FLATTEN_MAX_NO_PROGRESS = 4;
+
 /** Error → message, for logs and the terminal stop reason. */
 function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -499,7 +524,8 @@ export class BotManager {
   }
 
   /**
-   * Flatten the bot's position with an opposite MARKET order.
+   * Flatten the bot's position with opposite reduce-only MARKET orders,
+   * slice by slice, verified against the venue's own position read (P0.1).
    *
    * Deliberately conservative — on this venue positions belong to the
    * *account*, not the bot:
@@ -507,9 +533,25 @@ export class BotManager {
    *   bot owns the same position; closing it would close someone else's
    *   exposure).
    * - When the venue reports no position for the symbol the step is a no-op.
-   * - Sizing/precision is the adapter's job (it scales to the market's size
-   *   decimals and rejects sub-minimum sizes); a rejected flatten is reported
-   *   as an incomplete cleanup, never as a silent success.
+   * - The POSITION read is the ground truth: it is re-fetched before every
+   *   slice, so an order that failed to confirm but filled late is adopted
+   *   by the next read (the engine never blind-fails a submitted flatten),
+   *   and the loop terminates on "the venue says flat", not on order status
+   *   (a partial-fill-then-cancel IOC reads as CANCELED but moved the book).
+   * - When the adapter reports book depth (`getMarketDepth`), each slice is
+   *   clipped to the depth inside the current crossing band — a thin book
+   *   absorbs a clip instead of cancelling a whale (the 2026-10-14 incident).
+   *   Depth is sizing guidance only: absent/failing depth degrades to a
+   *   full-size slice, never to a skip.
+   * - The crossing band widens only after a slice that made no progress,
+   *   capped at the last ladder rung; the last rung always attempts the FULL
+   *   remaining size (a clip below the venue minimum would be refused
+   *   outright). Every order is reduce-only (N6) — a flatten can never grow
+   *   a position, even if the book moves underneath it.
+   * - Every exit reports the *verified* venue state: flat ⇒ clean; residual
+   *   ⇒ its exact quantity and why the loop stopped. Sizing/precision at
+   *   the submission boundary stays the adapter's job (it scales to the
+   *   market's decimals and rejects sub-minimum sizes).
    *
    * @returns the problems that left exposure open (empty ⇒ flat or nothing to do).
    */
@@ -528,67 +570,185 @@ export class BotManager {
       }
     }
 
-    let positions: ExchangePosition[];
-    try {
-      positions = await runtime.exchangeClient.getPositions();
-    } catch (error) {
-      const detail = messageOf(error);
-      logger.error("Emergency stop: position fetch failed", {
-        botId: runtime.botId,
-        symbol: runtime.symbol,
-        error: detail,
-      });
-      return [`position fetch failed (exposure unknown): ${detail}`];
-    }
+    const client = runtime.exchangeClient;
+    const symbol = runtime.symbol;
+    const startedAt = Date.now();
+    /** Last VERIFIED position magnitude — the loop's progress baseline. */
+    let previousQty: number | null = null;
+    let noProgress = 0;
+    let lastSliceError: string | null = null;
+    let stopReason = `slice budget exhausted (${FLATTEN_MAX_SLICES} slices)`;
 
-    const position = positions.find(
-      p =>
-        symbolsMatch(p.symbol, runtime.symbol) &&
-        Number.isFinite(Number(p.position_qty)) &&
-        Number(p.position_qty) !== 0
-    );
-    if (!position) {
-      logger.info("Emergency stop: no open position to close", {
-        botId: runtime.botId,
-        symbol: runtime.symbol,
-      });
-      return [];
-    }
-
-    const positionQty = Number(position.position_qty);
-    const side: "BUY" | "SELL" = positionQty > 0 ? "SELL" : "BUY";
-    try {
-      const order = await runtime.exchangeClient.createOrder({
-        symbol: runtime.symbol,
-        side,
-        orderType: "MARKET",
-        orderQuantity: Math.abs(positionQty),
-      });
-      logger.warn("Emergency stop: position flatten order placed", {
-        botId: runtime.botId,
-        symbol: runtime.symbol,
-        side,
-        positionQty,
-        orderId: order.orderId,
-        status: order.status,
-      });
-      return [];
-    } catch (error) {
-      const detail = messageOf(error);
-      logger.error(
-        "Emergency stop: position flatten failed - exposure may remain",
-        {
-          botId: runtime.botId,
-          symbol: runtime.symbol,
-          side,
-          positionQty,
-          error: detail,
-        }
+    /** The account's non-zero position on the bot's symbol; undefined = flat. */
+    const livePosition = async (): Promise<ExchangePosition | undefined> => {
+      const positions = await client.getPositions();
+      return positions.find(
+        p =>
+          symbolsMatch(p.symbol, symbol) &&
+          Number.isFinite(Number(p.position_qty)) &&
+          Number(p.position_qty) !== 0
       );
+    };
+
+    for (let slice = 1; slice <= FLATTEN_MAX_SLICES; slice++) {
+      if (Date.now() - startedAt >= FLATTEN_TIME_BUDGET_MS) {
+        stopReason = `time budget exhausted (${FLATTEN_TIME_BUDGET_MS} ms)`;
+        break;
+      }
+      let position: ExchangePosition | undefined;
+      try {
+        position = await livePosition();
+      } catch (error) {
+        const detail = messageOf(error);
+        logger.error("Emergency stop: position fetch failed", {
+          botId: runtime.botId,
+          symbol,
+          slice,
+          error: detail,
+        });
+        // A re-read failure AFTER slices were sent must not pretend the
+        // exposure story starts from scratch — carry what was last verified.
+        return previousQty === null
+          ? [`position fetch failed (exposure unknown): ${detail}`]
+          : [
+              `position re-read failed after flatten slices (last seen ${previousQty} ${symbol}): ${detail}`,
+            ];
+      }
+      const liveQty = position ? Number(position.position_qty) : 0;
+      if (liveQty === 0) {
+        // The venue says flat — verified, whether the last slice confirmed
+        // outright or filled late after an UNRESOLVED submit.
+        logger.info(
+          previousQty === null
+            ? "Emergency stop: no open position to close"
+            : "Emergency stop: flatten verified flat on the venue",
+          { botId: runtime.botId, symbol }
+        );
+        return [];
+      }
+      const qty = Math.abs(liveQty);
+      if (previousQty !== null) {
+        if (qty < previousQty) noProgress = 0;
+        else noProgress += 1;
+      }
+      previousQty = qty;
+      if (noProgress >= FLATTEN_MAX_NO_PROGRESS) {
+        stopReason = `venue stopped absorbing slices (no position reduction across ${FLATTEN_MAX_NO_PROGRESS} reads; thin book)`;
+        break;
+      }
+
+      const side: "BUY" | "SELL" = liveQty > 0 ? "SELL" : "BUY";
+      const bandBps =
+        FLATTEN_BAND_RUNGS_BPS[
+          Math.min(noProgress, FLATTEN_BAND_RUNGS_BPS.length - 1)
+        ];
+      const isLastRung =
+        bandBps === FLATTEN_BAND_RUNGS_BPS[FLATTEN_BAND_RUNGS_BPS.length - 1];
+
+      // Size the slice to the book when the adapter can report it. An order
+      // larger than the resting depth does not fill more — it fills the book
+      // and CANCELS the remainder (the incident) — so match the depth when
+      // it binds. An empty band keeps the full size: widening the band on
+      // the next no-progress read is the escalation, and the last rung
+      // always tries the full remaining size.
+      let sliceQty = qty;
+      if (!isLastRung && typeof client.getMarketDepth === "function") {
+        try {
+          const depth = await client.getMarketDepth(symbol);
+          const mark = Number(position?.mark_price);
+          if (Number.isFinite(mark) && mark > 0) {
+            const band = bandBps / 10_000;
+            const edge =
+              side === "SELL" ? mark * (1 - band) : mark * (1 + band);
+            const book = side === "SELL" ? depth.bids : depth.asks;
+            let fillable = 0;
+            for (const level of book) {
+              const inBand =
+                side === "SELL" ? level.price >= edge : level.price <= edge;
+              if (
+                inBand &&
+                Number.isFinite(level.quantity) &&
+                level.quantity > 0
+              ) {
+                fillable += level.quantity;
+              }
+            }
+            if (fillable > 0 && fillable < sliceQty) {
+              sliceQty = fillable;
+            }
+          }
+        } catch (error) {
+          logger.warn("Emergency stop: depth unavailable, sizing full slice", {
+            botId: runtime.botId,
+            symbol,
+            error: messageOf(error),
+          });
+        }
+      }
+
+      try {
+        const order = await client.createOrder({
+          symbol,
+          side,
+          orderType: "MARKET",
+          orderQuantity: sliceQty,
+          // Shrink-only: a flatten can never open or grow a position (N6,
+          // honored by both adapters through the venue's reduce_only).
+          reduceOnly: true,
+          // Ladder-bounded band — never an unbounded willingness to cross.
+          maxSlippageBps: bandBps,
+        });
+        logger.warn("Emergency stop: flatten slice submitted", {
+          botId: runtime.botId,
+          symbol,
+          side,
+          slice,
+          sliceQty,
+          remainingAtRead: qty,
+          bandBps,
+          orderId: order.orderId,
+          status: order.status,
+        });
+      } catch (error) {
+        // Not fatal: the next position read decides — a submitted-but-
+        // unconfirmed slice that filled is adopted by the position delta.
+        lastSliceError = messageOf(error);
+        logger.error("Emergency stop: flatten slice failed", {
+          botId: runtime.botId,
+          symbol,
+          slice,
+          sliceQty,
+          bandBps,
+          error: lastSliceError,
+        });
+      }
+      // Loop back: the next read IS this slice's verification.
+    }
+
+    // Final verification — report the venue's actual state, never a guess.
+    let residual: number;
+    try {
+      const position = await livePosition();
+      residual = position ? Math.abs(Number(position.position_qty)) : 0;
+    } catch (error) {
       return [
-        `position ${positionQty} ${runtime.symbol} not flattened: ${detail}`,
+        `position ${
+          previousQty ?? "unknown"
+        } ${symbol} not verified after flatten: ${messageOf(error)}`,
       ];
     }
+    if (residual === 0) {
+      logger.warn(
+        "Emergency stop: flatten verified flat after the last slice",
+        { botId: runtime.botId, symbol }
+      );
+      return [];
+    }
+    return [
+      `position ${residual} ${symbol} not flattened (still open after flatten: ${stopReason}${
+        lastSliceError ? `; last slice error: ${lastSliceError}` : ""
+      })`,
+    ];
   }
 
   /**

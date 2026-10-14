@@ -41,15 +41,26 @@ interface RuntimeHarness {
     cancelOrder: jest.Mock;
     getPositions: jest.Mock;
     createOrder: jest.Mock;
+    /** Absent under `{ withoutDepth: true }` — the legacy-fake shape. */
+    getMarketDepth?: jest.Mock;
   };
   manager: BotManager;
+}
+
+interface RegisterOptions {
+  /** Omit `getMarketDepth` so the "adapter without depth" fallback is testable. */
+  withoutDepth?: boolean;
 }
 
 /**
  * Register a RUNNING bot directly (no strategy runner), so the emergency path
  * can be exercised without the credentials/venue start-up chain.
  */
-function registerBot(botId: string, symbol: string): RuntimeHarness {
+function registerBot(
+  botId: string,
+  symbol: string,
+  options: RegisterOptions = {}
+): RuntimeHarness {
   const manager = new BotManager({
     engineId: "engine-1",
     epoch: 1,
@@ -63,6 +74,17 @@ function registerBot(botId: string, symbol: string): RuntimeHarness {
     createOrder: jest
       .fn()
       .mockResolvedValue({ orderId: "close-1", status: "SUBMITTED" }),
+    // Deep book (100 ETH inside every band around the tests' 3000 mark):
+    // slices stay FULL-size unless a test scripts a thin book.
+    ...(options.withoutDepth
+      ? {}
+      : {
+          getMarketDepth: jest.fn().mockResolvedValue({
+            symbol,
+            bids: [{ price: 2990, quantity: 100 }],
+            asks: [{ price: 3010, quantity: 100 }],
+          }),
+        }),
   };
   const runtime: BotRuntime = {
     botId,
@@ -76,6 +98,39 @@ function registerBot(botId: string, symbol: string): RuntimeHarness {
   };
   manager.getBotRuntimes().set(botId, runtime);
   return { runtime, strategyStop, stopTick, client, manager };
+}
+
+/**
+ * Script a live position that SHRINKS by each flatten slice's quantity (the
+ * venue fills every submitted slice) — under the P0.1 discipline the loop's
+ * own re-reads verify the flat, so this is the happy path. The row reports
+ * `eth` (lowercase) to keep symbolsMatch's case-insensitivity covered.
+ */
+function scriptShrinkingPosition(
+  harness: RuntimeHarness,
+  initialQty: number,
+  extraRows: Array<{
+    symbol: string;
+    position_qty: number;
+    mark_price: number;
+  }> = []
+): void {
+  let live = initialQty;
+  harness.client.getPositions.mockImplementation(async () => [
+    ...(live === 0
+      ? []
+      : [{ symbol: "eth", position_qty: live, mark_price: 3000 }]),
+    ...extraRows,
+  ]);
+  harness.client.createOrder.mockImplementation(
+    async (request: { orderQuantity: number }) => {
+      live =
+        live > 0
+          ? Math.max(0, live - request.orderQuantity)
+          : Math.min(0, live + request.orderQuantity);
+      return { orderId: "close-1", status: "FILLED" };
+    }
+  );
 }
 
 /** STATE_CHANGED transitions in publication order, e.g. "RUNNING->STOPPING". */
@@ -108,8 +163,9 @@ describe("BotManager.handleEmergencyStop (M1)", () => {
       { orderId: "o-1", symbol: "ETH", status: "OPEN" },
       { orderId: "o-2", symbol: "ETH", status: "OPEN" },
     ]);
-    harness.client.getPositions.mockResolvedValue([
-      { symbol: "eth", position_qty: 2.5, mark_price: 3000 },
+    // The venue fills the full-size slice (deep book) and the loop's re-read
+    // verifies the flat — other symbols' rows are never matched.
+    scriptShrinkingPosition(harness, 2.5, [
       { symbol: "BTC", position_qty: 1, mark_price: 60000 },
     ]);
 
@@ -128,26 +184,31 @@ describe("BotManager.handleEmergencyStop (M1)", () => {
     expect(harness.client.listOpenOrders).toHaveBeenCalledWith("ETH");
     expect(harness.client.cancelOrder).toHaveBeenCalledTimes(2);
     expect(harness.client.cancelOrder).toHaveBeenCalledWith("o-1", "ETH");
-    // Opposite MARKET order sized to the absolute position; other symbols
-    // untouched.
+    // Opposite MARKET slice sized to the position (deep book keeps it
+    // full-size), reduce-only, base-band — other symbols untouched.
     expect(harness.client.createOrder).toHaveBeenCalledWith({
       symbol: "ETH",
       side: "SELL",
       orderType: "MARKET",
       orderQuantity: 2.5,
+      reduceOnly: true,
+      maxSlippageBps: 100,
     });
     expect(transitions(published)).toEqual([
       "RUNNING->STOPPING",
       "STOPPING->STOPPED",
     ]);
+    // Venue-verified flat: the terminal reason stays CLEAN (no residue marker).
+    expect(reasons(published)).toEqual([
+      "emergency_stop:FULL_SHUTDOWN",
+      "emergency_stop:FULL_SHUTDOWN",
+    ]);
   });
 
   it("flattens a short position with a BUY", async () => {
     const harness = registerBot("bot-1", "ETH");
-    const { ops } = makeStreamOps();
-    harness.client.getPositions.mockResolvedValue([
-      { symbol: "ETH", position_qty: -0.4, mark_price: 3000 },
-    ]);
+    const { published, ops } = makeStreamOps();
+    scriptShrinkingPosition(harness, -0.4);
 
     await harness.manager.handleEmergencyStop(
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -162,8 +223,15 @@ describe("BotManager.handleEmergencyStop (M1)", () => {
         symbol: "ETH",
         side: "BUY",
         orderQuantity: 0.4,
+        reduceOnly: true,
+        maxSlippageBps: 100,
       })
     );
+    // Venue-verified flat → clean terminal report.
+    expect(reasons(published)).toEqual([
+      "emergency_stop:CLOSE_POSITIONS",
+      "emergency_stop:CLOSE_POSITIONS",
+    ]);
   });
 
   it("CANCEL_ALL_ORDERS cancels but never touches positions", async () => {
@@ -267,6 +335,227 @@ describe("BotManager.handleEmergencyStop (M1)", () => {
       "RUNNING->STOPPING",
       "STOPPING->STOPPED",
     ]);
+  });
+
+  it("walks a thin book in depth-sized clips until the venue reads flat", async () => {
+    // The 2026-10-14 incident shape: only 0.5 ETH rests inside the crossing
+    // band — a full-size order fills 0.5 and cancels the rest. The loop must
+    // clip each slice to the reported depth and re-read until flat.
+    const harness = registerBot("bot-1", "ETH");
+    const { published, ops } = makeStreamOps();
+    let live = 2;
+    harness.client.getPositions.mockImplementation(async () =>
+      live === 0
+        ? []
+        : [{ symbol: "ETH", position_qty: live, mark_price: 3000 }]
+    );
+    harness.client.getMarketDepth?.mockResolvedValue({
+      symbol: "ETH",
+      bids: [{ price: 2995, quantity: 0.5 }],
+      asks: [],
+    });
+    harness.client.createOrder.mockImplementation(
+      async (request: { orderQuantity: number }) => {
+        live -= request.orderQuantity;
+        return { orderId: `slice-${request.orderQuantity}`, status: "FILLED" };
+      }
+    );
+
+    await harness.manager.handleEmergencyStop(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ops as any,
+      "bot-1",
+      "FULL_SHUTDOWN",
+      "corr-thin"
+    );
+
+    // Four clips of the resting 0.5 — every slice shrank the position, so
+    // the band stays at the base rung throughout.
+    expect(harness.client.createOrder).toHaveBeenCalledTimes(4);
+    for (const [request] of harness.client.createOrder.mock.calls) {
+      expect(request).toMatchObject({
+        symbol: "ETH",
+        side: "SELL",
+        orderType: "MARKET",
+        orderQuantity: 0.5,
+        reduceOnly: true,
+        maxSlippageBps: 100,
+      });
+    }
+    // Venue-verified flat → clean terminal report, no residue marker.
+    expect(reasons(published)).toEqual([
+      "emergency_stop:FULL_SHUTDOWN",
+      "emergency_stop:FULL_SHUTDOWN",
+    ]);
+  });
+
+  it("adopts a submitted-but-unconfirmed slice when the position actually shrank", async () => {
+    // The engine's adapter reported UNRESOLVED (submitted, not yet visible)
+    // while the venue DID execute — the position delta is the ground truth,
+    // so the loop ends clean instead of blind-failing the flatten.
+    const harness = registerBot("bot-1", "ETH");
+    const { published, ops } = makeStreamOps();
+    let live = 2;
+    harness.client.getPositions.mockImplementation(async () =>
+      live === 0
+        ? []
+        : [{ symbol: "ETH", position_qty: live, mark_price: 3000 }]
+    );
+    harness.client.createOrder.mockImplementation(async () => {
+      live = 0; // the venue executed despite the engine's UNRESOLVED
+      throw new Error(
+        "lighter create UNRESOLVED for 42 (submitted, not yet visible)"
+      );
+    });
+
+    await harness.manager.handleEmergencyStop(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ops as any,
+      "bot-1",
+      "FULL_SHUTDOWN",
+      "corr-late"
+    );
+
+    expect(reasons(published)).toEqual([
+      "emergency_stop:FULL_SHUTDOWN",
+      "emergency_stop:FULL_SHUTDOWN",
+    ]);
+  });
+
+  it("escalates the band only on no-progress, then reports the verified residual", async () => {
+    // Nothing shrinks: every slice fails the same way. The band climbs the
+    // bounded ladder [100, 150, 225, 300], then the loop reports the EXACT
+    // residual the venue still holds — never a silent success.
+    const harness = registerBot("bot-1", "ETH");
+    const { published, ops } = makeStreamOps();
+    harness.client.getPositions.mockResolvedValue([
+      { symbol: "ETH", position_qty: 2.5, mark_price: 3000 },
+    ]);
+    harness.client.createOrder.mockRejectedValue(
+      new Error("venue refused the order")
+    );
+
+    await harness.manager.handleEmergencyStop(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ops as any,
+      "bot-1",
+      "FULL_SHUTDOWN",
+      "corr-band"
+    );
+
+    expect(
+      harness.client.createOrder.mock.calls.map(([request]) => {
+        const { maxSlippageBps } = request as { maxSlippageBps: number };
+        return maxSlippageBps;
+      })
+    ).toEqual([100, 150, 225, 300]);
+    const [, stopped] = reasons(published);
+    expect(stopped).toContain("cleanup_incomplete");
+    expect(stopped).toContain("position 2.5 ETH not flattened");
+    expect(stopped).toContain("venue refused the order");
+  });
+
+  it("verifies flat on the final read when the last slice filled late", async () => {
+    // Reads 1-5 still see the position (the submits never confirm); the
+    // FINAL verification read after the loop sees the venue flat — a late
+    // fill is adopted, never reported as residue.
+    const harness = registerBot("bot-1", "ETH");
+    const { published, ops } = makeStreamOps();
+    let reads = 0;
+    harness.client.getPositions.mockImplementation(async () => {
+      reads += 1;
+      return reads <= 5
+        ? [{ symbol: "ETH", position_qty: 2.5, mark_price: 3000 }]
+        : [];
+    });
+    harness.client.createOrder.mockRejectedValue(
+      new Error("lighter create UNRESOLVED for 7 (submitted, not yet visible)")
+    );
+
+    await harness.manager.handleEmergencyStop(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ops as any,
+      "bot-1",
+      "FULL_SHUTDOWN",
+      "corr-late-final"
+    );
+
+    expect(reasons(published)).toEqual([
+      "emergency_stop:FULL_SHUTDOWN",
+      "emergency_stop:FULL_SHUTDOWN",
+    ]);
+  });
+
+  it("falls back to a full-size slice when the adapter cannot report depth", async () => {
+    // Legacy adapters (and fakes) have no getMarketDepth — the flatten must
+    // still work, sized to the position (the pre-P0.1 behaviour, now verified).
+    const harness = registerBot("bot-1", "ETH", { withoutDepth: true });
+    const { published, ops } = makeStreamOps();
+    scriptShrinkingPosition(harness, 0.4);
+
+    await harness.manager.handleEmergencyStop(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ops as any,
+      "bot-1",
+      "FULL_SHUTDOWN",
+      "corr-nodepth"
+    );
+
+    expect(harness.client.createOrder).toHaveBeenCalledTimes(1);
+    expect(harness.client.createOrder).toHaveBeenCalledWith(
+      expect.objectContaining({ orderQuantity: 0.4, maxSlippageBps: 100 })
+    );
+    expect(reasons(published)).toEqual([
+      "emergency_stop:FULL_SHUTDOWN",
+      "emergency_stop:FULL_SHUTDOWN",
+    ]);
+  });
+
+  it("degrades a failing depth read to a full-size slice, never a skip", async () => {
+    const harness = registerBot("bot-1", "ETH");
+    const { published, ops } = makeStreamOps();
+    scriptShrinkingPosition(harness, 0.4);
+    harness.client.getMarketDepth?.mockRejectedValue(
+      new Error("lighter unreachable (depth): connect ECONNREFUSED")
+    );
+
+    await harness.manager.handleEmergencyStop(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ops as any,
+      "bot-1",
+      "FULL_SHUTDOWN",
+      "corr-depthdown"
+    );
+
+    expect(harness.client.createOrder).toHaveBeenCalledTimes(1);
+    expect(harness.client.createOrder).toHaveBeenCalledWith(
+      expect.objectContaining({ orderQuantity: 0.4 })
+    );
+    expect(reasons(published)).toEqual([
+      "emergency_stop:FULL_SHUTDOWN",
+      "emergency_stop:FULL_SHUTDOWN",
+    ]);
+  });
+
+  it("reports the initial position fetch failure as exposure unknown", async () => {
+    const harness = registerBot("bot-1", "ETH");
+    const { published, ops } = makeStreamOps();
+    harness.client.getPositions.mockRejectedValue(new Error("venue down"));
+
+    await harness.manager.handleEmergencyStop(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ops as any,
+      "bot-1",
+      "FULL_SHUTDOWN",
+      "corr-fetchfail"
+    );
+
+    const [, stopped] = reasons(published);
+    expect(stopped).toContain("cleanup_incomplete");
+    expect(stopped).toContain(
+      "position fetch failed (exposure unknown): venue down"
+    );
+    expect(harness.client.createOrder).not.toHaveBeenCalled();
   });
 
   it("keeps the terminal reason clean when every cleanup step succeeds", async () => {
