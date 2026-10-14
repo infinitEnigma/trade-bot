@@ -21,6 +21,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen } from "@testing-library/react";
 import type { OpenOrderRow } from "../../../infrastructure/api/market";
+import type { GridPreviewInput } from "../../../shared/components/charts/gridPreview";
 
 const fakes = vi.hoisted(() => {
   const candles = [
@@ -141,6 +142,7 @@ const renderChart = (props: {
   symbol?: string;
   orders?: OpenOrderRow[];
   height?: number;
+  previewGrid?: GridPreviewInput | null;
 }) =>
   render(
     <CandlestickChart
@@ -148,6 +150,9 @@ const renderChart = (props: {
       interval="1h"
       height={props.height ?? 400}
       {...(props.orders !== undefined ? { orders: props.orders } : {})}
+      {...(props.previewGrid !== undefined
+        ? { previewGrid: props.previewGrid }
+        : {})}
     />
   );
 
@@ -351,5 +356,121 @@ describe("CandlestickChart order levels + markers (Phase 3)", () => {
     expect(fakes.candleSeries.applyOptions).toHaveBeenCalledWith({
       priceFormat: { type: "price", precision: 7, minMove: 1e-7 },
     });
+  });
+
+  // ---- F5: the live grid preview ----
+
+  /** Centre on an exact price so the level arithmetic stays bit-exact. */
+  const setCenterCandles = (close: number) => {
+    fakes.candles = [
+      {
+        time: 1000,
+        open: close - 1,
+        high: close + 1,
+        low: close - 2,
+        close,
+        volume: 10,
+      },
+    ];
+  };
+
+  it("draws dashed violet preview levels centred on the last close", () => {
+    setCenterCandles(100);
+    renderChart({
+      previewGrid: { symbol: "PERP_BTC_USDC", gridSize: 4, gridRange: 2 },
+    });
+
+    // 100 ± 1% → [99, 101], 5 levels, step 0.5
+    expect(fakes.candleSeries.createPriceLine).toHaveBeenCalledTimes(5);
+    for (const [index, price] of [99, 99.5, 100, 100.5, 101].entries()) {
+      expect(fakes.candleSeries.createPriceLine).toHaveBeenCalledWith({
+        price,
+        color: "#a78bfa",
+        lineStyle: 1, // LineStyle.Dashed in the mock
+        axisLabelVisible: true,
+        title: `G${index}`,
+      });
+    }
+    // A preview is a plan, never a placed order: no arrows for it.
+    expect(fakes.markersPlugin.setMarkers).toHaveBeenLastCalledWith([]);
+  });
+
+  it("keeps the preview visually distinct from the resting order levels", () => {
+    setCenterCandles(100);
+    renderChart({
+      orders: [order()],
+      previewGrid: { symbol: "PERP_BTC_USDC", gridSize: 2, gridRange: 2 },
+    });
+
+    const colors = fakes.candleSeries.createPriceLine.mock.calls.map(
+      call => (call[0] as unknown as { color: string }).color
+    );
+    // The order's side colour and the preview's violet must never collide.
+    expect(colors).toContain("#10b981");
+    expect(colors).toContain("#a78bfa");
+  });
+
+  it("replaces the preview levels when the form's config changes", () => {
+    setCenterCandles(100);
+    const { rerender } = renderChart({
+      previewGrid: { symbol: "PERP_BTC_USDC", gridSize: 2, gridRange: 2 },
+    });
+    expect(fakes.candleSeries.createPriceLine).toHaveBeenCalledTimes(3);
+
+    rerender(
+      <CandlestickChart
+        symbol="PERP_BTC_USDC"
+        interval="1h"
+        height={400}
+        previewGrid={{ symbol: "PERP_BTC_USDC", gridSize: 2, gridRange: 4 }}
+      />
+    );
+
+    // The old band's lines are removed and the new band's are drawn.
+    expect(fakes.candleSeries.removePriceLine).toHaveBeenCalledTimes(3);
+    expect(fakes.candleSeries.createPriceLine).toHaveBeenCalledTimes(6);
+    expect(fakes.candleSeries.createPriceLine).toHaveBeenLastCalledWith(
+      expect.objectContaining({ price: 102, title: "G2" })
+    );
+  });
+
+  it("draws nothing for a config the engine would refuse", () => {
+    setCenterCandles(100);
+    renderChart({
+      previewGrid: { symbol: "PERP_BTC_USDC", gridSize: 1, gridRange: 2 },
+    });
+
+    expect(fakes.candleSeries.createPriceLine).not.toHaveBeenCalled();
+  });
+
+  it("draws nothing when the form's symbol is missing", () => {
+    setCenterCandles(100);
+    renderChart({
+      previewGrid: { symbol: "", gridSize: 4, gridRange: 2 },
+    });
+
+    expect(fakes.candleSeries.createPriceLine).not.toHaveBeenCalled();
+  });
+
+  it("draws no preview until a centre price is known", () => {
+    fakes.candles = []; // no mark price in the mock, no close to fall back to
+    renderChart({
+      previewGrid: { symbol: "PERP_BTC_USDC", gridSize: 4, gridRange: 2 },
+    });
+
+    expect(fakes.candleSeries.createPriceLine).not.toHaveBeenCalled();
+  });
+
+  it("drops the preview lines on unmount without touching the disposed chart (F4)", () => {
+    setCenterCandles(100);
+    const { unmount } = renderChart({
+      previewGrid: { symbol: "PERP_BTC_USDC", gridSize: 4, gridRange: 2 },
+    });
+    expect(fakes.candleSeries.createPriceLine).toHaveBeenCalledTimes(5);
+
+    unmount();
+
+    expect(fakes.chart.remove).toHaveBeenCalledTimes(1);
+    expect(fakes.postDisposeCalls).toEqual([]);
   });
 });

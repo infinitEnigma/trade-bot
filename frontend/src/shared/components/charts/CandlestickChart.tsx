@@ -20,6 +20,7 @@ import { useChartData, ChartVenue } from "../../hooks/useChartData";
 import { useVisibility } from "../../hooks/useVisibility";
 import type { OpenOrderRow } from "../../../infrastructure/api/market";
 import { derivePriceFormat } from "./derivePriceFormat";
+import { computeGridPreview, type GridPreviewInput } from "./gridPreview";
 
 export interface CandleData {
   time: number;
@@ -35,6 +36,15 @@ const ORDER_SIDE_COLOR = {
   BUY: "#10b981",
   SELL: "#ef4444",
 } as const;
+
+/**
+ * F5: the grid preview's colour — deliberately not one of the two order
+ * colours, and not a green/red signal at all. A preview level is a *plan*
+ * (nothing rests there yet); an order level is a *resting order*. Same line
+ * style as the order levels, so the two are told apart by colour + the `Gn`
+ * axis label, never by shape.
+ */
+const GRID_PREVIEW_COLOR = "#a78bfa";
 
 /**
  * Compare an order row's symbol against the charted `symbol`. Backend order
@@ -62,6 +72,22 @@ interface CandlestickChartProps {
    * (`toDisplaySymbol`), so callers may pass an unfiltered account book.
    */
   orders?: OpenOrderRow[];
+  /**
+   * F5: a LIVE grid preview — the levels the strategy form's fields would
+   * build right now, drawn as dashed violet price lines beside the charted
+   * market (nothing rests there: no markers, no order semantics). The chart
+   * owns the CENTRE price (the mark price when the venue streams one, else
+   * the last candle close — `markPriceData` is WS-only and null for Lighter),
+   * the caller owns the CONFIG, so no second market-data subscription is
+   * needed and the band always sits on the market actually on screen.
+   *
+   * Preview-only by construction: the engine re-quantizes every level against
+   * the venue tick when the bot starts, so the drawn band can differ from the
+   * real grid by sub-tick amounts (see `gridPreview.ts`). Callers must also
+   * pass `null` when the form's symbol is not the charted market — a band
+   * drawn on the wrong market is worse than no band.
+   */
+  previewGrid?: GridPreviewInput | null;
 }
 
 export const CandlestickChart: React.FC<CandlestickChartProps> = ({
@@ -70,6 +96,7 @@ export const CandlestickChart: React.FC<CandlestickChartProps> = ({
   height = 400,
   venue,
   orders,
+  previewGrid,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
@@ -466,6 +493,59 @@ export const CandlestickChart: React.FC<CandlestickChartProps> = ({
       }
     };
   }, [orders, chartData, symbol]);
+
+  // F5: the live grid preview. Kept out of the orders effect on purpose —
+  // the plan changes as the operator types, independently of the resting
+  // book, and mixing them would redraw both on either change. Its cleanup
+  // carries the same disposed-identity guard as the orders effect above (see
+  // the F4 note: touching a removed series schedules a rAF that throws
+  // outside any try/catch).
+  useEffect(() => {
+    const series = candlestickSeriesRef.current;
+    if (!isChartReady.current || !series) return;
+
+    const lines: IPriceLine[] = [];
+    try {
+      // The centre the band is built around: the venue's mark price when it
+      // streams one, else the last loaded candle's close. Lighter streams no
+      // mark price (`useChartData` answers null there — its WS speaks Kodiak
+      // symbols), so the close is the only honest centre for that venue.
+      const centerPrice =
+        markPriceData?.price ?? chartData?.[chartData.length - 1]?.close;
+      const preview =
+        previewGrid && centerPrice !== undefined
+          ? computeGridPreview(centerPrice, previewGrid)
+          : null;
+
+      for (const level of preview?.levels ?? []) {
+        lines.push(
+          series.createPriceLine({
+            price: level.price,
+            color: GRID_PREVIEW_COLOR,
+            lineStyle: LineStyle.Dashed,
+            axisLabelVisible: true,
+            title: level.label,
+          })
+        );
+      }
+    } catch (previewError) {
+      console.error("Failed to draw the grid preview:", previewError);
+    }
+
+    return () => {
+      // Same F4 guard as the orders effect: skip when the chart this run drew
+      // on is no longer the mounted one.
+      if (series !== candlestickSeriesRef.current) return;
+
+      for (const line of lines) {
+        try {
+          series.removePriceLine(line);
+        } catch {
+          // Series already gone — nothing left to remove.
+        }
+      }
+    };
+  }, [previewGrid, chartData, markPriceData, symbol]);
 
   return (
     <div className="w-full bg-surface rounded-lg shadow-sm border border-white/10">
