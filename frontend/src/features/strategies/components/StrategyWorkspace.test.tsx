@@ -377,6 +377,25 @@ describe("StrategyWorkspace", () => {
     expect(screen.getByText(/No position on this market/)).toBeDefined();
   });
 
+  it("tolerates non-array positions/orders payloads (Lighter envelope) — never throws", () => {
+    // Prod 2026-10-14: `q.filter is not a function` blanked /strategies when
+    // the positions payload arrived as `{ rows }` instead of a bare array.
+    // The workspace must degrade to empty books, not unmount the page.
+    renderWorkspace(
+      <StrategyWorkspace
+        {...workspaceProps({
+          positions: { rows: [] } as unknown as [],
+          orders: { data: [] } as unknown as [],
+        })}
+      />
+    );
+
+    expect(screen.getByText("My Grid")).toBeDefined();
+    expect(
+      screen.getByRole("tab", { name: /open orders \(0\)/i })
+    ).toBeDefined();
+  });
+
   it("reads up to 25 recent fills for the trades view (review P2-3)", () => {
     renderWorkspace(<StrategyWorkspace {...workspaceProps()} />);
 

@@ -45,6 +45,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { accountsApi, balanceApi, kodiakApi } from "../../infrastructure/api";
 import type { ExchangeAccountDto } from "../../infrastructure/api/accounts";
+import { unwrapRows } from "../../infrastructure/api/envelope";
 import { useAuth } from "../../features/auth";
 
 /** Minimal position shape we read for unrealized PnL. */
@@ -223,11 +224,14 @@ export const usePortfolioSummary = (
 
   // 3. Unrealized PnL — venue-exact sum over the selected account's open
   // positions (same `unsettled_pnl` the positions table renders per-row).
+  // F3 sweep: venue payloads are envelope-inconsistent (bare array vs
+  // `{ rows }` vs nested `{ success, data: { rows } }`) — a `.rows`-only read
+  // silently empties whichever shape it wasn't written for, so unwrap all.
   const positionsQuery = useQuery({
     queryKey: ["portfolio-positions", selectedAccount?.id],
     queryFn: async () => {
       const res = await kodiakApi.getKodiakPositions(selectedAccount!.id);
-      return (res?.data?.rows ?? []) as PortfolioPosition[];
+      return unwrapRows<PortfolioPosition>(res?.data);
     },
     enabled: !!selectedAccount && isVerified,
     staleTime: 30 * 1000,
@@ -283,7 +287,8 @@ export const usePortfolioSummary = (
     queryKey: ["portfolio-trades", selectedAccount?.id],
     queryFn: async () => {
       const res = await kodiakApi.getKodiakTrades(50, selectedAccount!.id);
-      return (res?.data?.rows ?? []) as PortfolioTrade[];
+      // F3 sweep: same venue envelope inconsistency as positions above.
+      return unwrapRows<PortfolioTrade>(res?.data);
     },
     enabled: !!selectedAccount && isVerified,
     staleTime: 30 * 1000,

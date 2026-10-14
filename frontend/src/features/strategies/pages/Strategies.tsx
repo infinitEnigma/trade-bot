@@ -8,6 +8,7 @@ import {
   tradingApi,
   accountsApi,
 } from "../../../infrastructure/api";
+import { unwrapRows } from "../../../infrastructure/api/envelope";
 import { Strategy } from "../../../shared/types";
 import { Plus, BarChart3, AlertTriangle } from "lucide-react";
 import { EngineJournalIntegrityNotice } from "../components/EngineJournalIntegrityNotice";
@@ -170,6 +171,12 @@ const Strategies: React.FC = React.memo(() => {
 
   // P1: all strategy symbols for the chart picker (locked decision: every
   // strategy, not just RUNNING).
+  // Prod 2026-10-14 (`q.filter is not a function` blanking /strategies for
+  // a fresh Lighter account): reader payloads are venue-inconsistent —
+  // Kodiak answers `data: [...]`, Lighter positions answers
+  // `data: { rows: [...] }` — so `?.data ?? []` can hand the workspace a
+  // non-array object. `unwrapRows` (shared, infrastructure/api/envelope.ts)
+  // peels every envelope shape so only real arrays ever reach the tables.
   const strategySymbols: string[] = [];
   for (const s of strategies as Strategy[]) {
     const sym = getStrategyConfig(s)?.config.symbol;
@@ -490,11 +497,11 @@ const Strategies: React.FC = React.memo(() => {
                     selection,
                   })
                 }
-                orders={workspaceOrdersQuery.data?.data ?? []}
+                orders={unwrapRows(workspaceOrdersQuery.data?.data)}
                 ordersLoading={workspaceOrdersQuery.isLoading}
                 ordersError={workspaceOrdersQuery.isError}
                 ordersUpdatedAt={workspaceOrdersQuery.dataUpdatedAt}
-                positions={workspacePositionsQuery.data?.data ?? []}
+                positions={unwrapRows(workspacePositionsQuery.data?.data)}
                 positionsLoading={workspacePositionsQuery.isLoading}
                 positionsError={workspacePositionsQuery.isError}
                 positionsUpdatedAt={workspacePositionsQuery.dataUpdatedAt}

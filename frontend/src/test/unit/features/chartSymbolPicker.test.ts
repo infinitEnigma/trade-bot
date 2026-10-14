@@ -145,6 +145,39 @@ describe("resolveChartSelection", () => {
       resolveChartSelection([{ ...LIGHTER, available: false, symbols: [] }], [])
     ).toEqual(FALLBACK_CHART_SELECTION);
   });
+
+  it("treats a malformed catalog (non-array symbols) as unavailable — never throws", () => {
+    // Prod 2026-10-14: `q.filter is not a function` blanked /strategies for a
+    // fresh Lighter-only account. These helpers run during render, so any
+    // throw unmounts the whole page — degrade to fail-open instead.
+    const malformed = {
+      exchange: "lighter",
+      environment: "testnet",
+      available: true,
+      symbols: undefined,
+    } as unknown as VenueCatalog;
+    const nullSymbols = { ...malformed, symbols: null };
+
+    expect(() => buildChartSymbolGroups([malformed], ["ETH"])).not.toThrow();
+    expect(buildChartSymbolGroups([malformed], ["ETH"])).toEqual([
+      {
+        label: "Strategy symbols",
+        exchange: ORPHAN_CHART_VENUE.exchange,
+        environment: ORPHAN_CHART_VENUE.environment,
+        symbols: ["ETH"],
+      },
+    ]);
+    expect(() => resolveChartSelection([nullSymbols], ["ETH"])).not.toThrow();
+    expect(resolveChartSelection([nullSymbols], ["ETH"])).toEqual({
+      symbol: "ETH",
+      exchange: ORPHAN_CHART_VENUE.exchange,
+      environment: ORPHAN_CHART_VENUE.environment,
+    });
+    // No strategies + malformed catalog → historic fallback, not a crash.
+    expect(resolveChartSelection([malformed], [])).toEqual(
+      FALLBACK_CHART_SELECTION
+    );
+  });
 });
 
 describe("encodeChartOption / decodeChartOption", () => {

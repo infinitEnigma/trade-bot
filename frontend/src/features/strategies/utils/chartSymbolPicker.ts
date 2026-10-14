@@ -101,6 +101,17 @@ const uniqueSorted = (symbols: string[]): string[] => {
 };
 
 /**
+ * Defensive read: catalogs come from a network fetch whose shape can drift
+ * (envelope vs payload, error passthrough, dedupe cache). A non-array
+ * `symbols` is "unavailable" (fail-open, same as the backend contract) —
+ * never a route crash. This is the prod-2026-10-14 `q.filter is not a
+ * function` fix: these helpers run during render, so any throw unmounts the
+ * whole Strategies page.
+ */
+const catalogSymbols = (catalog: VenueCatalog): string[] =>
+  Array.isArray(catalog.symbols) ? catalog.symbols : [];
+
+/**
  * Build the dropdown groups: one per catalog that answered with symbols
  * (unavailable/empty catalogs contribute no group), then a defensive
  * "Strategy symbols" group for symbols no catalog lists — those still need
@@ -115,15 +126,16 @@ export function buildChartSymbolGroups(
   const groups: ChartSymbolGroup[] = [];
   const listed = new Set<string>();
   for (const catalog of catalogs) {
-    for (const symbol of catalog.symbols) {
+    const symbols = catalogSymbols(catalog);
+    for (const symbol of symbols) {
       listed.add(symbol.trim().toUpperCase());
     }
-    if (!catalog.available || catalog.symbols.length === 0) continue;
+    if (!catalog.available || symbols.length === 0) continue;
     groups.push({
       label: venueLabel(catalog.exchange, catalog.environment),
       exchange: catalog.exchange,
       environment: catalog.environment,
-      symbols: uniqueSorted(catalog.symbols),
+      symbols: uniqueSorted(symbols),
     });
   }
 
@@ -154,7 +166,9 @@ export function resolveChartSelection(
     const wanted = first.trim().toUpperCase();
     for (const catalog of catalogs) {
       if (
-        catalog.symbols.some(symbol => symbol.trim().toUpperCase() === wanted)
+        catalogSymbols(catalog).some(
+          symbol => symbol.trim().toUpperCase() === wanted
+        )
       ) {
         return {
           symbol: first,
@@ -174,8 +188,9 @@ export function resolveChartSelection(
   // a Kodiak-only default would be a non-option for a Lighter-only user).
   // No usable catalog → rule 4: the Kodiak fallback exactly as before X3.
   for (const catalog of catalogs) {
-    if (!catalog.available || catalog.symbols.length === 0) continue;
-    const sorted = uniqueSorted(catalog.symbols);
+    const symbols = catalogSymbols(catalog);
+    if (!catalog.available || symbols.length === 0) continue;
+    const sorted = uniqueSorted(symbols);
     const preferred = sorted.find(symbol => {
       const upper = symbol.trim().toUpperCase();
       return upper === "BTC" || upper === "PERP_BTC_USDC";

@@ -165,11 +165,18 @@ export const StrategyWorkspace: React.FC<StrategyWorkspaceProps> = ({
   // the panel narrows the account book to this strategy's market (venue
   // forms differ: bare `BTC` vs `PERP_BTC_USDC` — same normalisation the
   // chart uses) and its caption labels the attribution it cannot claim.
+  // Prod 2026-10-14: the Lighter positions reader answers `{ positions }`
+  // (not a bare array), so `positions` can arrive as that object — guard
+  // with Array.isArray or the `.filter` below throws `q.filter is not a
+  // function` and unmounts the whole Strategies page.
+  const positionRows = Array.isArray(positions) ? positions : [];
+  // Same guard for the orders book (same reader family, same risk).
+  const orderRows = Array.isArray(orders) ? orders : [];
   const strategyMarket = normalizeMarketSymbol(
     strategyConfig?.config.symbol ?? ""
   );
   const marketPositions = strategyMarket
-    ? positions.filter(
+    ? positionRows.filter(
         row => normalizeMarketSymbol(row.symbol) === strategyMarket
       )
     : [];
@@ -358,7 +365,7 @@ export const StrategyWorkspace: React.FC<StrategyWorkspaceProps> = ({
             orders={
               chartSelection.symbol.trim().toUpperCase() ===
               (strategyConfig?.config.symbol ?? "").trim().toUpperCase()
-                ? orders
+                ? orderRows
                 : []
             }
           />
@@ -396,7 +403,7 @@ export const StrategyWorkspace: React.FC<StrategyWorkspaceProps> = ({
                     : "border-transparent text-textMuted hover:text-text"
                 )}
               >
-                Open orders ({orders.length})
+                Open orders ({orderRows.length})
               </button>
               {bot && (
                 <button
@@ -458,12 +465,12 @@ export const StrategyWorkspace: React.FC<StrategyWorkspaceProps> = ({
           >
             <div className="hidden xl:flex items-center justify-between gap-2 mb-2">
               <h4 className="text-sm font-semibold text-text">
-                Open orders ({orders.length})
+                Open orders ({orderRows.length})
               </h4>
               <FreshnessIndicator updatedAt={ordersUpdatedAt} />
             </div>
             <OpenOrdersTable
-              orders={orders}
+              orders={orderRows}
               isLoading={ordersLoading}
               error={ordersError}
             />
