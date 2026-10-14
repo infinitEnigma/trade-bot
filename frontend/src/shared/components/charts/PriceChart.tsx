@@ -17,6 +17,7 @@ import {
 } from "../../hooks/useChartData";
 import { Card } from "../ui/Card";
 import { SectionHeader } from "../ui/SectionHeader";
+import { FreshnessIndicator } from "../ui/FreshnessIndicator";
 
 interface PriceChartProps {
   symbol?: string;
@@ -374,6 +375,11 @@ const PriceChart: React.FC<PriceChartProps> = React.memo(
                             ? "Fallback"
                             : "Cached"}
                     </span>
+                  )}
+                  {currentPriceData?.timestamp && (
+                    <FreshnessIndicator
+                      updatedAt={currentPriceData.timestamp}
+                    />
                   )}
                 </div>
               ) : priceError ? (

@@ -1,7 +1,7 @@
 /** @format */
 
 import React, { useEffect, useState } from "react";
-import { cn } from "../../../shared/utils";
+import { cn } from "../../utils";
 
 /**
  * FreshnessIndicator — Phase 3 slice 5's honest "when was this data last

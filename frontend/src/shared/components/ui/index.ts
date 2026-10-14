@@ -7,6 +7,7 @@ export { ErrorState } from "./ErrorState";
 export { Modal } from "./Modal";
 export { ConfirmDialog } from "./ConfirmDialog";
 export { SectionHeader } from "./SectionHeader";
+export { FreshnessIndicator } from "./FreshnessIndicator";
 export { MetricIcon } from "./MetricIcon";
 export { ThemeToggle } from "./ThemeToggle";
 export { TimeWindowSelector } from "./TimeWindowSelector";

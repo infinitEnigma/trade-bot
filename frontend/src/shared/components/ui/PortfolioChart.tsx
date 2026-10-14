@@ -41,28 +41,19 @@ interface PortfolioData {
 
 interface PortfolioChartProps {
   data?: PortfolioData;
-  selectedSymbol?: string;
-  onSymbolChange?: (symbol: string) => void;
 }
 
 /**
  * PortfolioChart placeholder component
  * TODO: Implement full portfolio chart functionality
  */
-const PortfolioChart: React.FC<PortfolioChartProps> = ({
-  //data,
-  selectedSymbol = "PERP_BTC_USDC",
-  //onSymbolChange
-}) => {
+const PortfolioChart: React.FC<PortfolioChartProps> = () => {
   return (
     <Card className="h-80 p-6">
       <div className="flex items-center justify-between mb-4">
         <h3 className="text-lg font-semibold text-text">
           Portfolio Performance
         </h3>
-        <div className="text-sm text-textMuted">
-          {selectedSymbol.replace("PERP_", "").replace("_USDC", "")}
-        </div>
       </div>
 
       <div className="h-64 flex items-center justify-center bg-surface/50 rounded-lg border border-white/10">

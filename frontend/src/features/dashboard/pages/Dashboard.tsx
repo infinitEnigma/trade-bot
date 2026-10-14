@@ -1,250 +1,25 @@
 /** @format */
 
-import React, { useState, useEffect, Suspense } from "react";
-import {
-  Area,
-  AreaChart,
-  CartesianGrid,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
+import React, { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "../../auth";
-import {
-  accountsApi,
-  ExchangeAccountDto,
-} from "../../../infrastructure/api/accounts";
-import {
-  TrendingUp,
-  TrendingDown,
-  Wallet,
-  Activity,
-  DollarSign,
-  Settings,
-  Key,
-  Loader2,
-  Target,
-  RefreshCw,
-  X,
-} from "lucide-react";
 
-import { Link, useSearchParams } from "react-router-dom";
-import { Card } from "../../../shared/components/ui/Card";
-import { SectionHeader } from "../../../shared/components/ui/SectionHeader";
-import { tradingApi } from "../../../infrastructure/api";
 import { websocketClient } from "../../../infrastructure/websocket/client";
-
-import { UserProgressCard } from "../../../shared/components/user/UserProgressCard";
-import { RecentTradesTable } from "../../../shared/components/user/RecentTrades";
-import { LoadingSpinner } from "../../../shared/components/ui";
 import { usePortfolioSummary, useRecentTrades } from "../../../shared/hooks";
 import type { VenuePnlPoint } from "../../../shared/hooks/usePortfolioSummary";
 import { dashboardService } from "../services/dashboardService";
-import { globalBalanceManager } from "../../../shared/services/balance-manager";
-import { EngineJournalIntegrityNotice } from "../../strategies/components/EngineJournalIntegrityNotice";
-import {
-  Container,
-  ElectricalNetworkBackground,
-  Grid,
-  Section,
-} from "../../../shared/components/layout";
+import { tradingApi } from "../../../infrastructure/api";
+import { Container, Section } from "../../../shared/components/layout";
+import { useAccountScope } from "../hooks/useAccountScope";
+import { useNeedsAttentionCount } from "../hooks/useNeedsAttentionCount";
 
-// Type definitions for Dashboard components
-interface StatsCardProps {
-  title: string;
-  value: number;
-  icon: React.ComponentType<{ className?: string }>;
-  format?: "currency" | "number" | "pnl";
-  /** Extra honesty line under the title (e.g. partial-total warnings, F3). */
-  note?: string;
-}
-
-interface PortfolioChartProps {
-  data: PerformanceData[];
-  selectedSymbol?: string;
-  onSymbolChange?: (symbol: string) => void;
-}
-
-interface PerformanceData {
-  time: string;
-  value: number;
-}
-
-// Lazy load heavy components
-const PriceChart = React.lazy(
-  () => import("../../../shared/components/charts/PriceChart")
-);
-const WalletConnectDialog = React.lazy(() =>
-  import("../../../shared/components/WalletConnectDialog").then(module => ({
-    default: module.WalletConnectDialog,
-  }))
-);
-// Components removed during cleanup - using simple alternatives
-const StatsCard = ({
-  title,
-  value,
-  icon: Icon,
-  format,
-  note,
-}: StatsCardProps) => (
-  <div className="glass-card p-6">
-    <div className="flex items-center justify-between mb-4">
-      <div className="w-10 h-10 bg-primary/10 rounded-lg flex items-center justify-center">
-        <Icon className="w-5 h-5 text-primary" />
-      </div>
-    </div>
-    <h3
-      className={`text-lg font-bold mb-1 ${
-        format === "pnl"
-          ? value >= 0
-            ? "text-success"
-            : "text-danger"
-          : "text-text"
-      }`}
-    >
-      {format === "currency"
-        ? `$${value.toLocaleString()}`
-        : format === "pnl"
-          ? `${value >= 0 ? "+" : "-"}$${Math.abs(value).toLocaleString()}`
-          : value}
-    </h3>
-    <p className="text-xs text-textMuted">{title}</p>
-    {note ? <p className="text-xs text-warning mt-1">{note}</p> : null}
-  </div>
-);
-
-/**
- * Portfolio realized-PnL chart.
- *
- * P0: fed by the venue's own trade_pnl LEVEL series (hourly buckets) via
- * `portfolio-venue-pnl` — the same source as the realized card. The old
- * per-trade accumulation from fill rows was flat on Lighter (every row
- * carries realized_pnl "0" by construction); Kodiak keeps that path via
- * `calculatePortfolioPerformance` on real rows.
- */
-const PortfolioChart = ({ data }: PortfolioChartProps) => {
-  const points = data ?? [];
-  const chartData = points.map((point, index) => ({
-    ...point,
-    index,
-    label: `${point.time} (#${index})`,
-  }));
-  const firstValue = points[0]?.value ?? 0;
-  const lastValue = points.length > 0 ? points[points.length - 1].value : 0;
-  const pnl = lastValue - firstValue;
-  const pnlPositive = pnl >= 0;
-
-  if (points.length === 0) {
-    return (
-      <div className="h-80 flex items-center justify-center">
-        <div className="text-center">
-          <Activity className="w-12 h-12 text-textMuted mx-auto mb-4" />
-          <p className="text-textMuted">No realized-PnL data</p>
-          <p className="text-xs text-textMuted mt-2">
-            Closed trades will build the cumulative realized-PnL curve here (not
-            account equity).
-          </p>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="h-80">
-      <div className="flex items-center justify-between mb-2">
-        <p className="text-sm text-textMuted">
-          {points.length} data points •{" "}
-          <span className={pnlPositive ? "text-success" : "text-danger"}>
-            {pnlPositive ? "+" : ""}$
-            {pnl.toLocaleString(undefined, { maximumFractionDigits: 2 })}
-          </span>{" "}
-          realized
-        </p>
-      </div>
-      <div className="h-64">
-        <ResponsiveContainer width="100%" height="100%">
-          <AreaChart
-            data={chartData}
-            margin={{ top: 8, right: 8, bottom: 0, left: 8 }}
-          >
-            <CartesianGrid strokeDasharray="3 3" stroke="var(--border-light)" />
-            <XAxis
-              dataKey="index"
-              tickFormatter={index =>
-                chartData[Number(index)]?.time ?? String(index)
-              }
-              stroke="var(--text-secondary)"
-              fontSize={12}
-              tick={{ fill: "var(--text-secondary)" }}
-              tickLine={false}
-              minTickGap={32}
-            />
-            <YAxis
-              stroke="var(--text-secondary)"
-              fontSize={12}
-              tick={{ fill: "var(--text-secondary)" }}
-              tickFormatter={(value: number) =>
-                `$${Number(value).toLocaleString(undefined, {
-                  maximumFractionDigits: 0,
-                })}`
-              }
-              width={80}
-              domain={["dataMin", "dataMax"]}
-            />
-            <Tooltip
-              content={({ active, payload }) => {
-                if (active && payload && payload.length > 0) {
-                  const point = payload[0].payload as PerformanceData & {
-                    index: number;
-                  };
-                  return (
-                    <div className="glass-card p-3 border border-white/10">
-                      <p className="text-sm font-medium">
-                        Trade #{point.index} • {point.time}
-                      </p>
-                      <p className="text-sm text-primary">
-                        Cum. realized PnL: $
-                        {point.value.toLocaleString(undefined, {
-                          maximumFractionDigits: 2,
-                        })}
-                      </p>
-                    </div>
-                  );
-                }
-                return null;
-              }}
-            />
-            <Area
-              type="monotone"
-              dataKey="value"
-              name="Cumulative realized PnL"
-              stroke="var(--primary)"
-              fill="var(--primary)"
-              fillOpacity={0.15}
-              strokeWidth={2.5}
-              dot={false}
-              isAnimationActive={false}
-            />
-          </AreaChart>
-        </ResponsiveContainer>
-      </div>
-    </div>
-  );
-};
-
-// F3: honest relative time for the "Last Sync" row (from query dataUpdatedAt).
-const formatRelativeTime = (timestampMs: number): string => {
-  if (!timestampMs) return "Never";
-  const seconds = Math.floor((Date.now() - timestampMs) / 1000);
-  if (seconds < 60) return "Just now";
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  return `${Math.floor(hours / 24)}d ago`;
-};
+import { resolveDashboardAccess } from "../utils/dashboardAccess";
+import { DashboardHeaderSection } from "../sections/DashboardHeaderSection";
+import { MarketOverviewSection } from "../sections/MarketOverviewSection";
+import { AccountOverviewSection } from "../sections/AccountOverviewSection";
+import { TradingActivitySection } from "../sections/TradingActivitySection";
+import { ExploreSection } from "../sections/ExploreSection";
+import type { PerformanceData } from "../components/RealizedPnlChart";
 
 // F4: the trade-derived fallback lives in `dashboardService` — the local
 // copy (synthetic-baseline + clamp twin) is gone; one implementation, one
@@ -262,12 +37,30 @@ const calculatePortfolioPerformance = (
       typeof dashboardService.calculatePortfolioPerformance
     >[0]
   );
+/**
+ * Dashboard — composition shell.
+ *
+ * The page owns only cross-section state and data: auth, the WS/engine status
+ * queries, account scope, portfolio/trade/ledger queries, and the
+ * realized-PnL series derivation. Every visible block lives in `sections/`;
+ * tier-driven presentation is decided in one place (`dashboardAccess`) and
+ * passed down as an `access` flag — the shell never branches on `userLevel`
+ * directly. Section order is fixed for every tier; only contents change.
+ *
+ * Account scope: `useAccountScope` is the single source of truth for the
+ * selected exchange account. It unifies the former local `portfolioAccountId`
+ * and legacy `?tradesAccount=` param under one URL-persisted
+ * `?exchangeAccountId=` selection (with legacy read-then-strip), and owns the
+ * global balance-manager pinning effect.
+ */
 
 const Dashboard: React.FC = () => {
   const { user } = useAuth();
-  const [selectedSymbol, setSelectedSymbol] = useState("PERP_BTC_USDC");
 
-  // F3: real WS status — synchronous getter + change listener (kickoff check 3).
+  // Tier model — the single source of truth for tier-driven presentation.
+  const access = resolveDashboardAccess(user);
+
+  // F3: real WS status — synchronous getter + change listener.
   const [wsStatus, setWsStatus] = useState<string>(websocketClient.getStatus());
   useEffect(() => {
     const handleStatus = (status: string) => setWsStatus(status);
@@ -276,6 +69,9 @@ const Dashboard: React.FC = () => {
   }, []);
 
   // F3: Bot Engine row from the same engine-status query Strategies uses.
+  // VERIFIED-only: engine/journal state is meaningless below VERIFIED (the WS
+  // initializer never connects there), so the query never fires there — the
+  // same render-gating that keeps bot queries out of lower tiers.
   const { data: engineStatus } = useQuery({
     queryKey: ["engine-status"],
     queryFn: () => tradingApi.getEngineStatus(),
@@ -284,7 +80,7 @@ const Dashboard: React.FC = () => {
     refetchInterval: 300000,
     refetchOnWindowFocus: false,
     refetchIntervalInBackground: false,
-    enabled: !!user,
+    enabled: access.sections.systemStatus,
     retry: (failureCount, error: unknown) => {
       const err = error as { response?: { status?: number } };
       if (err.response?.status === 429) return false;
@@ -297,131 +93,40 @@ const Dashboard: React.FC = () => {
       ? engineStatus.data.running
       : null;
 
-  // Fetch portfolio data - optimized with proper deduplication
+  // Account scope — the single source of truth for the selected exchange
+  // account (URL-persisted `?exchangeAccountId=`, default newest ACTIVE).
+  // Owns the global balance-manager pinning effect.
+  const {
+    accounts: portfolioAccounts,
+    selectedAccountId: activePortfolioAccountId,
+    accountLabels,
+    selectAccount,
+    isLoading: scopeLoading,
+  } = useAccountScope(user?.id);
 
-  // L2: venue-agnostic portfolio selection. Every ACTIVE account is listed
-  // with an explicit switcher (previously the first ACTIVE kodiak account
-  // was pinned, hiding Lighter accounts). Default is the most recently
-  // created ACTIVE account — deterministic, not "kodiak first".
-  const [portfolioAccountId, setPortfolioAccountId] = useState("");
-  const accountsQuery = useQuery({
-    queryKey: ["exchange-accounts", user?.id],
-    queryFn: () => accountsApi.listAccounts(),
-    enabled: !!user,
-    staleTime: 30 * 1000,
-  });
-  const portfolioAccounts: ExchangeAccountDto[] = (
-    accountsQuery.data?.data?.accounts ?? []
-  )
-    .filter(account => account.status === "ACTIVE")
-    .sort(
-      (a, b) =>
-        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-    );
-  const activePortfolioAccountId =
-    portfolioAccountId || portfolioAccounts[0]?.id || "";
-
-  // B1/B6: the four portfolio figures — each from a real, distinct source
-  // (on-chain wallet, selected exchange balance, venue-exact unrealized PnL,
-  // venue-computed realized PnL, total across all ACTIVE accounts). Scoped
+  // B1/B6: the portfolio figures — each from a real, distinct source. Scoped
   // to the selected account.
   const portfolioSummary = usePortfolioSummary(activePortfolioAccountId);
-  // Positions/trades/balance are venue-dispatched server-side (kodiak rows
-  // → kodiak-integration, lighter rows → the Lighter portfolio reader), so
-  // every ACTIVE selection is queried — no venue gate here anymore.
 
-  // The balance widget is app-global: pin it to the displayed account.
-  useEffect(() => {
-    globalBalanceManager.setActiveExchangeAccountId(
-      activePortfolioAccountId || null
-    );
-  }, [activePortfolioAccountId]);
-
-  // P0 single-source: positions/trades/venue-PnL come from the hook's
-  // portfolio-* keys only (tables + curve read the hook below).
-
-  // P0 single-source (continued): the kodiak-trades twin is gone too.
-  // Tables + curve read the hook's rows/series below — one query per
-  // endpoint, one refresh timer each.
-
-  // Process positions data — single-source from the hook.
-  const positions = portfolioSummary.positions;
-  const positionsLoading = portfolioSummary.positionsLoading;
-  const positionsUpdatedAt = portfolioSummary.positionsUpdatedAt;
-  // F3: "Last Sync" reflects the most recent successful positions read.
-  const lastSyncLabel = positionsUpdatedAt
-    ? formatRelativeTime(positionsUpdatedAt)
-    : "Never";
-  const profitablePositions = positions.filter(
-    p => parseFloat(String(p.unsettled_pnl ?? "0")) >= 0
-  ).length;
-
-  // Trades table — the platform's own ledger (GET /api/trades), NOT the
-  // venue proxy. The hook's `trades` rows stay the realized-PnL/chart source
-  // (Kodiak fallback path) — the table is a separate consumer with its own
-  // account filter. Latest-N semantics; "All accounts" is the default.
-  const venueTrades = portfolioSummary.trades;
-  const [searchParams, setSearchParams] = useSearchParams();
-  const tradesAccountParam = searchParams.get("tradesAccount");
-  // A stale/foreign id in the URL (or a non-ACTIVE account) falls back to
-  // "all" — never to a scoped query the user didn't ask for.
-  const tradesAccountId =
-    tradesAccountParam &&
-    portfolioAccounts.some(a => a.id === tradesAccountParam)
-      ? tradesAccountParam
-      : "";
-  const setTradesAccountId = (id: string) => {
-    setSearchParams(
-      prev => {
-        const next = new URLSearchParams(prev);
-        if (id) {
-          next.set("tradesAccount", id);
-        } else {
-          next.delete("tradesAccount");
-        }
-        return next;
-      },
-      { replace: true }
-    );
-  };
+  // Trades ledger — the platform's own ledger (GET /api/trades), NOT the
+  // venue proxy. Latest-N; scoped to the selected account via the unified
+  // scope (falls back to all accounts when none is selected).
   const {
     trades: ledgerTrades,
     isLoading: ledgerTradesLoading,
     error: ledgerTradesError,
   } = useRecentTrades(
-    tradesAccountId ? { exchangeAccountId: tradesAccountId } : {}
+    activePortfolioAccountId
+      ? { exchangeAccountId: activePortfolioAccountId }
+      : {}
   );
-  const accountLabels: Record<string, string> = Object.fromEntries(
-    portfolioAccounts.map(a => [
-      a.id,
-      `${a.exchange} (${a.environment}) ${a.accountRef}`,
-    ])
-  );
+  void scopeLoading;
 
-  // P0: the D1 dead trio (pnl/pnlPercent/dailyVolume = 0) is gone. The
-  // portfolio gate reads the hook's exchange balance, not useBalance.
-  const totalBalance = portfolioSummary.exchangeBalance;
-
-  // For VERIFIED users, always show portfolio (even with zero balances)
-  // For REGISTERED users, show if balance data exists
-  const shouldShowPortfolio =
-    user?.userLevel === "VERIFIED" ||
-    (user?.userLevel === "REGISTERED" && totalBalance > 0);
-
-  const portfolio = shouldShowPortfolio
-    ? {
-        totalBalance,
-        totalTrades: venueTrades.length,
-      }
-    : null;
-
-  // P0: the chart plots the venue's own trade_pnl LEVEL series
-  // (hourly buckets), not per-trade accumulation — Lighter fill rows carry
-  // realized_pnl "0" by construction, which is why the old curve was flat.
-  // Kodiak (no venue series) keeps the trade-derived curve from real rows.
-  // F4: the trade-derived fallback is cumulative REALISED PnL anchored at 0 —
-  // the current balance is a snapshot now, not a historical baseline, and
-  // using it as a "Start" value fabricated an equity curve.
+  // The chart plots the venue's own trade_pnl LEVEL series (hourly buckets),
+  // not per-trade accumulation — Lighter fill rows carry realized_pnl "0" by
+  // construction, which is why the old curve was flat. Kodiak (no venue
+  // series) keeps the trade-derived curve from real rows.
+  const venueTrades = portfolioSummary.trades;
   const toSeriesTime = (timestampMs: number): string =>
     new Date(timestampMs).toLocaleString([], {
       month: "short",
@@ -443,6 +148,13 @@ const Dashboard: React.FC = () => {
         ? calculatePortfolioPerformance(venueTrades)
         : [];
 
+  // Stage 4: VERIFIED header alert CTA. Cache-only read of the shared
+  // bot-instances cache — never fires the bot query below VERIFIED (the
+  // render-gated `BotStatusPanel` is the single owner that populates it).
+  const needsAttentionCount = useNeedsAttentionCount(
+    access.sections.systemStatus
+  );
+
   return (
     <Container
       size={{
@@ -455,574 +167,40 @@ const Dashboard: React.FC = () => {
       className="py-2 space-y-4"
     >
       <Section>
-        {/* ✅ User Progress Card - Shows account progression */}
-        <div className="mb-8">
-          <ElectricalNetworkBackground />
-          <UserProgressCard />
-        </div>
-
-        {/* ✅ Market Chart Section - Full Width */}
-        <div className="mb-8 contain-layout">
-          <Suspense
-            fallback={
-              <Card className="h-96 flex items-center justify-center">
-                <Loader2 className="w-8 h-8 animate-spin text-primary" />
-              </Card>
-            }
-          >
-            <PriceChart />
-          </Suspense>
-        </div>
-        {/* Portfolio Overview — P0 single-source: the loading/error gate
-            reads the hook (one balance system), not useBalance. */}
-        {portfolioSummary.initialLoading ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-            {[1, 2, 3, 4].map(i => (
-              <Card key={i} className="p-6 flex items-center justify-center">
-                <LoadingSpinner />
-              </Card>
-            ))}
-          </div>
-        ) : portfolioSummary.error ? (
-          <Card className="mb-8 border-warning/20 bg-warning/5">
-            <div className="flex items-start gap-3 p-6">
-              <Activity className="w-5 h-5 text-warning shrink-0 mt-0.5" />
-              <div className="flex-1 min-w-0">
-                <h3 className="text-base font-semibold text-text">
-                  Portfolio figures unavailable
-                </h3>
-                <p className="text-sm text-textMuted mt-1 break-words">
-                  {portfolioSummary.error}
-                </p>
-                <p className="text-xs text-textMuted mt-2">
-                  Positions and trades below carry their own error state — this
-                  card only reflects the failed figure read, not a zero balance.
-                </p>
-              </div>
-            </div>
-          </Card>
-        ) : portfolio ? (
-          <div className="mb-8">
-            <SectionHeader
-              title="Portfolio Overview"
-              subtitle="Real-time performance and analytics"
-              actions={
-                <>
-                  <button
-                    onClick={() => {
-                      void portfolioSummary.refresh();
-                    }}
-                    className="btn-secondary flex items-center gap-2"
-                  >
-                    <RefreshCw className="w-4 h-4" />
-                    Refresh
-                  </button>
-                  {/* HD1: /strategies requires VERIFIED — a REGISTERED
-                      landing spot must not offer a button that bounces. */}
-                  {user?.userLevel === "VERIFIED" && (
-                    <Link
-                      to="/strategies"
-                      className="btn-primary flex items-center gap-2"
-                    >
-                      <Target className="w-4 h-4" />
-                      New Strategy
-                    </Link>
-                  )}
-                </>
-              }
-            />
-
-            {/* Five distinct, real figures (B1/B6; 2026-10-09 PnL fix):
-                on-chain wallet, selected exchange balance, venue-exact
-                unrealized PnL, venue-computed realized PnL, and the total
-                across every ACTIVE exchange account. Each reads its own
-                source — no card is a duplicate of another. */}
-            <Grid cols={{ default: 1, md: 2, lg: 3, xl: 5 }} gap={6}>
-              <StatsCard
-                title="Wallet (on-chain)"
-                value={portfolioSummary.walletBalance}
-                icon={Wallet}
-                format="currency"
-              />
-              <StatsCard
-                title="Exchange balance"
-                value={portfolioSummary.exchangeBalance}
-                icon={DollarSign}
-                format="currency"
-              />
-              <StatsCard
-                title="Unrealized PnL (open positions)"
-                value={portfolioSummary.unrealizedPnl}
-                icon={Activity}
-                format="pnl"
-              />
-              <StatsCard
-                title="Realized PnL (7d, venue)"
-                value={portfolioSummary.realizedPnl}
-                icon={Activity}
-                format="pnl"
-              />
-              <StatsCard
-                title={`Total across ${
-                  portfolioSummary.activeAccountCount || 0
-                } exchange account${
-                  portfolioSummary.activeAccountCount === 1 ? "" : "s"
-                }`}
-                value={portfolioSummary.totalAcrossExchanges}
-                icon={TrendingUp}
-                format="currency"
-                note={
-                  // F3: an unreadable account must never look like a complete
-                  // total — label the sum as partial and name what's missing.
-                  portfolioSummary.totalIsPartial
-                    ? `Partial — ${portfolioSummary.failedAccounts.length} of ${
-                        portfolioSummary.activeAccountCount
-                      } account${
-                        portfolioSummary.activeAccountCount === 1 ? "" : "s"
-                      } unreadable (${portfolioSummary.failedAccounts
-                        .map(a => a.label)
-                        .join(", ")})`
-                    : undefined
-                }
-              />
-            </Grid>
-          </div>
-        ) : user?.userLevel === "BASIC" ? (
-          <Card className="text-center mb-8">
-            <Wallet className="w-12 h-12 text-textMuted mx-auto mb-4" />
-            <h3 className="text-lg font-semibold text-text mb-2">
-              Connect Your Wallet
-            </h3>
-            <p className="text-textMuted mb-4">
-              Your next step is connecting your wallet — use the wallet widget
-              on this page to reach REGISTERED status. Exchange accounts come
-              after that.
-            </p>
-            <div className="flex items-center justify-center gap-4">
-              <button
-                onClick={() =>
-                  document
-                    .getElementById("wallet-widget")
-                    ?.scrollIntoView({ behavior: "smooth", block: "center" })
-                }
-                className="bg-indigo-500 text-white px-6 py-2.5 rounded-lg font-medium transition-all duration-200 hover:bg-indigo-600 hover:shadow-lg hover:shadow-indigo-500/20 active:scale-95 inline-flex items-center gap-2"
-              >
-                <Wallet className="w-5 h-5" />
-                Go to Wallet
-              </button>
-              <Link
-                to="/settings"
-                className="text-sm text-textMuted hover:text-text underline underline-offset-4"
-              >
-                Exchange account settings
-              </Link>
-            </div>
-          </Card>
-        ) : (
-          <Card className="text-center mb-8">
-            <Activity className="w-12 h-12 text-textMuted mx-auto mb-4" />
-            <h3 className="text-lg font-semibold text-text mb-2">
-              Connect Your Trading Account
-            </h3>
-            <p className="text-textMuted mb-4">
-              Connect your trading account in Settings to see your portfolio,
-              positions and recent trades here.
-            </p>
-            <Link
-              to="/settings"
-              className="bg-indigo-500 text-white px-6 py-2.5 rounded-lg font-medium transition-all duration-200 hover:bg-indigo-600 hover:shadow-lg hover:shadow-indigo-500/20 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-2"
-            >
-              <Key className="w-5 h-5" />
-              Connect Account
-            </Link>
-          </Card>
-        )}
-
-        {/* Main Content Grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Chart Section — cumulative realized-PnL curve (unrealized overlay
-              stays an Analytics-boundary item). Caption keeps a flat 0
-              readable as information, not breakage. Never labelled equity:
-              no verified equity baseline is constructed here. */}
-          <Card className="lg:col-span-2">
-            <Suspense
-              fallback={
-                <div className="h-80 flex items-center justify-center">
-                  <Loader2 className="w-8 h-8 animate-spin text-primary" />
-                </div>
-              }
-            >
-              <PortfolioChart
-                data={portfolioData}
-                selectedSymbol={selectedSymbol}
-                onSymbolChange={setSelectedSymbol}
-              />
-            </Suspense>
-            <p className="text-xs text-textMuted mt-2">
-              Realized PnL from the venue (trade_pnl level, last-minus-first
-              over 7d, transfers excluded) — a flat 0 means no closed PnL in the
-              window yet. Unrealized (open positions) is on the cards above.
-            </p>
-          </Card>
-
-          {/* Quick Actions */}
-          <Card>
-            <h2 className="text-lg font-semibold text-text mb-4">
-              Quick Actions
-            </h2>
-            <div className="space-y-3">
-              {/* HD1: /strategies requires VERIFIED — REGISTERED must not
-                  see a link that bounces them back here. */}
-              {user?.userLevel === "VERIFIED" && (
-                <Link
-                  to="/strategies"
-                  className="w-full bg-indigo-500 text-white px-6 py-2.5 rounded-lg font-medium transition-all duration-200 hover:bg-indigo-600 hover:shadow-lg hover:shadow-indigo-500/20 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-2"
-                >
-                  <Activity className="w-4 h-4" />
-                  Manage Strategies
-                </Link>
-              )}
-            </div>
-
-            {/* Wallet Status Widget - visible for all authenticated users (BASIC and above).
-                BASIC users connect + sign here to upgrade to REGISTERED. */}
-            <div
-              id="wallet-widget"
-              className="mt-6 pt-6 border-t border-white/5"
-            >
-              <Suspense
-                fallback={
-                  <div className="flex items-center justify-center py-4">
-                    <Loader2 className="w-6 h-6 animate-spin text-primary" />
-                  </div>
-                }
-              >
-                <WalletConnectDialog />
-              </Suspense>
-            </div>
-
-            <div className="mt-6 pt-6 border-t border-white/5">
-              <h3 className="text-sm font-medium text-textMuted mb-3">
-                System Status
-              </h3>
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-text">API Connection</span>
-                  <span
-                    className={`flex items-center gap-2 text-sm ${
-                      wsStatus === "connected"
-                        ? "text-success"
-                        : wsStatus === "connecting" ||
-                            wsStatus === "reconnecting"
-                          ? "text-warning"
-                          : "text-textMuted"
-                    }`}
-                  >
-                    <span
-                      className={`w-2 h-2 rounded-full ${
-                        wsStatus === "connected"
-                          ? "bg-success"
-                          : wsStatus === "connecting" ||
-                              wsStatus === "reconnecting"
-                            ? "bg-warning"
-                            : "bg-textMuted"
-                      }`}
-                    />
-                    {wsStatus === "connected"
-                      ? "Connected"
-                      : wsStatus === "connecting" || wsStatus === "reconnecting"
-                        ? "Connecting…"
-                        : "Disconnected"}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-text">Bot Engine</span>
-                  <span
-                    className={`flex items-center gap-2 text-sm ${
-                      engineRunning === null
-                        ? "text-textMuted"
-                        : engineRunning
-                          ? "text-success"
-                          : "text-warning"
-                    }`}
-                  >
-                    <span
-                      className={`w-2 h-2 rounded-full ${
-                        engineRunning === null
-                          ? "bg-textMuted"
-                          : engineRunning
-                            ? "bg-success"
-                            : "bg-warning"
-                      }`}
-                    />
-                    {engineRunning === null
-                      ? "Unknown"
-                      : engineRunning
-                        ? "Running"
-                        : "Not running"}
-                  </span>
-                </div>
-                {/* F4 journal integrity: sticky reconciliation alert (red) OR
-                    verification-pending (amber), distinct from the liveness row
-                    above — an accounting state is not an engine-connectivity
-                    state and must not clear on a healthy heartbeat. Precedence
-                    and copy live in the component. */}
-                <EngineJournalIntegrityNotice
-                  journalIntegrity={engineStatus?.data?.journalIntegrity}
-                  journalIntegrityAlert={
-                    engineStatus?.data?.journalIntegrityAlert
-                  }
-                  variant="row"
-                />
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-text">Last Sync</span>
-                  <span className="text-sm text-textMuted">
-                    {lastSyncLabel}
-                  </span>
-                </div>
-              </div>
-            </div>
-          </Card>
-        </div>
-
-        {/* Positions & Recent Trades */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
-          {/* Enhanced Positions Table */}
-          <Card>
-            <SectionHeader
-              title="Open Positions"
-              subtitle={`${positions.length} active positions • ${profitablePositions} profitable`}
-              actions={
-                <>
-                  {portfolioAccounts.length > 0 && (
-                    <select
-                      value={activePortfolioAccountId}
-                      onChange={event =>
-                        setPortfolioAccountId(event.target.value)
-                      }
-                      aria-label="Exchange account"
-                      className="px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-sm text-text focus:border-primary/50 focus:outline-none"
-                    >
-                      {portfolioAccounts.map(account => (
-                        <option key={account.id} value={account.id}>
-                          {account.exchange} · {account.environment} ·{" "}
-                          {account.accountRef}
-                        </option>
-                      ))}
-                    </select>
-                  )}
-                </>
-              }
-            />
-
-            <div className="overflow-x-auto rounded-xl border border-white/5">
-              <table className="table-enhanced w-full min-w-150">
-                <thead>
-                  <tr>
-                    <th className="text-left">Symbol</th>
-                    <th className="text-left">Side</th>
-                    <th className="text-left">Size</th>
-                    <th className="text-left">Entry Price</th>
-                    <th className="text-left">Current Price</th>
-                    <th className="text-left">PnL</th>
-                    <th className="text-left">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {positionsLoading ? (
-                    <tr>
-                      <td colSpan={7} className="py-8 text-center">
-                        <div className="flex flex-col items-center justify-center">
-                          <Loader2 className="w-8 h-8 animate-spin text-primary mb-3" />
-                          <p className="text-text-secondary">
-                            Loading positions...
-                          </p>
-                        </div>
-                      </td>
-                    </tr>
-                  ) : positions.length === 0 ? (
-                    <tr>
-                      <td colSpan={7} className="py-8">
-                        <div className="flex flex-col items-center justify-center py-8">
-                          <Target className="w-12 h-12 text-textMuted mb-4" />
-                          <h3 className="text-lg font-semibold text-text mb-2">
-                            No Open Positions
-                          </h3>
-                          <p className="text-textMuted text-center mb-4">
-                            Start trading by creating a new strategy or opening
-                            a position manually.
-                          </p>
-                        </div>
-                        <div className="space-y-3">
-                          {/* HD1: only VERIFIED may enter /strategies. */}
-                          {user?.userLevel === "VERIFIED" && (
-                            <Link
-                              to="/strategies"
-                              className="w-full bg-indigo-500 text-white px-6 py-2.5 rounded-lg font-medium transition-all duration-200 hover:bg-indigo-600 hover:shadow-lg hover:shadow-indigo-500/20 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-2"
-                            >
-                              <Activity className="w-4 h-4" />
-                              Manage Strategies
-                            </Link>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  ) : (
-                    positions.map((position, index: number) => {
-                      const pnl = parseFloat(
-                        String(position.unsettled_pnl ?? "0")
-                      );
-                      const size = parseFloat(
-                        String(position.position_qty ?? "0")
-                      );
-                      const markPrice = parseFloat(
-                        String(position.mark_price ?? "0")
-                      );
-                      const entryPrice = parseFloat(
-                        String(position.average_open_price ?? "0")
-                      );
-                      const pnlPercent =
-                        entryPrice > 0
-                          ? ((markPrice - entryPrice) / entryPrice) * 100
-                          : 0;
-
-                      return (
-                        <tr key={index} className="group">
-                          <td className="font-medium">
-                            <div className="flex items-center gap-2">
-                              <div className="w-8 h-8 rounded-lg bg-linear-to-br from-primary/20 to-accent/20 flex items-center justify-center">
-                                <span className="text-xs font-bold">
-                                  {position.symbol?.[5] || "?"}
-                                </span>
-                              </div>
-                              <span>
-                                {position.symbol
-                                  ?.replace("PERP_", "")
-                                  .replace("_USDC", "") || "N/A"}
-                              </span>
-                            </div>
-                          </td>
-                          <td>
-                            <span
-                              className={`inline-flex items-center px-3 py-1.5 rounded-full text-xs font-medium ${
-                                size > 0
-                                  ? "bg-green-500/20 text-green-400 border border-green-500/30"
-                                  : "bg-red-500/20 text-red-400 border border-red-500/30"
-                              }`}
-                            >
-                              {size > 0 ? (
-                                <>
-                                  <TrendingUp className="w-4 h-4 mr-1" />
-                                  LONG
-                                </>
-                              ) : (
-                                <>
-                                  <TrendingDown className="w-4 h-4 mr-1" />
-                                  SHORT
-                                </>
-                              )}
-                            </span>
-                          </td>
-                          <td className="font-mono">
-                            {Math.abs(size).toFixed(4)}
-                          </td>
-                          <td className="font-mono">
-                            $
-                            {entryPrice.toLocaleString(undefined, {
-                              minimumFractionDigits: 2,
-                              maximumFractionDigits: 2,
-                            })}
-                          </td>
-                          <td className="font-mono">
-                            $
-                            {markPrice.toLocaleString(undefined, {
-                              minimumFractionDigits: 2,
-                              maximumFractionDigits: 2,
-                            })}
-                          </td>
-                          <td>
-                            <div
-                              className={`inline-flex items-center px-3 py-1.5 rounded-lg ${
-                                pnl >= 0
-                                  ? "bg-green-500/10 text-green-400"
-                                  : "bg-red-500/10 text-red-400"
-                              }`}
-                            >
-                              <span className="font-medium">
-                                {pnl >= 0 ? "+" : ""}${pnl.toFixed(2)}
-                              </span>
-                              <span className="ml-2 text-xs opacity-80">
-                                ({pnlPercent >= 0 ? "+" : ""}
-                                {pnlPercent.toFixed(2)}%)
-                              </span>
-                            </div>
-                          </td>
-                          <td>
-                            <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                              <button
-                                className="p-1.5 rounded hover:bg-white/5"
-                                title="Close"
-                              >
-                                <X className="w-4 h-4" />
-                              </button>
-                              <button
-                                className="p-1.5 rounded hover:bg-white/5"
-                                title="Edit"
-                              >
-                                <Settings className="w-4 h-4" />
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </Card>
-
-          {/* Recent Trades — platform ledger (Batch 3). "All accounts" by
-              default; the filter scopes the ledger query by account. */}
-          <Card>
-            <SectionHeader
-              title="Recent Trades"
-              subtitle={
-                tradesAccountId
-                  ? `Latest fills · ${accountLabels[tradesAccountId] ?? tradesAccountId}`
-                  : `Latest fills · all accounts`
-              }
-              actions={
-                <>
-                  {portfolioAccounts.length > 0 && (
-                    <select
-                      value={tradesAccountId}
-                      onChange={event => setTradesAccountId(event.target.value)}
-                      aria-label="Filter trades by exchange account"
-                      className="px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-sm text-text focus:border-primary/50 focus:outline-none"
-                    >
-                      <option value="">All accounts</option>
-                      {portfolioAccounts.map(account => (
-                        <option key={account.id} value={account.id}>
-                          {account.exchange} · {account.environment} ·{" "}
-                          {account.accountRef}
-                        </option>
-                      ))}
-                    </select>
-                  )}
-                </>
-              }
-            />
-            <div className="max-h-96 overflow-y-auto">
-              <RecentTradesTable
-                trades={ledgerTrades}
-                isLoading={ledgerTradesLoading}
-                error={ledgerTradesError}
-                accountLabels={accountLabels}
-              />
-            </div>
-          </Card>
-        </div>
+        {/* Fixed section order for every tier; only contents change. */}
+        <DashboardHeaderSection
+          access={access}
+          needsAttentionCount={needsAttentionCount}
+        />
+        <MarketOverviewSection />
+        <AccountOverviewSection
+          access={access}
+          portfolioSummary={portfolioSummary}
+          portfolioAccounts={portfolioAccounts}
+          activeAccountId={activePortfolioAccountId}
+          onAccountSelect={selectAccount}
+          accountLabels={accountLabels}
+        />
+        <TradingActivitySection
+          access={access}
+          portfolioSummary={portfolioSummary}
+          portfolioData={portfolioData}
+          activeAccountId={activePortfolioAccountId}
+          accountLabels={accountLabels}
+          ledgerTrades={ledgerTrades}
+          ledgerTradesLoading={ledgerTradesLoading}
+          ledgerTradesError={ledgerTradesError}
+          wsStatus={wsStatus}
+          engineRunning={engineRunning}
+          journalIntegrity={engineStatus?.data?.journalIntegrity}
+          journalIntegrityAlert={engineStatus?.data?.journalIntegrityAlert}
+        />
+        {/* Always last, every tier: tier-aware next steps, no dead ends. */}
+        <ExploreSection
+          access={access}
+          onRefresh={portfolioSummary.refresh}
+          refreshing={portfolioSummary.loading}
+        />
       </Section>
     </Container>
   );

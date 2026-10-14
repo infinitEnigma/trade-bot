@@ -3,7 +3,7 @@
 import React, { Suspense, lazy, useEffect, useState } from "react";
 import { Strategy, StrategyType } from "../../../shared/types";
 import { Zap, Edit, Trash2 } from "lucide-react";
-import { Card } from "../../../shared/components/ui";
+import { Card, FreshnessIndicator } from "../../../shared/components/ui";
 import { RecentTradesTable } from "../../../shared/components/user/RecentTrades";
 import { useRecentTrades } from "../../../shared/hooks";
 import { cn } from "../../../shared/utils";
@@ -18,7 +18,6 @@ import { BotControls } from "../bots/components/BotControls";
 import { BotStatusBadge } from "./BotStatusBadge";
 import { OpenOrdersTable } from "./OpenOrdersTable";
 import { PositionsTable } from "./PositionsTable";
-import { FreshnessIndicator } from "./FreshnessIndicator";
 import { strategyService } from "../services/strategyService";
 import { getStrategyConfig, type BotInstance } from "../types/strategies.types";
 import type { ExchangeAccountDto } from "../../../infrastructure/api/accounts";

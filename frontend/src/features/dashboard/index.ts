@@ -10,9 +10,6 @@
 // Components
 //export { BalanceCards, QuickActions, PositionsTable, RecentTrades } from "./components";
 
-// Hooks
-export { useDashboard } from "./hooks";
-
 // Services
 export { dashboardService } from "./services";
 

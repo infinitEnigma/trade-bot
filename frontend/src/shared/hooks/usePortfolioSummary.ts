@@ -116,6 +116,12 @@ export interface PortfolioSummary {
   positions: PortfolioPosition[];
   positionsLoading: boolean;
   positionsUpdatedAt: number;
+  /**
+   * Last successful fetch of the on-chain wallet balance (0 if never).
+   * Distinct from the other figures — shown next to the wallet number so a
+   * REGISTERED user can see how fresh that single value is.
+   */
+  walletBalanceUpdatedAt: number;
   /** Raw trade rows (Kodiak fallback path) for single-source consumers. */
   trades: PortfolioTrade[];
   tradesLoading: boolean;
@@ -382,6 +388,7 @@ export const usePortfolioSummary = (
     positions: positionsQuery.data ?? [],
     positionsLoading: positionsQuery.isLoading,
     positionsUpdatedAt: positionsQuery.dataUpdatedAt,
+    walletBalanceUpdatedAt: walletQuery.dataUpdatedAt,
     trades: tradesQuery.data ?? [],
     tradesLoading: tradesQuery.isLoading,
     tradesError: tradesQuery.error,
