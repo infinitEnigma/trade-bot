@@ -37,16 +37,62 @@ function pow10(n: number): bigint {
 }
 
 /**
- * Convert a JS number into a clean decimal string (up to 12 dp), washing
- * binary float noise (`100.0499999999` reads as `100.05`).
+ * Convert a JS number into a clean decimal string, washing binary float noise.
+ *
+ * Two distinct noise classes must BOTH wash:
+ * 1. **Representation noise** — a value quantized from a clean decimal stores
+ *    as the nearest double, whose shortest form round-trips clean
+ *    (`String(83879.4)` === `"83879.4"`), while `toFixed(12)` re-exposes the
+ *    error at BTC scale (`"83879.399999999994"`) and the strict integer-modulo
+ *    validator in `isTickMultiple` rejects it — prod 2026-10-14 refused every
+ *    BTC grid BUY this way.
+ * 2. **Arithmetic noise** — a computed price carries ≤ few-ulp error around
+ *    its intended decimal (`98 * 1.02` === `99.96000000000001`, 0.64 ulp ABOVE
+ *    the 99.96 boundary); no round-trip form can clean it because the noise IS
+ *    the double. The historical `toFixed(12)` washed this incidentally (at
+ *    small magnitudes only); a pure shortest round-trip must not lose it, or a
+ *    round-up quantize lands a tick high.
+ *
+ * Strategy: walk `toPrecision` from 17 significant digits down and keep the
+ * shortest **plain-decimal** candidate within ~4 ulps of the value. Genuine
+ * float noise (≤ a few ulps from arithmetic) snaps back to the intended
+ * decimal; a genuinely distinct price stays untouched — any two tick multiples
+ * this codebase can actually resolve are orders of magnitude farther apart
+ * than 4 ulps (worst corner: ~4500 ulps at price 1000 / tick 1e-12).
  */
 export function numberToDecimalString(value: number): string {
   if (!Number.isFinite(value)) {
     throw new Error(`price must be a finite number (got ${String(value)})`);
   }
   if (Number.isInteger(value)) return String(value);
-  const fixed = value.toFixed(12);
-  return fixed.replace(/0+$/, "").replace(/\.$/, "");
+  const shortest = String(value);
+  // Micro-tick markets stringify to exponent form (`String(1e-7)` === `"1e-7"`),
+  // which the strict decimal parser rejects. Expand to plain decimal instead;
+  // toFixed(20) comfortably covers the 12-dp precision ceiling the codebase
+  // enforces on ticks, trailing zeros are stripped below — and at this scale
+  // the fixed-width truncation also washes arithmetic noise (< 1e-20 absolute).
+  if (shortest.includes("e") || shortest.includes("E")) {
+    return value.toFixed(20).replace(/0+$/, "").replace(/\.$/, "");
+  }
+  const tolerance = Math.abs(value) * Number.EPSILON * 4;
+  let best: string | null = null;
+  for (let sig = 17; sig >= 1; sig--) {
+    const candidate = value.toPrecision(sig);
+    // Never emit exponent form: the strict decimal parser would reject it.
+    if (candidate.includes("e") || candidate.includes("E")) continue;
+    const parsed = Number(candidate);
+    if (!Number.isFinite(parsed)) continue;
+    if (Math.abs(parsed - value) > tolerance) {
+      // We descend from longest to shortest, so once a too-short candidate
+      // overshoots the noise band, the shortest acceptable form is in hand.
+      if (best !== null) break;
+      continue;
+    }
+    best = candidate;
+  }
+  const chosen = best ?? shortest;
+  if (!chosen.includes(".")) return chosen;
+  return chosen.replace(/0+$/, "").replace(/\.$/, "");
 }
 
 function formatScaled(value: bigint, scale: number): string {

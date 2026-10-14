@@ -85,25 +85,63 @@ describe("precision boundary (number round-trip)", () => {
   });
 
   it("keeps a large-but-double-safe price tick-valid through the round-trip", () => {
-    // 5e5 is well within IEEE-754's exact 2-dp range (~2e13): numberToDecimal-
-    // String's toFixed(12) recovers it exactly and the coarse tick validates.
+    // 5e5 is well within IEEE-754's exact 2-dp range (~2e13): the noise wash
+    // recovers it exactly and the coarse tick validates.
     expect(numberToDecimalString(500000.25)).toBe("500000.25");
     expect(
       isTickMultiple(quantizePriceNumber(500000.25, "0.05", "down"), "0.05")
     ).toBe(true);
   });
 
-  it("documents the number ceiling: beyond ~1e13 a 2-dp price is not representable", () => {
-    // Honest limitation (review P2-b): a JS double cannot hold 2 decimals at
-    // 1e9-scale magnitudes, so numberToDecimalString serializes the raw binary
-    // value rather than the intended decimal. This is exactly why the engine
-    // quantizes to the tick BEFORE submission and validates at the boundary —
-    // and why a supported market whose price×tick crosses this ceiling would
-    // need canonical decimal strings end-to-end. The engine's own grid is
-    // built at the mark price, far below this ceiling.
-    expect(numberToDecimalString(1_000_000_000.05)).toBe(
-      "1000000000.049999952316"
-    );
+  it("washes arithmetic float noise so a computed price cannot drift a tick (C3)", () => {
+    // REGRESSION: 98 * 1.02 === 99.96000000000001 — noise 0.64 ulp ABOVE the
+    // 99.96 boundary. A pure shortest round-trip keeps it, and a round-up
+    // quantize then lands one tick HIGH (99.97 instead of 99.96 — grid-partial
+    // C3 exit pricing). The wash must snap sub-ulp arithmetic noise back to
+    // the intended decimal, which the pre-BTC-fix toFixed(12) did implicitly.
+    expect(numberToDecimalString(98 * 1.02)).toBe("99.96");
+    expect(quantizePriceNumber(98 * 1.02, "0.01", "up")).toBe(99.96);
+    expect(isTickMultiple(98 * 1.02, "0.01")).toBe(true);
+  });
+
+  it("never washes away a genuinely distinct high-precision price", () => {
+    // ~8800 ulps from 1000 — far outside the ~4-ulp noise band. A 12-dp tick
+    // price at magnitude 1000 must survive the wash intact: only sub-ulp
+    // noise snaps, never a real decimal.
+    expect(numberToDecimalString(1000.000000000001)).toBe("1000.000000000001");
+  });
+
+  it("keeps a BTC-scale price tick-valid through the number round-trip (prod 2026-10-14)", () => {
+    // REGRESSION: at BTC magnitude (~84k) `toFixed(12)` re-exposed binary float
+    // noise (`83879.4.toFixed(12)` === "83879.399999999994"), so the exact
+    // integer-modulo validator refused EVERY grid BUY — a price that IS an
+    // exact 0.1 multiple was rejected. The shortest round-trip wash recovers
+    // the clean decimal, so the boundary now accepts it.
+    expect(numberToDecimalString(83879.4)).toBe("83879.4");
+    expect(
+      isTickMultiple(quantizePriceNumber(83879.4, "0.1", "down"), "0.1")
+    ).toBe(true);
+    // The defense-in-depth gate (grid requireTickValid) must not throw on these.
+    expect(() => assertTickValid(83879.4, "0.1")).not.toThrow();
+    expect(() => assertTickValid(84505.4, "0.1")).not.toThrow();
+    // A genuinely off-tick BTC price is still refused (fail-closed intact).
+    expect(isTickMultiple(83879.45, "0.1")).toBe(false);
+  });
+
+  it("recovers the clean decimal at 1e9 scale via shortest round-trip", () => {
+    // The shortest round-trip form (`String(1e9+0.05)`) recovers the intended
+    // decimal, so a coarse tick validates. This is MORE correct than the old
+    // toFixed(12) serialization, which exposed the raw binary
+    // ("1000000000.049999952316") and would have refused a valid price. The
+    // engine's own grid is built at the mark price, far below this ceiling.
+    expect(numberToDecimalString(1_000_000_000.05)).toBe("1000000000.05");
+  });
+
+  it("expands micro-tick exponent notation to plain decimal (Kodiak 1e-7)", () => {
+    // String(1e-7) === "1e-7"; the strict decimal parser rejects exponents, so
+    // numberToDecimalString must expand to "0.0000001" (Kodiak PERP_1000PEPE).
+    expect(numberToDecimalString(1e-7)).toBe("0.0000001");
+    expect(numberToDecimalString(9.9e-7)).toBe("0.00000099");
   });
 
   it("rejects a tick with precision beyond the 12-dp ceiling rather than silently rounding", () => {
