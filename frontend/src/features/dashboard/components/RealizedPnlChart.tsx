@@ -10,28 +10,35 @@ import {
   YAxis,
 } from "recharts";
 import { Activity } from "lucide-react";
+import {
+  toWindowSeries,
+  type PerformanceData,
+} from "../utils/realizedPnlSeries";
 
-export interface PerformanceData {
-  time: string;
-  value: number;
-}
+export type { PerformanceData } from "../utils/realizedPnlSeries";
 
 interface RealizedPnlChartProps {
   data: PerformanceData[];
 }
 
 /**
- * Realized-PnL chart (cumulative, from closed trades).
+ * Realized-PnL chart (change over the selected window, from closed trades).
  *
  * P0: fed by the venue's own trade_pnl LEVEL series (hourly buckets) via
  * `portfolio-venue-pnl` — the same source as the realized card. The old
  * per-trade accumulation from fill rows was flat on Lighter (every row
  * carries realized_pnl "0" by construction); Kodiak keeps that path via
  * `calculatePortfolioPerformance` on real rows.
+ *
+ * Review P2: the series is normalised to the window change before it is drawn
+ * (see `realizedPnlSeries.ts`), so the curve, the headline, the tooltip and
+ * the axis all describe the same quantity instead of the card mixing an
+ * absolute level with a window delta.
  */
 export const RealizedPnlChart = ({ data }: RealizedPnlChartProps) => {
   const points = data ?? [];
-  const chartData = points.map((point, index) => ({
+  // Window-relative points, each still carrying the venue's own level.
+  const chartData = toWindowSeries(points).map((point, index) => ({
     ...point,
     index,
     label: `${point.time} (#${index})`,
@@ -48,8 +55,8 @@ export const RealizedPnlChart = ({ data }: RealizedPnlChartProps) => {
           <Activity className="w-12 h-12 text-textMuted mx-auto mb-4" />
           <p className="text-textMuted">No realized-PnL data</p>
           <p className="text-xs text-textMuted mt-2">
-            Closed trades will build the cumulative realized-PnL curve here (not
-            account equity).
+            Closed trades will build the window&apos;s realized-PnL curve here
+            (not account equity).
           </p>
         </div>
       </div>
@@ -62,8 +69,10 @@ export const RealizedPnlChart = ({ data }: RealizedPnlChartProps) => {
         <p className="text-sm text-textMuted">
           {points.length} data points •{" "}
           <span className={pnlPositive ? "text-success" : "text-danger"}>
-            {pnlPositive ? "+" : ""}$
-            {pnl.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+            {pnlPositive ? "+" : "−"}$
+            {Math.abs(pnl).toLocaleString(undefined, {
+              maximumFractionDigits: 2,
+            })}
           </span>{" "}
           realized
         </p>
@@ -103,16 +112,30 @@ export const RealizedPnlChart = ({ data }: RealizedPnlChartProps) => {
                 if (active && payload && payload.length > 0) {
                   const point = payload[0].payload as PerformanceData & {
                     index: number;
+                    level?: number;
                   };
+                  const windowValue = point.value;
                   return (
                     <div className="glass-card p-3 border border-white/10">
                       <p className="text-sm font-medium">{point.time}</p>
+                      {/* Same definition as the headline: the window change. */}
                       <p className="text-sm text-primary">
-                        Cum. realized PnL: $
-                        {point.value.toLocaleString(undefined, {
+                        {windowValue >= 0 ? "+" : "−"}$
+                        {Math.abs(windowValue).toLocaleString(undefined, {
                           maximumFractionDigits: 2,
-                        })}
+                        })}{" "}
+                        realized
                       </p>
+                      {/* The venue's own cumulative level, for anyone who wants
+                          the absolute figure the curve no longer sits at. */}
+                      {typeof point.level === "number" && (
+                        <p className="text-xs text-textMuted">
+                          Venue level: $
+                          {point.level.toLocaleString(undefined, {
+                            maximumFractionDigits: 2,
+                          })}
+                        </p>
+                      )}
                     </div>
                   );
                 }
