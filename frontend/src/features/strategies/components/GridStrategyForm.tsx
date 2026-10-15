@@ -25,17 +25,24 @@
  * Body-only: `StrategyForm` owns the overlay shell.
  */
 
-import React, { useEffect } from "react";
+import React, { useEffect, useLayoutEffect, useMemo, useState } from "react";
 import { useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
 import { tradingApi } from "../../../infrastructure/api";
+import { marketApi } from "../../../infrastructure/api/market";
+import { accountsApi } from "../../../infrastructure/api/accounts";
+import { useAuth } from "../../auth";
 import { Strategy, StrategyType } from "../../../shared/types";
 import type { GridPreviewInput } from "../../../shared/components/charts/gridPreview";
 import { getStrategyConfig } from "../types/strategies.types";
+import {
+  buildChartSymbolGroups,
+  type ChartSymbolGroup,
+} from "../utils/chartSymbolPicker";
 
 // RHF `valueAsNumber` yields NaN for a left-empty number input; zod must see
 // undefined (absent optional), never NaN ("expected number, received NaN" —
@@ -51,6 +58,10 @@ const emptyToNumber = (value: unknown): number | undefined => {
 
 const gridStrategySchema = z.object({
   name: z.string().min(1, "Strategy name is required").max(100),
+  // Venue pair (migration 026): required, atomic, top-level. Legacy null rows
+  // show "unknown venue" and block save until a pair is chosen.
+  exchange: z.enum(["kodiak", "lighter"], "Choose the venue exchange"),
+  environment: z.enum(["testnet", "mainnet"], "Choose the venue environment"),
   symbol: z.string().min(1, "Trading symbol is required"),
   gridSize: z.number().min(2).max(100).optional(),
   gridRange: z.number().min(1).max(50).optional(),
@@ -63,46 +74,55 @@ const gridStrategySchema = z.object({
 
 type GridStrategyFormData = z.infer<typeof gridStrategySchema>;
 
-// Symbols grouped by the venue that lists them. The two venues use different
-// symbol conventions — Kodiak/Orderly perps are `PERP_<X>_USDC`; Lighter lists
-// bare perp markets (`ETH`) and slash-quoted spot markets (`ETH/USDC`).
-// Strategy creation stays venue-agnostic (the account is only bound at
-// start), but the picker must not let a user silently pick a symbol that
-// only exists on the *other* venue (L20). `kind` labels each option
-// truthfully against the venue's own `market_type` (live orderBooks,
-// testnet 2026-10-12: BTC/SOL/ETH = perp; ETH/USDC, LIT/USDC = spot) —
-// a spot market is a different animal for a grid bot and must not hide in
-// the group. The start gate (`assertSymbolSupported`) remains the
-// authoritative backstop.
-const SYMBOL_GROUPS: {
-  venue: string;
-  symbols: Array<{ value: string; kind: "perp" | "spot" }>;
-}[] = [
-  {
-    venue: "Kodiak / Orderly",
-    symbols: [
-      { value: "PERP_BTC_USDC", kind: "perp" },
-      { value: "PERP_ETH_USDC", kind: "perp" },
-      { value: "PERP_SOL_USDC", kind: "perp" },
-      { value: "PERP_AVAX_USDC", kind: "perp" },
-      { value: "PERP_MATIC_USDC", kind: "perp" },
-      { value: "PERP_LINK_USDC", kind: "perp" },
-    ],
-  },
-  {
-    venue: "Lighter",
-    symbols: [
-      { value: "BTC", kind: "perp" },
-      { value: "SOL", kind: "perp" },
-      { value: "ETH", kind: "perp" },
-      { value: "ETH/USDC", kind: "spot" },
-      { value: "LIT/USDC", kind: "spot" },
-    ],
-  },
-];
+/** Venue-tagged symbol option (encoded `exchange|environment|symbol` value). */
+interface VenueSymbolOption {
+  value: string;
+  label: string;
+  exchange: "kodiak" | "lighter";
+  environment: "testnet" | "mainnet";
+  symbol: string;
+}
 
-const optionLabel = (value: string, kind: "perp" | "spot"): string =>
-  `${value.replace("PERP_", "").replace("_USDC", "")} · ${kind}`;
+const encodeVenueOption = (o: {
+  exchange: string;
+  environment: string;
+  symbol: string;
+}): string => `${o.exchange}|${o.environment}|${o.symbol}`;
+
+const decodeVenueOption = (value: string): VenueSymbolOption | null => {
+  const [exchange, environment, ...rest] = value.split("|");
+  const symbol = rest.join("|");
+  if (!symbol) return null;
+  if (exchange !== "kodiak" && exchange !== "lighter") return null;
+  if (environment !== "testnet" && environment !== "mainnet") return null;
+  return {
+    value,
+    label: symbol.replace("PERP_", "").replace("_USDC", ""),
+    exchange,
+    environment,
+    symbol,
+  };
+};
+
+const flattenGroups = (groups: ChartSymbolGroup[]): VenueSymbolOption[] => {
+  const options: VenueSymbolOption[] = [];
+  for (const group of groups) {
+    for (const symbol of group.symbols) {
+      options.push({
+        value: encodeVenueOption({
+          exchange: group.exchange,
+          environment: group.environment,
+          symbol,
+        }),
+        label: symbol.replace("PERP_", "").replace("_USDC", ""),
+        exchange: group.exchange,
+        environment: group.environment,
+        symbol,
+      });
+    }
+  }
+  return options;
+};
 
 interface GridStrategyFormProps {
   /** Present ⇒ edit mode (always a GRID strategy — enforced by `StrategyForm`). */
@@ -125,10 +145,12 @@ export const GridStrategyForm: React.FC<GridStrategyFormProps> = ({
   onSuccess,
   onPreviewChange,
 }) => {
+  const { user } = useAuth();
   const {
     register,
     handleSubmit,
     control,
+    setValue,
     formState: { errors },
   } = useForm<GridStrategyFormData>({
     resolver: zodResolver(gridStrategySchema),
@@ -136,54 +158,164 @@ export const GridStrategyForm: React.FC<GridStrategyFormProps> = ({
       ? (() => {
           const strategyConfig = getStrategyConfig(strategy);
           if (!strategyConfig || strategyConfig.type !== StrategyType.GRID) {
-            // Defensive: orchestrator only routes GRID rows here; an odd row
-            // still opens with safe blanks rather than another type's fields.
-            return { name: strategy.name };
+            return { name: strategy.name } as GridStrategyFormData;
           }
           const config = strategyConfig.config;
+          const venueStrategy = strategy as Strategy & {
+            exchange?: "kodiak" | "lighter" | null;
+            environment?: "testnet" | "mainnet" | null;
+          };
           return {
             name: strategy.name,
+            exchange: venueStrategy.exchange ?? undefined,
+            environment: venueStrategy.environment ?? undefined,
             symbol: config.symbol,
             gridSize: config.gridSize,
             gridRange: config.gridRange,
             orderQuantity: config.orderQuantity,
             takeProfit: config.takeProfit,
             stopLoss: config.stopLoss,
-          };
+          } as GridStrategyFormData;
         })()
-      : {
-          // The select's FIRST option is what the browser shows selected, so
-          // make it the form's value too: state, DOM and submit then agree,
-          // and the chart preview has a band to draw from the first frame
-          // instead of waiting for the operator to touch the picker.
-          symbol: SYMBOL_GROUPS[0]?.symbols[0]?.value,
+      : ({
+          name: "",
+          exchange: undefined,
+          environment: undefined,
+          symbol: "",
           gridSize: 10,
           gridRange: 5,
           orderQuantity: 1,
-        },
+        } as unknown as GridStrategyFormData),
   });
 
+  // 026: options come from the live venue catalogs over ACTIVE accounts
+  // (same source + grouping as the chart dropdown), never hardcoded.
+  const accountsQuery = useQuery({
+    queryKey: ["exchange-accounts", user?.id],
+    queryFn: () => accountsApi.listAccounts(),
+    enabled: !!user,
+    staleTime: 30 * 1000,
+    refetchOnWindowFocus: false,
+  });
+  const activeVenues = useMemo(() => {
+    const venues: Array<{
+      exchange: "kodiak" | "lighter";
+      environment: "testnet" | "mainnet";
+    }> = [];
+    const seen = new Set<string>();
+    for (const account of accountsQuery.data?.data?.accounts ?? []) {
+      if (account.status !== "ACTIVE") continue;
+      const key = `${account.exchange}:${account.environment}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      venues.push({
+        exchange: account.exchange,
+        environment: account.environment,
+      });
+    }
+    return venues;
+  }, [accountsQuery.data]);
+  const catalogsQuery = useQuery({
+    queryKey: [
+      "form-venue-catalogs",
+      activeVenues.map(v => `${v.exchange}:${v.environment}`),
+    ],
+    queryFn: async () =>
+      Promise.all(
+        activeVenues.map(async venue => {
+          try {
+            const res = await marketApi.getVenueSymbols(venue);
+            return {
+              ...venue,
+              available: res?.data?.available === true,
+              symbols: Array.isArray(res?.data?.symbols)
+                ? (res.data.symbols as string[])
+                : [],
+            };
+          } catch {
+            return { ...venue, available: false, symbols: [] as string[] };
+          }
+        })
+      ),
+    enabled: activeVenues.length > 0,
+    staleTime: 5 * 60 * 1000,
+    refetchOnWindowFocus: false,
+  });
+  const venueGroups = useMemo(
+    () => buildChartSymbolGroups(catalogsQuery.data ?? [], []),
+    [catalogsQuery.data]
+  );
+  const venueOptions = useMemo(() => flattenGroups(venueGroups), [venueGroups]);
+  const [selectedOption, setSelectedOption] = useState<string>("");
+
+  // Default the venue+symbol from the strategy (edit) or the first catalog
+  // option (create) once catalogs resolve.
+  // eslint disable-next-line react-hooks/set-state-in-effect -- setting the
+  // initial venue selection once on mount is the intended default-fill behaviour.
+  useLayoutEffect(() => {
+    if (selectedOption || venueOptions.length === 0) return;
+    if (!strategy) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setSelectedOption(venueOptions[0].value);
+      return;
+    }
+    const venueStrategy = strategy as Strategy & {
+      exchange?: "kodiak" | "lighter" | null;
+      environment?: "testnet" | "mainnet" | null;
+    };
+    const cfg = getStrategyConfig(strategy);
+    const sym = cfg?.type === StrategyType.GRID ? cfg.config.symbol : "";
+    if (venueStrategy.exchange && venueStrategy.environment && sym) {
+      const match = encodeVenueOption({
+        exchange: venueStrategy.exchange,
+        environment: venueStrategy.environment,
+        symbol: sym,
+      });
+      if (venueOptions.some(o => o.value === match)) {
+        setSelectedOption(match);
+        return;
+      }
+    }
+  }, [selectedOption, venueOptions, strategy]);
+
+  // Keep the venue pair + symbol fields in sync with the encoded picker.
+  useEffect(() => {
+    const decoded = selectedOption ? decodeVenueOption(selectedOption) : null;
+    // TEMP DEBUG
+    // eslint disable-next-line no-console
+    //console.error("SYNC EFFECT:", selectedOption, JSON.stringify(decoded));
+    if (!decoded) return;
+    setValue("exchange", decoded.exchange, { shouldValidate: true });
+    setValue("environment", decoded.environment, { shouldValidate: true });
+    setValue("symbol", decoded.symbol, { shouldValidate: true });
+  }, [selectedOption, setValue]);
+
   // F5: publish the live grid geometry so the chart beside this form can draw
-  // the band while the operator types. `useWatch` (not `watch()`) is the
-  // subscription-safe form of this read; the parent's setter is
-  // identity-stable and compares values, so this cannot loop. Absent fields
-  // are reported as undefined — the preview helper then applies the same
-  // defaults the engine's resolver would.
-  const [previewSymbol, previewGridSize, previewGridRange] = useWatch({
+  // the band while the operator types. The venue travels with the preview
+  // (026) — the panel withholds the band when it differs from the chart.
+  const [previewGridSize, previewGridRange] = useWatch({
     control,
-    name: ["symbol", "gridSize", "gridRange"],
+    name: ["gridSize", "gridRange"],
   });
   useEffect(() => {
+    const decoded = selectedOption ? decodeVenueOption(selectedOption) : null;
+    if (!decoded) {
+      onPreviewChange?.(null);
+      return;
+    }
     onPreviewChange?.({
-      symbol: typeof previewSymbol === "string" ? previewSymbol : "",
+      symbol: decoded.symbol,
+      exchange: decoded.exchange,
+      environment: decoded.environment,
       gridSize:
         typeof previewGridSize === "number" ? previewGridSize : undefined,
       gridRange:
         typeof previewGridRange === "number" ? previewGridRange : undefined,
     });
-  }, [previewSymbol, previewGridSize, previewGridRange, onPreviewChange]);
+  }, [selectedOption, previewGridSize, previewGridRange, onPreviewChange]);
 
   const buildConfig = (data: GridStrategyFormData): Record<string, unknown> => {
+    // Geometry only — the venue travels top-level, never inside config.
     const config: Record<string, unknown> = {
       symbol: data.symbol,
       gridSize: data.gridSize,
@@ -200,6 +332,8 @@ export const GridStrategyForm: React.FC<GridStrategyFormProps> = ({
       tradingApi.createStrategy({
         name: data.name,
         type: StrategyType.GRID,
+        exchange: data.exchange,
+        environment: data.environment,
         config: buildConfig(data),
       }),
     onSuccess: response => {
@@ -215,6 +349,8 @@ export const GridStrategyForm: React.FC<GridStrategyFormProps> = ({
       tradingApi.updateStrategy(strategy!.id, {
         name: data.name,
         type: StrategyType.GRID,
+        exchange: data.exchange,
+        environment: data.environment,
         config: buildConfig(data),
       }),
     onSuccess: () => {
@@ -234,6 +370,24 @@ export const GridStrategyForm: React.FC<GridStrategyFormProps> = ({
   };
 
   const isLoading = createMutation.isPending || updateMutation.isPending;
+
+  // 026: legacy-null venue → block edit until a pair is chosen. The form shows
+  // "venue unknown — choose venue" and disables submit until a venue+symbol is
+  // picked (the zod exchange/environment enums already block save).
+  const hasStrategyVenue =
+    strategy !== undefined &&
+    (
+      strategy as Strategy & {
+        exchange?: "kodiak" | "lighter" | null;
+        environment?: "testnet" | "mainnet" | null;
+      }
+    ).exchange != null &&
+    (
+      strategy as Strategy & {
+        exchange?: "kodiak" | "lighter" | null;
+        environment?: "testnet" | "mainnet" | null;
+      }
+    ).environment != null;
 
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="p-6 space-y-6">
@@ -267,26 +421,46 @@ export const GridStrategyForm: React.FC<GridStrategyFormProps> = ({
           </label>
           <select
             id="grid-strategy-symbol"
-            {...register("symbol")}
+            value={selectedOption}
+            onChange={event => setSelectedOption(event.target.value)}
             className="input w-full"
           >
-            {SYMBOL_GROUPS.map(group => (
-              <optgroup key={group.venue} label={group.venue}>
-                {group.symbols.map(({ value, kind }) => (
-                  <option key={value} value={value}>
-                    {optionLabel(value, kind)}
-                  </option>
-                ))}
+            {venueOptions.length === 0 && (
+              <option value="">Loading venue symbols…</option>
+            )}
+            {venueGroups.map(group => (
+              <optgroup key={group.label} label={group.label}>
+                {group.symbols.map(symbol => {
+                  const value = encodeVenueOption({
+                    exchange: group.exchange,
+                    environment: group.environment,
+                    symbol,
+                  });
+                  return (
+                    <option key={value} value={value}>
+                      {symbol.replace("PERP_", "").replace("_USDC", "")}
+                    </option>
+                  );
+                })}
               </optgroup>
             ))}
           </select>
           <p className="text-xs text-text-tertiary mt-1">
-            Pick the symbol from the venue your exchange account uses — the
-            strategy can only start on an account that lists it. · perp =
-            perpetual future, · spot = spot market.
+            Venue + symbol are stored together — the strategy can only start or
+            attach on an account of that venue.
           </p>
           {errors.symbol && (
             <p className="text-danger text-sm mt-1">{errors.symbol.message}</p>
+          )}
+          {(errors.exchange || errors.environment) && (
+            <p className="text-danger text-sm mt-1">
+              {errors.exchange?.message ?? errors.environment?.message}
+            </p>
+          )}
+          {!hasStrategyVenue && strategy !== undefined && (
+            <p className="text-xs text-warning mt-1">
+              Venue unknown — choose venue.
+            </p>
           )}
         </div>
       </div>
@@ -443,7 +617,7 @@ export const GridStrategyForm: React.FC<GridStrategyFormProps> = ({
         </button>
         <button
           type="submit"
-          disabled={isLoading}
+          disabled={isLoading || (!hasStrategyVenue && strategy !== undefined)}
           className="btn-primary flex items-center gap-2"
         >
           {isLoading && <Loader2 className="w-4 h-4 animate-spin" />}

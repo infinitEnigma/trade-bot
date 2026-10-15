@@ -31,6 +31,23 @@ export class VenueSymbolError extends Error {
   }
 }
 
+/**
+ * Catalog-unavailable failure (migration 026). Venue-bound strategies fail
+ * CLOSED when symbol support cannot be verified: a matching venue does not
+ * prove the symbol is listed there. Legacy null-venue rows keep the
+ * fail-open `assertSymbolSupported` path. Carries HTTP 503 semantics.
+ */
+export class VenueCatalogUnavailableError extends Error {
+  readonly statusCode = 503;
+
+  constructor(exchange: string, environment: string) {
+    super(
+      `Venue catalog for ${exchange} (${environment}) is unavailable - cannot verify symbol support. Try again shortly.`
+    );
+    this.name = "VenueCatalogUnavailableError";
+  }
+}
+
 async function fetchJson(url: string): Promise<unknown> {
   const res = await fetch(url, {
     signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
@@ -92,6 +109,9 @@ export async function listVenueSymbols(
  * Reject (HTTP 400) when `symbol` is not listed on `(exchange, environment)`.
  * Resolves when the symbol is listed, when the catalog is unavailable
  * (fail-open — the engine remains authoritative), or for unknown venues.
+ *
+ * Legacy path: venue-less (null) strategies only. Venue-bound strategies
+ * use `assertSymbolSupportedStrict` (fail-closed on unavailable catalog).
  */
 export async function assertSymbolSupported(
   symbol: string,
@@ -103,6 +123,59 @@ export async function assertSymbolSupported(
   if (symbols.some(listed => listed.toUpperCase() === symbol.toUpperCase())) {
     return;
   }
+  throw buildVenueSymbolError(symbol, exchange, environment, symbols);
+}
+
+/**
+ * Strict variant for venue-bound strategies (migration 026): the catalog
+ * must be available AND list the symbol. Unavailable catalog → 503
+ * `VenueCatalogUnavailableError` (fail-closed); unlisted symbol → 400
+ * `VenueSymbolError`. No network I/O may hold a DB row lock — callers
+ * resolve this BEFORE opening the admission transaction, then revalidate
+ * the locked row against the already-fetched result.
+ */
+export async function assertSymbolSupportedStrict(
+  symbol: string,
+  exchange: string,
+  environment: string
+): Promise<void> {
+  const symbols = await listVenueSymbols(exchange, environment);
+  if (!symbols) throw new VenueCatalogUnavailableError(exchange, environment);
+  if (symbols.some(listed => listed.toUpperCase() === symbol.toUpperCase())) {
+    return;
+  }
+  throw buildVenueSymbolError(symbol, exchange, environment, symbols);
+}
+
+/**
+ * Revalidate inside the admission tx against the already-fetched catalog
+ * (no fetch inside the tx). `catalog` is the `listVenueSymbols` result from
+ * Phase A: `null` = unavailable, array = available snapshot.
+ */
+export function revalidateSymbolAgainstCatalog(
+  symbol: string,
+  exchange: string,
+  environment: string,
+  catalog: string[] | null,
+  opts: { strict: boolean }
+): void {
+  if (catalog === null) {
+    if (opts.strict)
+      throw new VenueCatalogUnavailableError(exchange, environment);
+    return;
+  }
+  if (catalog.some(listed => listed.toUpperCase() === symbol.toUpperCase())) {
+    return;
+  }
+  throw buildVenueSymbolError(symbol, exchange, environment, catalog);
+}
+
+function buildVenueSymbolError(
+  symbol: string,
+  exchange: string,
+  environment: string,
+  symbols: string[]
+): VenueSymbolError {
   const sorted = [...symbols].sort();
   const shown = sorted.slice(0, MAX_LISTED).join(", ");
   const more =

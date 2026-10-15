@@ -54,6 +54,13 @@ interface BotControlsProps {
    * start-time `VenueSymbolError` reject into proactive UI guidance.
    */
   strategySymbol?: string;
+  /**
+   * The strategy's stored venue (migration 026). The picker only lists
+   * ACTIVE accounts on this pair; absent = legacy unknown (all pairs).
+   */
+  strategyExchange?: "kodiak" | "lighter" | null;
+  /** Paired with strategyExchange (migration 026). */
+  strategyEnvironment?: "testnet" | "mainnet" | null;
   bot?: BotInstance;
   onStatusChange: () => void;
 }
@@ -196,6 +203,8 @@ const AccountSizePicker: React.FC<{
   symbolMismatch?: boolean;
   /** X2: true while the venue catalog is being checked (suppresses the warning). */
   symbolCheckPending?: boolean;
+  /** 026: the strategy's stored pair (drives the empty-state copy). */
+  strategyVenueLabel?: string | null;
 }> = ({
   accounts,
   isLoading,
@@ -205,6 +214,7 @@ const AccountSizePicker: React.FC<{
   onNotionalChange,
   symbolMismatch,
   symbolCheckPending,
+  strategyVenueLabel,
 }) => {
   if (isLoading) {
     return (
@@ -220,8 +230,9 @@ const AccountSizePicker: React.FC<{
       <div className="flex items-start gap-2 p-3 rounded-lg bg-warning/10 border border-warning/20">
         <AlertTriangle className="w-4 h-4 text-warning shrink-0 mt-0.5" />
         <p className="text-xs text-warning">
-          No verified exchange account. Connect and verify one in Settings
-          before starting a bot.
+          {strategyVenueLabel
+            ? `No verified ${strategyVenueLabel} account. Connect and verify one in Settings before starting this strategy.`
+            : "No verified exchange account. Connect and verify one in Settings before starting a bot."}
         </p>
       </div>
     );
@@ -295,6 +306,8 @@ const AccountSizePicker: React.FC<{
 export const BotControls: React.FC<BotControlsProps> = ({
   strategyId,
   strategySymbol,
+  strategyExchange,
+  strategyEnvironment,
   bot,
   onStatusChange,
 }) => {
@@ -327,8 +340,16 @@ export const BotControls: React.FC<BotControlsProps> = ({
     staleTime: 30 * 1000,
   });
 
+  // 026: the picker only lists ACTIVE accounts on the strategy's stored
+  // pair. Legacy null venue → all pairs (today's behaviour). Zero matches →
+  // "No verified <venue> account" instead of every account + a late warning.
+  const hasStrategyVenue = !!strategyExchange && !!strategyEnvironment;
   const activeAccounts = (accountsQuery.data?.data?.accounts ?? []).filter(
-    account => account.status === "ACTIVE"
+    account =>
+      account.status === "ACTIVE" &&
+      (!hasStrategyVenue ||
+        (account.exchange === strategyExchange &&
+          account.environment === strategyEnvironment))
   );
 
   // One ACTIVE account leaves no choice, so default to it (derived during
@@ -376,11 +397,16 @@ export const BotControls: React.FC<BotControlsProps> = ({
     );
 
   const parsedAmount = Number(notionalAmount);
+  const pairMatches =
+    !hasStrategyVenue ||
+    (selectedAccount?.exchange === strategyExchange &&
+      selectedAccount?.environment === strategyEnvironment);
   const canStart =
     !!effectiveAccountId &&
     Number.isFinite(parsedAmount) &&
     parsedAmount >= MIN_NOTIONAL_AMOUNT &&
-    !symbolMismatch;
+    !symbolMismatch &&
+    pairMatches;
 
   // Invalidate query cache when mutations succeed
   const invalidateCache = () => {
@@ -555,6 +581,11 @@ export const BotControls: React.FC<BotControlsProps> = ({
           onNotionalChange={setNotionalAmount}
           symbolMismatch={symbolMismatch}
           symbolCheckPending={symbolCheckPending}
+          strategyVenueLabel={
+            hasStrategyVenue && strategyExchange && strategyEnvironment
+              ? `${strategyExchange === "kodiak" ? "Kodiak" : "Lighter"} ${strategyEnvironment}`
+              : null
+          }
         />
         <ActionButton
           icon={<Play className="w-4 h-4" />}

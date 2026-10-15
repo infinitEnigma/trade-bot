@@ -282,6 +282,17 @@ export const StrategyWorkspace: React.FC<StrategyWorkspaceProps> = ({
         <BotControls
           strategyId={strategy.id}
           strategySymbol={strategyConfig?.config.symbol}
+          strategyExchange={
+            (strategy as unknown as { exchange?: "kodiak" | "lighter" | null })
+              .exchange
+          }
+          strategyEnvironment={
+            (
+              strategy as unknown as {
+                environment?: "testnet" | "mainnet" | null;
+              }
+            ).environment
+          }
           bot={bot}
           onStatusChange={onBotStatusChange}
         />

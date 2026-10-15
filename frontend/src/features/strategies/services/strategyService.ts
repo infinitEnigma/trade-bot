@@ -43,10 +43,16 @@ export class StrategyService {
    */
   async createStrategy(data: StrategyFormData): Promise<Strategy | null> {
     try {
+      const cfg = data.config as unknown as {
+        config?: Record<string, unknown>;
+      } & Record<string, unknown>;
+      const geometry = (cfg.config ?? cfg) as Record<string, unknown>;
       const response = await tradingApi.createStrategy({
         name: data.name,
         type: data.type,
-        config: data.config,
+        exchange: data.exchange,
+        environment: data.environment,
+        config: geometry,
       });
 
       if (response.success) {
@@ -67,24 +73,33 @@ export class StrategyService {
     data: Partial<StrategyFormData>
   ): Promise<Strategy | null> {
     try {
+      const cfg = (data.config ?? {
+        type: StrategyType.GRID,
+        config: {
+          symbol: "",
+          leverage: 1,
+          gridSize: 10,
+          gridRange: 5,
+          orderQuantity: 1,
+        },
+      }) as unknown as { config?: Record<string, unknown> } & Record<
+        string,
+        unknown
+      >;
+      const geometry = (cfg.config ?? cfg) as Record<string, unknown>;
       const updateData: {
         name: string;
         type: StrategyType;
+        exchange: "kodiak" | "lighter";
+        environment: "testnet" | "mainnet";
         config: Record<string, unknown>;
         active?: boolean;
       } = {
         name: data.name || "",
         type: data.type || StrategyType.GRID,
-        config: data.config || {
-          type: StrategyType.GRID,
-          config: {
-            symbol: "",
-            leverage: 1,
-            gridSize: 10,
-            gridRange: 5,
-            orderQuantity: 1,
-          },
-        },
+        exchange: data.exchange || "lighter",
+        environment: data.environment || "testnet",
+        config: geometry,
       };
 
       if (data.active !== undefined) updateData.active = data.active;

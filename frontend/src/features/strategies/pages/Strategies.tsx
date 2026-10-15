@@ -251,16 +251,26 @@ const Strategies: React.FC = React.memo(() => {
   });
   const catalogs: VenueCatalog[] = catalogsQuery.data ?? [];
 
-  // Phase 3.1: the chart follows the SELECTED strategy (venue by catalog
-  // membership; orphan/fallback rules unchanged — see
-  // workspaceChartSelection.ts); the operator's pick wins only while that
-  // strategy stays selected (P1 pattern, no effect).
+  // Phase 3.1: the chart follows the SELECTED strategy — stored venue first
+  // (migration 026), catalog-membership/orphan/fallback for legacy null rows
+  // (see workspaceChartSelection.ts); the operator's pick wins only while
+  // that strategy stays selected (P1 pattern, no effect).
   const chartSelection = resolveWorkspaceChartSelection(
     catalogs,
     selectedStrategy
       ? {
           id: selectedStrategy.id,
           symbol: getStrategyConfig(selectedStrategy)?.config.symbol,
+          exchange: (
+            selectedStrategy as Strategy & {
+              exchange?: "kodiak" | "lighter" | null;
+            }
+          ).exchange,
+          environment: (
+            selectedStrategy as Strategy & {
+              environment?: "testnet" | "mainnet" | null;
+            }
+          ).environment,
         }
       : null,
     chartSelectionOverride
@@ -360,6 +370,8 @@ const Strategies: React.FC = React.memo(() => {
   const handlePreviewChange = useCallback((next: GridPreviewInput | null) => {
     setPreviewGrid(prev =>
       prev?.symbol === next?.symbol &&
+      prev?.exchange === next?.exchange &&
+      prev?.environment === next?.environment &&
       prev?.gridSize === next?.gridSize &&
       prev?.gridRange === next?.gridRange
         ? prev
@@ -668,6 +680,20 @@ const Strategies: React.FC = React.memo(() => {
                   strategyId={startPromptStrategy.id}
                   strategySymbol={
                     getStrategyConfig(startPromptStrategy)?.config.symbol
+                  }
+                  strategyExchange={
+                    (
+                      startPromptStrategy as unknown as {
+                        exchange?: "kodiak" | "lighter" | null;
+                      }
+                    ).exchange
+                  }
+                  strategyEnvironment={
+                    (
+                      startPromptStrategy as unknown as {
+                        environment?: "testnet" | "mainnet" | null;
+                      }
+                    ).environment
                   }
                   onStatusChange={() => {
                     queryClient.invalidateQueries({

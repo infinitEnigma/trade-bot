@@ -72,6 +72,8 @@ describe("tradingApi", () => {
         const strategyData = {
           name: "New Strategy",
           type: "trend",
+          exchange: "lighter" as const,
+          environment: "testnet" as const,
           config: { parameter: 10 },
         };
         const mockResponse = {
@@ -95,6 +97,8 @@ describe("tradingApi", () => {
         const strategyData = {
           name: "Updated Strategy",
           type: "trend",
+          exchange: "lighter" as const,
+          environment: "testnet" as const,
           config: { parameter: 20 },
         };
         const mockResponse = {

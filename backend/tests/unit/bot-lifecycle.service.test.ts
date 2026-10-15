@@ -1449,11 +1449,22 @@ describe("createAndStart venue symbol gate (L20)", () => {
   };
 
   /** Route each query by prefix: strategy/insert lookups + the start() flow. */
-  const mockFlow = (symbol: string | null) =>
+  const mockFlow = (symbol: string | null, venue?: { exchange: string | null; environment: string | null }) =>
     mockQuery.mockImplementation((sql: string) => {
       const text = String(sql);
       if (text.startsWith("SELECT id FROM strategies")) {
         return Promise.resolve({ rows: [{ id: "strat-1" }] });
+      }
+      if (text.startsWith("SELECT exchange, environment, config FROM strategies")) {
+        return Promise.resolve({
+          rows: [
+            {
+              exchange: venue?.exchange ?? null,
+              environment: venue?.environment ?? null,
+              config: symbol ? { symbol } : {},
+            },
+          ],
+        });
       }
       if (text.startsWith("SELECT config FROM strategies")) {
         return Promise.resolve({
@@ -1549,6 +1560,7 @@ describe("createAndStart venue symbol gate (L20)", () => {
   });
 
   it("fails open (creates the bot) when the venue catalog cannot be fetched", async () => {
+    // Legacy null-venue row: fail-open preserved.
     mockFlow("PERP_BTC_USDC");
     global.fetch = jest.fn(() =>
       Promise.reject(new Error("venue down"))
@@ -1562,6 +1574,39 @@ describe("createAndStart venue symbol gate (L20)", () => {
     );
 
     expect(result.botId).toBe("bot-1");
+  });
+
+  it("503s a venue-bound row when the catalog is unavailable (fail-closed)", async () => {
+    mockFlow("BTC", { exchange: "lighter", environment: "testnet" });
+    global.fetch = jest.fn(() =>
+      Promise.reject(new Error("venue down"))
+    ) as unknown as typeof fetch;
+
+    await expect(
+      service.createAndStart("user-1", "strat-1", 1000, "acc-1")
+    ).rejects.toMatchObject({ statusCode: 503 });
+
+    expect(mockQuery).not.toHaveBeenCalledWith(
+      expect.stringContaining("INSERT INTO bot_instances"),
+      expect.anything()
+    );
+  });
+
+  it("400s a venue-bound strategy on a foreign-venue account with no session row", async () => {
+    mockFlow("BTC", { exchange: "kodiak", environment: "testnet" });
+    global.fetch = jest.fn(() => lighterCatalog()) as unknown as typeof fetch;
+
+    await expect(
+      service.createAndStart("user-1", "strat-1", 1000, "acc-1")
+    ).rejects.toMatchObject({
+      statusCode: 400,
+      message: expect.stringContaining("does not match account"),
+    });
+
+    expect(mockQuery).not.toHaveBeenCalledWith(
+      expect.stringContaining("INSERT INTO bot_instances"),
+      expect.anything()
+    );
   });
 
   // D2 sessions: the initial run is attached inside createAndStart.
@@ -1784,6 +1829,11 @@ describe("BotLifecycleService F1 notional admission", () => {
       if (text.startsWith("SELECT id FROM strategies")) {
         return Promise.resolve({ rows: [{ id: "strat-2" }] });
       }
+      if (text.startsWith("SELECT exchange, environment, config FROM strategies")) {
+        return Promise.resolve({
+          rows: [{ exchange: null, environment: null, config: {} }],
+        });
+      }
       if (text.includes("SUM(notional_amount)")) {
         return Promise.resolve({ rows: [{ total: "400" }] });
       }
@@ -1819,6 +1869,11 @@ describe("BotLifecycleService F1 notional admission", () => {
       }
       if (text.startsWith("SELECT config FROM strategies")) {
         return Promise.resolve({ rows: [{ config: {} }] });
+      }
+      if (text.startsWith("SELECT exchange, environment, config FROM strategies")) {
+        return Promise.resolve({
+          rows: [{ exchange: null, environment: null, config: {} }],
+        });
       }
       if (text.includes("SUM(notional_amount)")) {
         return Promise.resolve({ rows: [{ total: "400" }] });
@@ -1900,6 +1955,81 @@ describe("BotLifecycleService F1 notional admission", () => {
     );
   });
 
+  it("attachStrategyRun() 400s a Kodiak strategy onto a live Lighter session with no run", async () => {
+    service.setSessionCapProvider({
+      getAdmissionSnapshot: async () => ({ cap: 5000, existingExposure: 0 }),
+    });
+    mockAccountAdapter.getAccountWithSecret.mockResolvedValue({
+      ...kodiakAccount,
+      exchange: "lighter",
+      environment: "testnet",
+    });
+    mockQuery.mockImplementation((sql: string) => {
+      const text = String(sql);
+      if (text.startsWith("SELECT id, user_id")) {
+        return Promise.resolve({ rows: [attachBotRow] });
+      }
+      if (text.startsWith("SELECT id FROM strategies")) {
+        return Promise.resolve({ rows: [{ id: "strat-2" }] });
+      }
+      if (text.startsWith("SELECT exchange, environment, config FROM strategies")) {
+        return Promise.resolve({
+          rows: [
+            {
+              exchange: "kodiak",
+              environment: "testnet",
+              config: { symbol: "PERP_BTC_USDC" },
+            },
+          ],
+        });
+      }
+      if (text.includes("FROM strategy_runs")) {
+        return Promise.resolve({ rows: [] });
+      }
+      return okResult();
+    });
+
+    await expect(
+      service.attachStrategyRun("bot-1", "user-1", "strat-2", 200)
+    ).rejects.toMatchObject({
+      statusCode: 400,
+      message: expect.stringContaining("does not match account"),
+    });
+    expect(mockQuery).not.toHaveBeenCalledWith(
+      expect.stringContaining("INSERT INTO strategy_runs"),
+      expect.anything()
+    );
+  });
+
+  it("attachStrategyRun() 400s when the session has no verifiable bound account", async () => {
+    service.setSessionCapProvider({
+      getAdmissionSnapshot: async () => ({ cap: 5000, existingExposure: 0 }),
+    });
+    mockAccountAdapter.getAccountWithSecret.mockResolvedValue(null);
+    const unboundBot = { ...attachBotRow, exchange_account_id: null };
+    mockQuery.mockImplementation((sql: string) => {
+      const text = String(sql);
+      if (text.startsWith("SELECT id, user_id")) {
+        return Promise.resolve({ rows: [unboundBot] });
+      }
+      if (text.startsWith("SELECT id FROM strategies")) {
+        return Promise.resolve({ rows: [{ id: "strat-2" }] });
+      }
+      if (text.includes("FROM strategy_runs")) {
+        return Promise.resolve({ rows: [] });
+      }
+      return okResult();
+    });
+
+    await expect(
+      service.attachStrategyRun("bot-1", "user-1", "strat-2", 200)
+    ).rejects.toMatchObject({ statusCode: 400 });
+    expect(mockQuery).not.toHaveBeenCalledWith(
+      expect.stringContaining("INSERT INTO strategy_runs"),
+      expect.anything()
+    );
+  });
+
   it("attachStrategyRun() 409s when exposure + pending + incoming exceeds the cap (guard re-check)", async () => {
     service.setSessionCapProvider({
       getAdmissionSnapshot: async () => ({ cap: 1000, existingExposure: 500 }),
@@ -1911,6 +2041,11 @@ describe("BotLifecycleService F1 notional admission", () => {
       }
       if (text.startsWith("SELECT id FROM strategies")) {
         return Promise.resolve({ rows: [{ id: "strat-2" }] });
+      }
+      if (text.startsWith("SELECT exchange, environment, config FROM strategies")) {
+        return Promise.resolve({
+          rows: [{ exchange: null, environment: null, config: {} }],
+        });
       }
       if (text.includes("SUM(notional_amount)")) {
         return Promise.resolve({ rows: [{ total: "400" }] });
@@ -1946,6 +2081,11 @@ describe("BotLifecycleService F1 notional admission", () => {
       }
       if (text.startsWith("SELECT config FROM strategies")) {
         return Promise.resolve({ rows: [{ config: {} }] });
+      }
+      if (text.startsWith("SELECT exchange, environment, config FROM strategies")) {
+        return Promise.resolve({
+          rows: [{ exchange: null, environment: null, config: {} }],
+        });
       }
       if (text.includes("SUM(notional_amount)")) {
         return Promise.resolve({ rows: [{ total: "400" }] });
@@ -1994,6 +2134,11 @@ describe("BotLifecycleService F1 notional admission", () => {
               if (t.includes("SELECT id FROM bot_instances")) {
                 return Promise.resolve({ rows: [{ id: "bot-1" }] });
               }
+              if (t.includes("FROM strategies WHERE id")) {
+                return Promise.resolve({
+                  rows: [{ exchange: null, environment: null, config: {} }],
+                });
+              }
               if (t.includes("SUM(notional_amount)")) {
                 return Promise.resolve({
                   rows: [{ total: String(attachedTotal) }],
@@ -2024,6 +2169,11 @@ describe("BotLifecycleService F1 notional admission", () => {
       }
       if (text.startsWith("SELECT id FROM strategies")) {
         return Promise.resolve({ rows: [{ id: "strat-2" }] });
+      }
+      if (text.startsWith("SELECT exchange, environment, config FROM strategies")) {
+        return Promise.resolve({
+          rows: [{ exchange: null, environment: null, config: {} }],
+        });
       }
       return Promise.resolve({ rows: [], rowCount: 1 });
     });

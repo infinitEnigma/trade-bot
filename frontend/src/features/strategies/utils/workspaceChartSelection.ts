@@ -31,6 +31,10 @@ export interface ChartBoundStrategy {
   id: string;
   /** Raw config symbol (`""` when absent → falls back to the BTC rules). */
   symbol?: string;
+  /** Stored venue (migration 026). Present → wins over catalog membership. */
+  exchange?: "kodiak" | "lighter" | null;
+  /** Stored environment (migration 026). Paired with exchange. */
+  environment?: "testnet" | "mainnet" | null;
 }
 
 export function resolveWorkspaceChartSelection(
@@ -38,9 +42,14 @@ export function resolveWorkspaceChartSelection(
   strategy: ChartBoundStrategy | null,
   override: ChartSelectionOverride | null
 ): ChartSelection {
+  const venue =
+    strategy?.exchange && strategy?.environment
+      ? { exchange: strategy.exchange, environment: strategy.environment }
+      : null;
   const defaultSelection = resolveChartSelection(
     catalogs,
-    strategy?.symbol ? [strategy.symbol] : []
+    strategy?.symbol ? [strategy.symbol] : [],
+    venue
   );
   if (strategy && override && override.strategyId === strategy.id) {
     return override.selection;

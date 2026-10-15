@@ -38,6 +38,7 @@ jest.mock("../../../src/infrastructure/dependency-injection.container", () => ({
       createStrategy: jest.fn(),
       getStrategy: jest.fn(),
       updateStrategy: jest.fn(),
+      updateStrategyGuarded: jest.fn(),
       deleteStrategy: jest.fn(),
       getStrategyPerformance: jest.fn(),
     },
@@ -135,7 +136,14 @@ describe("Strategies Controller", () => {
           id: "strategy-1",
           name: "Grid Trading BTC",
           type: "GRID",
-          config: { symbol: "PERP_BTC_USDC", gridSize: 10, gridRange: 5 },
+          exchange: "kodiak",
+          environment: "mainnet",
+          config: {
+            symbol: "PERP_BTC_USDC",
+            gridSize: 10,
+            gridRange: 5,
+            orderQuantity: 1,
+          },
           userId: "user-123",
           active: true,
           createdAt: new Date().toISOString(),
@@ -153,7 +161,14 @@ describe("Strategies Controller", () => {
           .send({
             name: "Grid Trading BTC",
             type: "GRID",
-            config: { symbol: "PERP_BTC_USDC", gridSize: 10, gridRange: 5 },
+            exchange: "kodiak",
+            environment: "mainnet",
+            config: {
+              symbol: "PERP_BTC_USDC",
+              gridSize: 10,
+              gridRange: 5,
+              orderQuantity: 1,
+            },
           })
           .expect(201);
 
@@ -163,7 +178,12 @@ describe("Strategies Controller", () => {
             id: "strategy-1",
             name: "Grid Trading BTC",
             type: "GRID",
-            config: { symbol: "PERP_BTC_USDC", gridSize: 10, gridRange: 5 },
+            config: {
+              symbol: "PERP_BTC_USDC",
+              gridSize: 10,
+              gridRange: 5,
+              orderQuantity: 1,
+            },
             userId: "user-123",
             active: true,
           })
@@ -173,9 +193,86 @@ describe("Strategies Controller", () => {
           expect.objectContaining({
             name: "Grid Trading BTC",
             type: "GRID",
-            config: { symbol: "PERP_BTC_USDC", gridSize: 10, gridRange: 5 },
+            exchange: "kodiak",
+            environment: "mainnet",
+            config: {
+              symbol: "PERP_BTC_USDC",
+              gridSize: 10,
+              gridRange: 5,
+              orderQuantity: 1,
+            },
           })
         );
+      });
+
+      it("should 400 when the venue pair is missing, and create no row", async () => {
+        const diContainer =
+          require("../../../src/infrastructure/dependency-injection.container").diContainer;
+
+        const response = await request(app)
+          .post("/api/strategies")
+          .send({
+            name: "Grid Trading BTC",
+            type: "GRID",
+            config: {
+              symbol: "PERP_BTC_USDC",
+              gridSize: 10,
+              gridRange: 5,
+              orderQuantity: 1,
+            },
+          })
+          .expect(400);
+
+        expect(response.body.success).toBe(false);
+        expect(diContainer.strategyService.createStrategy).not.toHaveBeenCalled();
+      });
+
+      it("should 400 when only one of the venue pair is supplied", async () => {
+        const diContainer =
+          require("../../../src/infrastructure/dependency-injection.container").diContainer;
+
+        const response = await request(app)
+          .post("/api/strategies")
+          .send({
+            name: "Grid Trading BTC",
+            type: "GRID",
+            exchange: "kodiak",
+            config: {
+              symbol: "PERP_BTC_USDC",
+              gridSize: 10,
+              gridRange: 5,
+              orderQuantity: 1,
+            },
+          })
+          .expect(400);
+
+        expect(response.body.success).toBe(false);
+        expect(diContainer.strategyService.createStrategy).not.toHaveBeenCalled();
+      });
+
+      it("should 400 when the venue is smuggled inside config", async () => {
+        const diContainer =
+          require("../../../src/infrastructure/dependency-injection.container").diContainer;
+
+        const response = await request(app)
+          .post("/api/strategies")
+          .send({
+            name: "Grid Trading BTC",
+            type: "GRID",
+            exchange: "kodiak",
+            environment: "mainnet",
+            config: {
+              symbol: "PERP_BTC_USDC",
+              gridSize: 10,
+              gridRange: 5,
+              orderQuantity: 1,
+              exchange: "lighter",
+            },
+          })
+          .expect(400);
+
+        expect(response.body.success).toBe(false);
+        expect(diContainer.strategyService.createStrategy).not.toHaveBeenCalled();
       });
 
       it("should validate input before creating strategy", async () => {
@@ -204,7 +301,14 @@ describe("Strategies Controller", () => {
           .send({
             name: "Grid Trading BTC",
             type: "GRID",
-            config: { symbol: "PERP_BTC_USDC", gridSize: 10, gridRange: 5 },
+            exchange: "kodiak",
+            environment: "mainnet",
+            config: {
+              symbol: "PERP_BTC_USDC",
+              gridSize: 10,
+              gridRange: 5,
+              orderQuantity: 1,
+            },
           })
           .expect(500);
 
@@ -302,12 +406,21 @@ describe("Strategies Controller", () => {
     });
 
     describe("PUT /api/strategies/:id", () => {
+      const fullGrid = (
+        symbol: string,
+        gridSize = 10,
+        gridRange = 5,
+        orderQuantity = 1
+      ) => ({ symbol, gridSize, gridRange, orderQuantity });
+
       it("should update strategy", async () => {
         const existingStrategy = {
           id: "strategy-1",
           name: "Grid Trading BTC",
           type: "GRID",
-          config: { symbol: "PERP_BTC_USDC", gridSize: 10, gridRange: 5 },
+          exchange: "kodiak",
+          environment: "mainnet",
+          config: fullGrid("PERP_BTC_USDC"),
           userId: "user-123",
           active: true,
           createdAt: new Date().toISOString(),
@@ -318,7 +431,14 @@ describe("Strategies Controller", () => {
           id: "strategy-1",
           name: "Updated Grid Trading BTC",
           type: "GRID",
-          config: { symbol: "PERP_BTC_USDC", gridSize: 15, gridRange: 8 },
+          exchange: "kodiak",
+          environment: "mainnet",
+          config: {
+            symbol: "PERP_BTC_USDC",
+            gridSize: 15,
+            gridRange: 8,
+            orderQuantity: 1,
+          },
           userId: "user-123",
           active: true,
           createdAt: new Date().toISOString(),
@@ -330,7 +450,10 @@ describe("Strategies Controller", () => {
         diContainer.strategyService.getStrategy.mockResolvedValue(
           existingStrategy
         );
-        diContainer.strategyService.updateStrategy.mockResolvedValue(
+        diContainer.strategyService.updateStrategyGuarded.mockResolvedValue(
+          updatedStrategy
+        );
+        diContainer.strategyService.getStrategy.mockResolvedValue(
           updatedStrategy
         );
 
@@ -339,7 +462,14 @@ describe("Strategies Controller", () => {
           .send({
             name: "Updated Grid Trading BTC",
             type: "GRID",
-            config: { symbol: "PERP_BTC_USDC", gridSize: 15, gridRange: 8 },
+            exchange: "kodiak",
+            environment: "mainnet",
+            config: {
+              symbol: "PERP_BTC_USDC",
+              gridSize: 15,
+              gridRange: 8,
+              orderQuantity: 1,
+            },
           })
           .expect(200);
 
@@ -349,7 +479,6 @@ describe("Strategies Controller", () => {
             id: "strategy-1",
             name: "Updated Grid Trading BTC",
             type: "GRID",
-            config: { symbol: "PERP_BTC_USDC", gridSize: 15, gridRange: 8 },
             userId: "user-123",
             active: true,
           })
@@ -357,14 +486,58 @@ describe("Strategies Controller", () => {
         expect(diContainer.strategyService.getStrategy).toHaveBeenCalledWith(
           "strategy-1"
         );
-        expect(diContainer.strategyService.updateStrategy).toHaveBeenCalledWith(
+        expect(
+          diContainer.strategyService.updateStrategyGuarded
+        ).toHaveBeenCalledWith(
           "strategy-1",
           expect.objectContaining({
             name: "Updated Grid Trading BTC",
             type: "GRID",
-            config: { symbol: "PERP_BTC_USDC", gridSize: 15, gridRange: 8 },
+            exchange: "kodiak",
+            environment: "mainnet",
           })
         );
+      });
+
+      it("should 409 when the guarded update reports a live run", async () => {
+        const existingStrategy = {
+          id: "strategy-1",
+          name: "Grid Trading BTC",
+          type: "GRID",
+          exchange: "kodiak",
+          environment: "mainnet",
+          config: fullGrid("PERP_BTC_USDC"),
+          userId: "user-123",
+          active: true,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+        const diContainer =
+          require("../../../src/infrastructure/dependency-injection.container").diContainer;
+        diContainer.strategyService.getStrategy.mockResolvedValue(
+          existingStrategy
+        );
+        const liveError = new Error(
+          "Strategy cannot be edited while live: run run-1 is RUNNING."
+        );
+        (liveError as Error & { statusCode?: number }).statusCode = 409;
+        diContainer.strategyService.updateStrategyGuarded.mockRejectedValue(
+          liveError
+        );
+
+        const response = await request(app)
+          .put("/api/strategies/strategy-1")
+          .send({
+            name: "Grid Trading BTC",
+            type: "GRID",
+            exchange: "lighter",
+            environment: "testnet",
+            config: fullGrid("BTC"),
+          })
+          .expect(409);
+
+        expect(response.body.success).toBe(false);
+        expect(response.body.error).toContain("while live");
       });
 
       it("should validate input before updating strategy", async () => {
@@ -408,7 +581,9 @@ describe("Strategies Controller", () => {
           .send({
             name: "Updated Grid Trading BTC",
             type: "GRID",
-            config: { symbol: "PERP_BTC_USDC", gridSize: 15, gridRange: 8 },
+            exchange: "kodiak",
+            environment: "mainnet",
+            config: fullGrid("PERP_BTC_USDC", 15, 8),
           })
           .expect(404);
 
@@ -420,7 +595,9 @@ describe("Strategies Controller", () => {
           id: "strategy-1",
           name: "Grid Trading BTC",
           type: "GRID",
-          config: { symbol: "PERP_BTC_USDC", gridSize: 10, gridRange: 5 },
+          exchange: "kodiak",
+          environment: "mainnet",
+          config: fullGrid("PERP_BTC_USDC"),
           userId: "another-user",
           active: true,
           createdAt: new Date().toISOString(),
@@ -436,7 +613,9 @@ describe("Strategies Controller", () => {
           .send({
             name: "Updated Grid Trading BTC",
             type: "GRID",
-            config: { symbol: "PERP_BTC_USDC", gridSize: 15, gridRange: 8 },
+            exchange: "kodiak",
+            environment: "mainnet",
+            config: fullGrid("PERP_BTC_USDC", 15, 8),
           })
           .expect(404);
 
@@ -448,7 +627,9 @@ describe("Strategies Controller", () => {
           id: "strategy-1",
           name: "Grid Trading BTC",
           type: "GRID",
-          config: { symbol: "PERP_BTC_USDC", gridSize: 10, gridRange: 5 },
+          exchange: "kodiak",
+          environment: "mainnet",
+          config: fullGrid("PERP_BTC_USDC"),
           userId: "user-123",
           active: true,
           createdAt: new Date().toISOString(),
@@ -460,7 +641,7 @@ describe("Strategies Controller", () => {
         diContainer.strategyService.getStrategy.mockResolvedValue(
           existingStrategy
         );
-        diContainer.strategyService.updateStrategy.mockRejectedValue(
+        diContainer.strategyService.updateStrategyGuarded.mockRejectedValue(
           new Error("Database error")
         );
 
@@ -469,7 +650,9 @@ describe("Strategies Controller", () => {
           .send({
             name: "Updated Grid Trading BTC",
             type: "GRID",
-            config: { symbol: "PERP_BTC_USDC", gridSize: 15, gridRange: 8 },
+            exchange: "kodiak",
+            environment: "mainnet",
+            config: fullGrid("PERP_BTC_USDC", 15, 8),
           })
           .expect(500);
 

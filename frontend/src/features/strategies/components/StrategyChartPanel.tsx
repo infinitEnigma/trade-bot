@@ -45,6 +45,9 @@ const CHART_HEIGHT = 450;
  * `PERP_BTC_USDC`), and the form's symbol field and the chart dropdown are two
  * independent pickers, so a naive `===` would report a mismatch for the same
  * market spelled two ways. Mirrors the chart's own `toDisplaySymbol`.
+ *
+ * Same-market NEVER crosses venues — it only disambiguates spellings WITHIN
+ * one venue pair (migration 026 display-safety rule).
  */
 const sameMarket = (left: string, right: string): boolean => {
   const normalise = (raw: string): string => {
@@ -53,19 +56,6 @@ const sameMarket = (left: string, right: string): boolean => {
     return symbol.includes("_") ? symbol : `PERP_${symbol}_USDC`;
   };
   return normalise(left) === normalise(right);
-};
-
-/**
- * The venue a symbol spelling implies. `PERP_*_USDC` is Kodiak/Orderly naming;
- * a bare or slash-quoted symbol (`BTC`, `ETH/USDC`) is Lighter's. This is the
- * only venue signal the form's symbol field carries — strategies store no
- * exchange today (the documented X2 gap), so the spelling is a proxy, not an
- * authoritative binding.
- */
-const impliedVenue = (raw: string): string | null => {
-  const symbol = raw.trim().toUpperCase();
-  if (!symbol) return null;
-  return symbol.includes("_") ? "kodiak" : "lighter";
 };
 
 interface StrategyChartPanelProps {
@@ -106,15 +96,20 @@ export const StrategyChartPanel: React.FC<StrategyChartPanelProps> = ({
   previewGrid,
   ordersNote,
 }) => {
-  // Review P1: the preview must name the charted MARKET *and* the charted
-  // VENUE. A band is centred on the live price of whichever market is on
-  // screen, so previewing a grid that will run on the other venue would place
-  // its levels around the wrong book. The form's symbol spelling is the only
-  // venue signal it carries (strategies store no exchange — X2).
+  // Review P1 + 026: the preview must name the charted MARKET *and* the
+  // charted VENUE. The venue arrives on the preview itself (strategy's stored
+  // pair) — never inferred from spelling. A preview with no known venue is an
+  // unknown binding: withhold the band even when the symbols look equivalent
+  // (BTC vs PERP_BTC_USDC must not cross venues on a guess).
+  const hasPreviewVenue =
+    previewGrid != null &&
+    previewGrid.exchange != null &&
+    previewGrid.environment != null;
   const previewOffVenue =
     previewGrid != null &&
-    (impliedVenue(previewGrid.symbol) ?? selection.exchange) !==
-      selection.exchange;
+    (!hasPreviewVenue ||
+      previewGrid.exchange !== selection.exchange ||
+      previewGrid.environment !== selection.environment);
   const previewOffMarket =
     previewGrid != null && !sameMarket(previewGrid.symbol, selection.symbol);
 
@@ -174,6 +169,13 @@ export const StrategyChartPanel: React.FC<StrategyChartPanelProps> = ({
           <span className="text-text">
             {previewGrid.symbol.replace("PERP_", "").replace("_USDC", "")}
           </span>{" "}
+          on{" "}
+          {hasPreviewVenue
+            ? venueLabel(
+                previewGrid.exchange as "kodiak" | "lighter",
+                previewGrid.environment as "testnet" | "mainnet"
+              )
+            : "an unknown venue"}{" "}
           — switch the chart to that market to see its levels here.
         </p>
       )}

@@ -218,6 +218,8 @@ describe("StrategyRepositoryAdapter", () => {
         userId: "test-user-id",
         name: "New Strategy",
         type: StrategyType.GRID,
+        exchange: "kodiak" as const,
+        environment: "mainnet" as const,
         config: { symbol: "BTC-USD", gridSize: 5 },
         active: true,
       };
@@ -242,11 +244,13 @@ describe("StrategyRepositoryAdapter", () => {
         })
       );
       expect(query).toHaveBeenCalledWith(
-        "INSERT INTO strategies (user_id, name, type, config, active, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, NOW(), NOW()) RETURNING id, created_at, updated_at",
+        "INSERT INTO strategies (user_id, name, type, exchange, environment, config, active, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW()) RETURNING id, created_at, updated_at",
         [
           strategyData.userId,
           strategyData.name,
           strategyData.type,
+          strategyData.exchange,
+          strategyData.environment,
           JSON.stringify(strategyData.config),
           strategyData.active,
         ]
@@ -262,6 +266,8 @@ describe("StrategyRepositoryAdapter", () => {
         userId: "test-user-id",
         name: "Fresh Strategy",
         type: StrategyType.GRID,
+        exchange: "lighter",
+        environment: "testnet",
         config: { symbol: "BTC-USD", gridSize: 5 },
       } as unknown as Parameters<
         StrategyRepositoryAdapter["createStrategy"]
@@ -280,11 +286,13 @@ describe("StrategyRepositoryAdapter", () => {
       const strategy = await adapter.createStrategy(strategyData);
 
       expect(query).toHaveBeenCalledWith(
-        "INSERT INTO strategies (user_id, name, type, config, active, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, NOW(), NOW()) RETURNING id, created_at, updated_at",
+        "INSERT INTO strategies (user_id, name, type, exchange, environment, config, active, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW()) RETURNING id, created_at, updated_at",
         [
           "test-user-id",
           "Fresh Strategy",
           StrategyType.GRID,
+          "lighter",
+          "testnet",
           JSON.stringify({ symbol: "BTC-USD", gridSize: 5 }),
           false,
         ]
@@ -297,6 +305,8 @@ describe("StrategyRepositoryAdapter", () => {
         userId: "test-user-id",
         name: "New Strategy",
         type: StrategyType.GRID,
+        exchange: "kodiak" as const,
+        environment: "mainnet" as const,
         config: { symbol: "BTC-USD", gridSize: 5 },
         active: true,
       };
@@ -313,6 +323,8 @@ describe("StrategyRepositoryAdapter", () => {
         userId: "test-user-id",
         name: "New Strategy",
         type: StrategyType.GRID,
+        exchange: "kodiak" as const,
+        environment: "mainnet" as const,
         config: { symbol: "BTC-USD", gridSize: 5 },
         active: true,
       };
@@ -326,15 +338,56 @@ describe("StrategyRepositoryAdapter", () => {
   });
 
   describe("updateStrategy", () => {
-    it("should update strategy and log information", async () => {
+    it("should write the full replacement and strip smuggled venue keys", async () => {
       const adapter = new StrategyRepositoryAdapter();
       const strategyId = "strategy1";
-      const updates = { gridSize: 10 };
+      const updates = {
+        name: "Updated",
+        type: StrategyType.GRID,
+        config: {
+          symbol: "BTC",
+          gridSize: 10,
+          gridRange: 5,
+          orderQuantity: 1,
+          exchange: "kodiak",
+        } as unknown as StrategyConfig,
+        exchange: "lighter" as const,
+        environment: "testnet" as const,
+      };
+      (query as jest.Mock).mockResolvedValue({ rowCount: 1 });
 
       await adapter.updateStrategy(strategyId, updates);
 
+      expect(query).toHaveBeenCalledWith(
+        expect.stringContaining("UPDATE strategies SET"),
+        expect.arrayContaining([
+          "Updated",
+          "GRID",
+          "lighter",
+          "testnet",
+          expect.not.stringContaining("kodiak"),
+          strategyId,
+        ])
+      );
       expect(logger.info).toHaveBeenCalledWith(
-        `Strategy config update for strategy ${strategyId}`
+        `Strategy updated for strategy ${strategyId}`
+      );
+    });
+
+    it("should 400 when the venue pair is half-supplied", async () => {
+      const adapter = new StrategyRepositoryAdapter();
+      await expect(
+        adapter.updateStrategy("strategy1", {
+          name: "Bad",
+          type: StrategyType.GRID,
+          config: { symbol: "BTC" },
+          exchange: "lighter",
+          environment: undefined as unknown as "testnet",
+        })
+      ).rejects.toMatchObject({ statusCode: 400 });
+      expect(query).not.toHaveBeenCalledWith(
+        expect.stringContaining("UPDATE strategies SET"),
+        expect.anything()
       );
     });
 
@@ -347,7 +400,13 @@ describe("StrategyRepositoryAdapter", () => {
         });
       const adapter = new StrategyRepositoryAdapter();
       const strategyId = "strategy1";
-      const updates = { gridSize: 10 };
+      const updates = {
+        name: "Updated",
+        type: StrategyType.GRID,
+        config: { symbol: "BTC", gridSize: 10, gridRange: 5, orderQuantity: 1 },
+        exchange: "lighter" as const,
+        environment: "testnet" as const,
+      };
 
       await expect(adapter.updateStrategy(strategyId, updates)).rejects.toThrow(
         "Failed to update strategy"

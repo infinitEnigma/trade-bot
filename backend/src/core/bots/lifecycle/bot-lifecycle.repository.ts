@@ -11,6 +11,7 @@
 
 import { BotActualState } from "@trade-bot/shared";
 import { query, transaction } from "../../../database/pool";
+import type { PoolClient } from "pg";
 import { contextLogger as logger } from "../../logging";
 import {
   BOT_COMMAND_TIMEOUT_MS,
@@ -194,6 +195,30 @@ export class BotLifecycleRepository {
   }
 
   /**
+   * Audit write via the caller's tx — rolls back with the admission so a
+   * failed attach leaves no BOT_CREATED/RUN_ATTACHED trail for a missing row.
+   */
+  async recordLifecycleEventTx(
+    client: PoolClient,
+    botId: string,
+    input: LifecycleEventInput
+  ): Promise<void> {
+    await client.query(
+      `INSERT INTO bot_lifecycle_events (bot_id, event_type, from_state, to_state, correlation_id, message_id, metadata)
+              VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      [
+        botId,
+        input.eventType,
+        input.fromState,
+        input.toState,
+        input.correlationId,
+        input.messageId,
+        JSON.stringify(input.metadata),
+      ]
+    );
+  }
+
+  /**
    * The most recent lifecycle event for a bot, or null when it has none.
    *
    * P0-3: used to keep an unresolved `RECONCILE_NEEDS_USER_ACTION` marker to ONE
@@ -360,6 +385,79 @@ export class BotLifecycleRepository {
     return result.rows[0]?.config ?? {};
   }
 
+  /**
+   * Strategy venue + symbol for admission (migration 026). Venue comes from
+   * the top-level columns, symbol from `config` — never the reverse.
+   */
+  async findStrategyVenue(strategyId: string): Promise<{
+    exchange: string | null;
+    environment: string | null;
+    symbol: string;
+    config: Record<string, unknown>;
+  }> {
+    const result = await query<{
+      exchange: string | null;
+      environment: string | null;
+      config: Record<string, unknown> | string | null;
+    }>("SELECT exchange, environment, config FROM strategies WHERE id = $1", [
+      strategyId,
+    ]);
+    return BotLifecycleRepository.toVenue(result.rows[0]);
+  }
+
+  /**
+   * Lock the strategy row first inside the caller's tx; returns venue +
+   * symbol + config. Lock order everywhere: strategies → bot_instances.
+   */
+  async lockStrategyRow(
+    client: PoolClient,
+    strategyId: string
+  ): Promise<{
+    exchange: string | null;
+    environment: string | null;
+    symbol: string;
+    config: Record<string, unknown>;
+  } | null> {
+    const result = await client.query<{
+      exchange: string | null;
+      environment: string | null;
+      config: Record<string, unknown> | string | null;
+    }>(
+      "SELECT exchange, environment, config FROM strategies WHERE id = $1 FOR UPDATE",
+      [strategyId]
+    );
+    if (!result.rows[0]) return null;
+    return BotLifecycleRepository.toVenue(result.rows[0]);
+  }
+
+  private static toVenue(
+    row:
+      | {
+          exchange: string | null;
+          environment: string | null;
+          config: Record<string, unknown> | string | null;
+        }
+      | undefined
+  ): {
+    exchange: string | null;
+    environment: string | null;
+    symbol: string;
+    config: Record<string, unknown>;
+  } {
+    if (!row)
+      return { exchange: null, environment: null, symbol: "", config: {} };
+    const config =
+      typeof row.config === "string"
+        ? (JSON.parse(row.config) as Record<string, unknown>)
+        : (row.config ?? {});
+    return {
+      exchange: row.exchange,
+      environment: row.environment,
+      symbol: typeof config.symbol === "string" ? config.symbol : "",
+      config,
+    };
+  }
+
   /** Whether a strategy exists and belongs to the user (createAndStart). */
   async strategyExistsForUser(
     strategyId: string,
@@ -370,6 +468,100 @@ export class BotLifecycleRepository {
       [strategyId, userId]
     );
     return result.rows.length > 0;
+  }
+
+  /** Live run occupying a strategy, read under the caller's lock. */
+  async findLiveRunForStrategyTx(
+    client: PoolClient,
+    strategyId: string
+  ): Promise<StrategyRunRow | null> {
+    const result = await client.query<StrategyRunRow>(
+      `SELECT id, bot_id, strategy_id, config_version, config, notional_amount,
+              state, last_error_code, created_at, updated_at
+         FROM strategy_runs
+        WHERE strategy_id = $1
+          AND state IN ('STARTING', 'RUNNING')
+        ORDER BY created_at DESC
+        LIMIT 1`,
+      [strategyId]
+    );
+    return result.rows[0] ?? null;
+  }
+
+  /** Live-or-parked session on an account, read under the caller's lock. */
+  async findLiveSessionForAccountTx(
+    client: PoolClient,
+    exchangeAccountId: string
+  ): Promise<{ id: string } | null> {
+    const result = await client.query<{ id: string }>(
+      `SELECT id FROM bot_instances
+        WHERE exchange_account_id = $1
+          AND actual_state IN ('STARTING', 'RUNNING')
+        LIMIT 1`,
+      [exchangeAccountId]
+    );
+    return result.rows[0] ?? null;
+  }
+
+  /**
+   * Edit blockers for venue/symbol changes (026). A terminal-looking run
+   * state alone never permits edits: ERROR/UNKNOWN sessions, incomplete
+   * venue cleanup, or an unresolved RECONCILE_NEEDS_USER_ACTION tail block.
+   */
+  async findEditBlockersTx(
+    client: PoolClient,
+    strategyId: string
+  ): Promise<{ blocked: boolean; reason: string }> {
+    const runs = await client.query<{ id: string; state: string }>(
+      `SELECT id, state FROM strategy_runs
+        WHERE strategy_id = $1 AND state IN ('STARTING', 'RUNNING', 'STOPPING')`,
+      [strategyId]
+    );
+    if (runs.rows.length > 0) {
+      return {
+        blocked: true,
+        reason: `run ${runs.rows[0].id} is ${runs.rows[0].state}`,
+      };
+    }
+    const sessions = await client.query<{ id: string; actual_state: string }>(
+      `SELECT DISTINCT b.id, b.actual_state
+         FROM bot_instances b JOIN strategy_runs r ON r.bot_id = b.id
+        WHERE r.strategy_id = $1
+          AND b.actual_state IN ('STARTING', 'RUNNING', 'STOPPING', 'UNKNOWN', 'ERROR')`,
+      [strategyId]
+    );
+    if (sessions.rows.length > 0) {
+      return {
+        blocked: true,
+        reason: `session ${sessions.rows[0].id} is ${sessions.rows[0].actual_state}`,
+      };
+    }
+    const cleanup = await client.query<{ id: string }>(
+      `SELECT b.id FROM bot_instances b JOIN strategy_runs r ON r.bot_id = b.id
+        WHERE r.strategy_id = $1 AND b.force_stop_reason LIKE '%cleanup_incomplete%'`,
+      [strategyId]
+    );
+    if (cleanup.rows.length > 0) {
+      return {
+        blocked: true,
+        reason: `session ${cleanup.rows[0].id} has incomplete venue cleanup`,
+      };
+    }
+    const actionTail = await client.query<{ bot_id: string }>(
+      `SELECT r.bot_id FROM strategy_runs r
+         JOIN bot_lifecycle_events e ON e.bot_id = r.bot_id
+        WHERE r.strategy_id = $1 AND e.event_type = 'RECONCILE_NEEDS_USER_ACTION'
+          AND e.id = (SELECT MAX(id) FROM bot_lifecycle_events WHERE bot_id = r.bot_id)
+        LIMIT 1`,
+      [strategyId]
+    );
+    if (actionTail.rows.length > 0) {
+      return {
+        blocked: true,
+        reason: `session ${actionTail.rows[0].bot_id} needs user action`,
+      };
+    }
+    return { blocked: false, reason: "" };
   }
 
   /**
@@ -398,6 +590,22 @@ export class BotLifecycleRepository {
                 (user_id, exchange_account_id, status, running_time, total_trades, total_pnl, desired_state, actual_state)
              VALUES ($1, $2, 'STOPPED', 0, 0, 0, 'STOPPED', 'STOPPED')
              RETURNING id`,
+      [userId, exchangeAccountId]
+    );
+    return insertResult.rows[0].id;
+  }
+
+  /** Insert a session via the caller's tx — no nested transaction. */
+  async insertBotInstanceTx(
+    client: PoolClient,
+    userId: string,
+    exchangeAccountId: string
+  ): Promise<string> {
+    const insertResult = await client.query<{ id: string }>(
+      `INSERT INTO bot_instances
+                (user_id, exchange_account_id, status, running_time, total_trades, total_pnl, desired_state, actual_state)
+              VALUES ($1, $2, 'STOPPED', 0, 0, 0, 'STOPPED', 'STOPPED')
+              RETURNING id`,
       [userId, exchangeAccountId]
     );
     return insertResult.rows[0].id;
@@ -512,6 +720,31 @@ export class BotLifecycleRepository {
   }
 
   /**
+   * Boot attach via the caller's tx — locks the session row but never opens
+   * a nested transaction. The caller holds the strategy lock already.
+   */
+  async attachRunTx(
+    client: PoolClient,
+    botId: string,
+    strategyId: string,
+    config: Record<string, unknown>,
+    notionalAmount: number
+  ): Promise<string> {
+    await client.query(
+      `SELECT id FROM bot_instances WHERE id = $1 FOR UPDATE`,
+      [botId]
+    );
+    const txInsert = await client.query<{ id: string }>(
+      `INSERT INTO strategy_runs
+                (bot_id, strategy_id, config_version, config, notional_amount, state)
+              VALUES ($1, $2, 1, $3, $4, 'STOPPED')
+              RETURNING id`,
+      [botId, strategyId, JSON.stringify(config), notionalAmount]
+    );
+    return txInsert.rows[0].id;
+  }
+
+  /**
    * F1 notional admission — concurrency-safe attach (POST /runs), residual
    * capacity (Model A).
    *
@@ -568,6 +801,51 @@ export class BotLifecycleRepository {
       );
       return insertResult.rows[0].id;
     });
+  }
+
+  /**
+   * Cap-guarded attach via the caller's tx — same checks as
+   * attachRunWithCapGuard but on the caller's client (026 locking protocol:
+   * strategy lock already held, no nested transaction). Pending sum is
+   * re-read under the session lock so concurrent attaches serialize.
+   */
+  async attachRunWithCapGuardTx(
+    client: PoolClient,
+    botId: string,
+    strategyId: string,
+    config: Record<string, unknown>,
+    notionalAmount: number,
+    cap: number,
+    existingExposure: number
+  ): Promise<string> {
+    await client.query(
+      `SELECT id FROM bot_instances WHERE id = $1 FOR UPDATE`,
+      [botId]
+    );
+    const sumResult = await client.query<{ total: string | null }>(
+      `SELECT COALESCE(SUM(notional_amount), 0) AS total
+            FROM strategy_runs
+          WHERE bot_id = $1
+            AND state IN ('STOPPED', 'STARTING')`,
+      [botId]
+    );
+    const pendingSum = Number(sumResult.rows[0]?.total ?? 0);
+    if (existingExposure + pendingSum + notionalAmount > cap) {
+      throw new RunNotionalCapExceededError(
+        existingExposure,
+        pendingSum,
+        notionalAmount,
+        cap
+      );
+    }
+    const capInsert = await client.query<{ id: string }>(
+      `INSERT INTO strategy_runs
+                (bot_id, strategy_id, config_version, config, notional_amount, state)
+              VALUES ($1, $2, 1, $3, $4, 'STOPPED')
+              RETURNING id`,
+      [botId, strategyId, JSON.stringify(config), notionalAmount]
+    );
+    return capInsert.rows[0].id;
   }
 
   /** CAS a run's state; returns false when the row moved underneath. */

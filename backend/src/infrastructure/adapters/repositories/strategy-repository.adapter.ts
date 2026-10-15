@@ -13,6 +13,7 @@ import {
   Strategy,
   StrategyConfig,
   StrategyType,
+  StrategyVenue,
 } from "@trade-bot/shared";
 import { query } from "../../../database/pool";
 import { databaseLogger as logger } from "../../../core/logging/context-aware-logger.service";
@@ -30,7 +31,7 @@ export class StrategyRepositoryAdapter implements IStrategyRepository {
   async getStrategies(userId: string): Promise<Strategy[]> {
     try {
       const result = await query<StrategyRow>(
-        "SELECT id, user_id, name, type, config, active, created_at, updated_at FROM strategies WHERE user_id = $1 ORDER BY created_at DESC",
+        "SELECT id, user_id, name, type, exchange, environment, config, active, created_at, updated_at FROM strategies WHERE user_id = $1 ORDER BY created_at DESC",
         [userId]
       );
 
@@ -50,7 +51,7 @@ export class StrategyRepositoryAdapter implements IStrategyRepository {
   async getStrategy(id: string): Promise<Strategy | null> {
     try {
       const result = await query<StrategyRow>(
-        "SELECT id, user_id, name, type, config, active, created_at, updated_at FROM strategies WHERE id = $1",
+        "SELECT id, user_id, name, type, exchange, environment, config, active, created_at, updated_at FROM strategies WHERE id = $1",
         [id]
       );
 
@@ -100,17 +101,27 @@ export class StrategyRepositoryAdapter implements IStrategyRepository {
       // Resolving it here keeps "created" meaning "inactive" in one place.
       const active = strategy.active ?? false;
 
+      // Venue is top-level only (migration 026). Strip any venue keys a
+      // caller smuggled inside config so geometry stays geometry.
+      const cleanConfig = {
+        ...(strategy.config as unknown as object),
+      } as Record<string, unknown>;
+      delete cleanConfig.exchange;
+      delete cleanConfig.environment;
+
       const result = await query<{
         id: string;
         created_at: string;
         updated_at: string;
       }>(
-        "INSERT INTO strategies (user_id, name, type, config, active, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, NOW(), NOW()) RETURNING id, created_at, updated_at",
+        "INSERT INTO strategies (user_id, name, type, exchange, environment, config, active, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW()) RETURNING id, created_at, updated_at",
         [
           strategy.userId,
           strategy.name,
           strategy.type,
-          JSON.stringify(strategy.config),
+          strategy.exchange ?? null,
+          strategy.environment ?? null,
+          JSON.stringify(cleanConfig),
           active,
         ]
       );
@@ -125,6 +136,8 @@ export class StrategyRepositoryAdapter implements IStrategyRepository {
         user_id: strategy.userId,
         name: strategy.name,
         type: strategy.type,
+        exchange: strategy.exchange ?? null,
+        environment: strategy.environment ?? null,
         config: strategy.config,
         // Resolved above, so the returned strategy matches the persisted flag
         // rather than echoing back the caller's omitted `undefined`.
@@ -140,19 +153,105 @@ export class StrategyRepositoryAdapter implements IStrategyRepository {
   }
 
   /**
-   * Update strategy configuration
+   * Full-replacement edit (migration 026). Replaces the log-only stub that
+   * never wrote. `config` is the complete StrategyConfig — never partial.
+   * Venue changes atomically as a pair; the DB pair-constraint is the last
+   * resort, not the normal validation path.
    */
   async updateStrategy(
     id: string,
-    _updates: Partial<StrategyConfig>
+    updates: {
+      name: string;
+      type: StrategyType;
+      config: StrategyConfig;
+      exchange: StrategyVenue["exchange"];
+      environment: StrategyVenue["environment"];
+    }
   ): Promise<void> {
     try {
-      // This would update strategy configuration in the database
-      logger.info(`Strategy config update for strategy ${id}`);
+      if (!updates.exchange || !updates.environment) {
+        const error = new Error(
+          "exchange and environment must change together"
+        );
+        (error as Error & { statusCode?: number }).statusCode = 400;
+        throw error;
+      }
+      const cleanConfig = {
+        ...(updates.config as unknown as object),
+      } as Record<string, unknown>;
+      delete cleanConfig.exchange;
+      delete cleanConfig.environment;
+      const result = await query(
+        "UPDATE strategies SET name = $1, type = $2, exchange = $3, environment = $4, config = $5, updated_at = NOW() WHERE id = $6",
+        [
+          updates.name,
+          updates.type,
+          updates.exchange,
+          updates.environment,
+          JSON.stringify(cleanConfig),
+          id,
+        ]
+      );
+      if (result.rowCount === 0) {
+        const notFound = new Error("Strategy not found");
+        (notFound as Error & { statusCode?: number }).statusCode = 404;
+        throw notFound;
+      }
+      logger.info(`Strategy updated for strategy ${id}`);
     } catch (error) {
+      if ((error as Error & { statusCode?: number }).statusCode) throw error;
       const errorMessage =
         error instanceof Error ? error.message : String(error);
       throw new Error(`Failed to update strategy: ${errorMessage}`);
+    }
+  }
+
+  /**
+   * Same full-replacement write on the caller's tx client (026 locking
+   * protocol). Shares validation with `updateStrategy`.
+   */
+  async updateStrategyTx(
+    id: string,
+    updates: {
+      name: string;
+      type: StrategyType;
+      config: StrategyConfig;
+      exchange: StrategyVenue["exchange"];
+      environment: StrategyVenue["environment"];
+    },
+    client: {
+      query: (
+        sql: string,
+        params: unknown[]
+      ) => Promise<{ rowCount: number | null }>;
+    }
+  ): Promise<void> {
+    if (!updates.exchange || !updates.environment) {
+      const error = new Error("exchange and environment must change together");
+      (error as Error & { statusCode?: number }).statusCode = 400;
+      throw error;
+    }
+    const cleanConfig = { ...(updates.config as unknown as object) } as Record<
+      string,
+      unknown
+    >;
+    delete cleanConfig.exchange;
+    delete cleanConfig.environment;
+    const result = await client.query(
+      "UPDATE strategies SET name = $1, type = $2, exchange = $3, environment = $4, config = $5, updated_at = NOW() WHERE id = $6",
+      [
+        updates.name,
+        updates.type,
+        updates.exchange,
+        updates.environment,
+        JSON.stringify(cleanConfig),
+        id,
+      ]
+    );
+    if (result.rowCount === 0) {
+      const notFound = new Error("Strategy not found");
+      (notFound as Error & { statusCode?: number }).statusCode = 404;
+      throw notFound;
     }
   }
 
@@ -203,6 +302,14 @@ export class StrategyRepositoryAdapter implements IStrategyRepository {
         userId: row.user_id,
         name: row.name,
         type: row.type,
+        exchange:
+          row.exchange === "kodiak" || row.exchange === "lighter"
+            ? row.exchange
+            : null,
+        environment:
+          row.environment === "testnet" || row.environment === "mainnet"
+            ? row.environment
+            : null,
         config:
           typeof row.config === "string" ? JSON.parse(row.config) : row.config,
         active: row.active,
@@ -227,6 +334,8 @@ interface StrategyRow {
   user_id: string;
   name: string;
   type: StrategyType;
+  exchange: string | null;
+  environment: string | null;
   config: string | StrategyConfig;
   active: boolean;
   created_at: string;

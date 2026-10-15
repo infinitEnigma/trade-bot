@@ -50,6 +50,8 @@ export const tradingApi = {
   async createStrategy(data: {
     name: string;
     type: string;
+    exchange: "kodiak" | "lighter";
+    environment: "testnet" | "mainnet";
     config: Record<string, unknown>;
   }) {
     const response = await httpClient.getClient().post("/api/strategies", data);
@@ -61,6 +63,8 @@ export const tradingApi = {
     data: {
       name: string;
       type: string;
+      exchange: "kodiak" | "lighter";
+      environment: "testnet" | "mainnet";
       config: Record<string, unknown>;
     }
   ) {

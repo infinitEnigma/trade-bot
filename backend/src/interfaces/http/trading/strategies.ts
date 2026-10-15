@@ -8,24 +8,60 @@ import {
 } from "../../middleware/auth.middleware";
 import { httpLogger as logger } from "../../../core/logging/context-aware-logger.service";
 import { diContainer } from "../../../infrastructure/dependency-injection.container";
+import { assertSymbolSupported } from "../../../infrastructure/external/venue-symbols";
 
 const router = Router();
+
+const gridConfigSchema = Joi.object({
+  symbol: Joi.string().required(),
+  gridSize: Joi.number().integer().min(2).max(100).required(),
+  gridRange: Joi.number().min(1).max(50).required(),
+  orderQuantity: Joi.number().positive().required(),
+  leverage: Joi.number().min(1).max(20).optional(),
+  takeProfit: Joi.number().positive().optional(),
+  stopLoss: Joi.number().min(0.1).max(50).optional(),
+  entryThreshold: Joi.forbidden(),
+  exitThreshold: Joi.forbidden(),
+  exchange: Joi.forbidden(),
+  environment: Joi.forbidden(),
+}).unknown(false);
+
+const trendConfigSchema = Joi.object({
+  symbol: Joi.string().required(),
+  entryThreshold: Joi.number().required(),
+  exitThreshold: Joi.number().required(),
+  leverage: Joi.number().min(1).max(20).optional(),
+  takeProfit: Joi.number().positive().optional(),
+  stopLoss: Joi.number().min(0.1).max(50).optional(),
+  gridSize: Joi.forbidden(),
+  gridRange: Joi.forbidden(),
+  orderQuantity: Joi.forbidden(),
+  exchange: Joi.forbidden(),
+  environment: Joi.forbidden(),
+}).unknown(false);
+
+const fallbackConfigSchema = Joi.object({
+  symbol: Joi.string().required(),
+  exchange: Joi.forbidden(),
+  environment: Joi.forbidden(),
+}).unknown(false);
 
 const strategySchema = Joi.object({
   name: Joi.string().min(1).max(100).required(),
   type: Joi.string().valid("GRID", "TREND_FOLLOWING", "ARBITRAGE").required(),
-  config: Joi.object({
-    symbol: Joi.string().required(),
-    leverage: Joi.number().min(1).max(20).optional(),
-    gridSize: Joi.number().min(2).max(100).optional(),
-    gridRange: Joi.number().min(1).max(50).optional(),
-    orderQuantity: Joi.number().positive().optional(),
-    takeProfit: Joi.number().positive().optional(),
-    entryThreshold: Joi.number().optional(),
-    exitThreshold: Joi.number().optional(),
-    stopLoss: Joi.number().optional(),
-  }).required(),
-});
+  // Venue pair (migration 026): top-level, atomic, never inside config.
+  exchange: Joi.string().valid("kodiak", "lighter").required(),
+  environment: Joi.string().valid("testnet", "mainnet").required(),
+  config: Joi.alternatives()
+    .conditional(Joi.ref("type"), {
+      switch: [
+        { is: "GRID", then: gridConfigSchema },
+        { is: "TREND_FOLLOWING", then: trendConfigSchema },
+      ],
+      otherwise: fallbackConfigSchema,
+    })
+    .required(),
+}).unknown(false);
 
 // GET /api/strategies
 router.get(
@@ -90,9 +126,17 @@ router.post(
       logger.error("Create strategy error", err as Error, {
         userId: req.user?.userId,
       });
-      res
-        .status(500)
-        .json({ success: false, error: "Failed to create strategy" });
+      // Business rejections (e.g. incomplete config) carry statusCode and
+      // must reach the client — only genuine unknowns become 500.
+      const statusCode =
+        (err as Error & { statusCode?: number }).statusCode ?? 500;
+      res.status(statusCode).json({
+        success: false,
+        error:
+          statusCode === 500
+            ? "Failed to create strategy"
+            : (err as Error).message,
+      });
     }
   }
 );
@@ -174,10 +218,44 @@ router.put(
           .json({ success: false, error: "Strategy not found" });
       }
 
-      const updatedStrategy = await diContainer.strategyService.updateStrategy(
-        strategyId,
-        value
-      );
+      // Guarded edit (migration 026): symbol/venue changes are refused while
+      // the strategy is operationally active. The check + write share one
+      // strategy-row lock (strategy service → guarded repository tx), so a
+      // start racing this PUT either wins first (PUT gets 409) or loses
+      // (admission revalidates the new row). Symbol re-check runs against
+      // the strategy's OWN venue, fail-open on catalog outage (PUT path).
+      try {
+        const newSymbol = String(
+          (value.config as { symbol?: unknown })?.symbol ?? ""
+        );
+        const oldSymbol = String(
+          (existingStrategy.config as unknown as { symbol?: unknown })
+            ?.symbol ?? ""
+        );
+        if (newSymbol && newSymbol !== oldSymbol) {
+          await assertSymbolSupported(
+            newSymbol,
+            String(value.exchange),
+            String(value.environment)
+          );
+        }
+        await diContainer.strategyService.updateStrategyGuarded(
+          strategyId,
+          value
+        );
+      } catch (guardErr) {
+        const guardStatus =
+          (guardErr as Error & { statusCode?: number }).statusCode ?? 500;
+        if (guardStatus === 400 || guardStatus === 404 || guardStatus === 409) {
+          return res
+            .status(guardStatus)
+            .json({ success: false, error: (guardErr as Error).message });
+        }
+        throw guardErr;
+      }
+
+      const updatedStrategy =
+        await diContainer.strategyService.getStrategy(strategyId);
 
       res.json({
         success: true,
@@ -189,9 +267,15 @@ router.put(
         userId: req.user?.userId,
         strategyId: req.params.id,
       });
-      res
-        .status(500)
-        .json({ success: false, error: "Failed to update strategy" });
+      const statusCode =
+        (err as Error & { statusCode?: number }).statusCode ?? 500;
+      res.status(statusCode).json({
+        success: false,
+        error:
+          statusCode === 500
+            ? "Failed to update strategy"
+            : (err as Error).message,
+      });
     }
   }
 );

@@ -18,6 +18,8 @@ import {
   OrderStatus as TradeStatus,
   Strategy,
   StrategyConfig,
+  StrategyType,
+  StrategyVenue,
 } from "../index";
 import { Balance } from "./domain";
 import type {
@@ -330,9 +332,38 @@ export interface IStrategyRepository {
   ): Promise<Strategy>;
 
   /**
-   * Update strategy configuration
+   * Full-replacement edit (migration 026). `config` must be the complete
+   * StrategyConfig for the strategy's type — never a partial patch (a
+   * partial would be serialized over the whole JSONB column and erase
+   * omitted fields). `exchange`/`environment` change atomically as a pair.
    */
-  updateStrategy(id: string, updates: Partial<StrategyConfig>): Promise<void>;
+  updateStrategy(
+    id: string,
+    updates: {
+      name: string;
+      type: StrategyType;
+      config: StrategyConfig;
+      exchange: StrategyVenue["exchange"];
+      environment: StrategyVenue["environment"];
+    }
+  ): Promise<void>;
+
+  /**
+   * Same full-replacement write on the caller's tx client (026 locking
+   * protocol). Optional so existing mocks without it still satisfy the
+   * interface — the guarded service path prefers it when present.
+   */
+  updateStrategyTx?(
+    id: string,
+    updates: {
+      name: string;
+      type: StrategyType;
+      config: StrategyConfig;
+      exchange: StrategyVenue["exchange"];
+      environment: StrategyVenue["environment"];
+    },
+    client: unknown
+  ): Promise<void>;
 
   /**
    * Delete strategy

@@ -24,11 +24,75 @@ vi.mock("../../../infrastructure/api", () => ({
   },
 }));
 
+vi.mock("../../../infrastructure/api/market", () => ({
+  marketApi: { getVenueSymbols: vi.fn() },
+}));
+
+vi.mock("../../../infrastructure/api/accounts", () => ({
+  accountsApi: { listAccounts: vi.fn() },
+}));
+
+vi.mock("../../auth", () => ({
+  useAuth: () => ({ user: { id: "u1" } }),
+}));
+
+import { marketApi } from "../../../infrastructure/api/market";
+import { accountsApi } from "../../../infrastructure/api/accounts";
+
 vi.mock("sonner", () => ({ toast: { error: vi.fn(), success: vi.fn() } }));
+
+const KODIAK = { exchange: "kodiak", environment: "mainnet" } as const;
+const LIGHTER = { exchange: "lighter", environment: "testnet" } as const;
+
+const mockVenues = () => {
+  vi.mocked(accountsApi.listAccounts).mockResolvedValue({
+    success: true,
+    data: {
+      accounts: [
+        {
+          id: "a1",
+          status: "ACTIVE",
+          exchange: "kodiak",
+          environment: "mainnet",
+        },
+        {
+          id: "a2",
+          status: "ACTIVE",
+          exchange: "lighter",
+          environment: "testnet",
+        },
+      ],
+    },
+  } as never);
+  vi.mocked(marketApi.getVenueSymbols).mockImplementation(
+    async (params: { exchange: string; environment: string }) => {
+      if (params.exchange === "kodiak") {
+        return {
+          success: true,
+          data: {
+            exchange: "kodiak",
+            environment: "mainnet",
+            available: true,
+            symbols: ["PERP_BTC_USDC", "PERP_ETH_USDC"],
+          },
+        } as never;
+      }
+      return {
+        success: true,
+        data: {
+          exchange: "lighter",
+          environment: "testnet",
+          available: true,
+          symbols: ["BTC", "ETH"],
+        },
+      } as never;
+    }
+  );
+};
 
 const renderForm = (ui: React.ReactElement) => {
   const queryClient = new QueryClient({
-    defaultOptions: { mutations: { retry: false } },
+    defaultOptions: { mutations: { retry: false }, queries: { retry: false } },
   });
   return render(
     <QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>
@@ -38,10 +102,6 @@ const renderForm = (ui: React.ReactElement) => {
 const fillValidGridForm = () => {
   fireEvent.change(screen.getByPlaceholderText("My Grid Strategy"), {
     target: { value: "My Grid" },
-  });
-  // RHF's uncontrolled select needs the change event to register the value.
-  fireEvent.change(screen.getByLabelText(/trading symbol/i), {
-    target: { value: "PERP_BTC_USDC" },
   });
   fireEvent.change(screen.getByLabelText(/grid size/i), {
     target: { value: "10" },
@@ -54,16 +114,47 @@ const fillValidGridForm = () => {
   });
 };
 
+const waitForOptions = async () => {
+  const select = (await screen.findByLabelText(
+    /trading symbol/i
+  )) as HTMLSelectElement;
+  // Wait until the catalogs populate AND the controlled select has a real
+  // value (the setValue effect runs in the same flush as that render) —
+  // otherwise submit fires while symbol is still "".
+  await waitFor(() => {
+    expect(select.querySelectorAll("option").length).toBeGreaterThan(1);
+    expect(select.value).not.toBe("");
+  });
+  // The internal state sync (exchange/environment/symbol set from the picked
+  // venue) runs asynchronously after selectedOption is set. The submit would be
+  // blocked while `symbol` is still "" — wait for the pre-filled symbol to
+  // land before attempting submit.
+  await waitFor(() => {
+    const symInput = screen.getByLabelText(
+      /trading symbol/i
+    ) as HTMLSelectElement;
+    // The select shows the chosen venue+symbol pair.
+    expect(symInput.value).toBeTruthy();
+    // Wait for the required-symbol validation error to clear, proving the
+    // form now holds a populated symbol value.
+    expect(
+      screen.queryByText(/trading symbol is required/i)
+    ).not.toBeInTheDocument();
+  });
+  return select;
+};
+
 describe("GridStrategyForm field policy", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockVenues();
   });
 
-  it("renders the grid engine surface — stop-loss present, no leverage/thresholds/type", () => {
+  it("renders the grid engine surface — stop-loss present, no leverage/thresholds/type", async () => {
     renderForm(<GridStrategyForm onClose={() => {}} onSuccess={() => {}} />);
 
     expect(screen.getByLabelText(/strategy name/i)).toBeDefined();
-    expect(screen.getByLabelText(/trading symbol/i)).toBeDefined();
+    expect(await screen.findByLabelText(/trading symbol/i)).toBeDefined();
     expect(screen.getByLabelText(/grid size/i)).toBeDefined();
     expect(screen.getByLabelText(/grid range/i)).toBeDefined();
     expect(screen.getByLabelText(/order size/i)).toBeDefined();
@@ -82,26 +173,30 @@ describe("GridStrategyForm field policy", () => {
     }
   });
 
-  it("labels spot vs perp in the venue-grouped symbol picker", () => {
+  it("lists venue-catalog symbols grouped by venue (026, no hardcoded list)", async () => {
     renderForm(<GridStrategyForm onClose={() => {}} onSuccess={() => {}} />);
 
-    const options = Array.from(
-      screen.getByLabelText(/trading symbol/i).querySelectorAll("option")
-    ).map(o => o.textContent ?? "");
-    // Lighter bare perp and slash-quoted spot must be distinguishable (L20).
-    expect(options).toContain("ETH · perp");
-    expect(options).toContain("ETH/USDC · spot");
-    // Kodiak convention stays intact with its kind label.
-    expect(options).toContain("BTC · perp");
+    const select = await waitForOptions();
+    const options = Array.from(select.querySelectorAll("option")).map(
+      o => o.textContent ?? ""
+    );
+    expect(options).toContain("BTC");
+    expect(options).toContain("ETH");
+    const groups = Array.from(select.querySelectorAll("optgroup")).map(
+      g => g.getAttribute("label") ?? ""
+    );
+    expect(groups).toContain("Kodiak mainnet");
+    expect(groups).toContain("Lighter testnet");
   });
 });
 
 describe("GridStrategyForm submissions", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockVenues();
   });
 
-  it("creates with type: GRID and grid-only config keys", async () => {
+  it("creates with type: GRID, top-level venue, and grid-only config keys", async () => {
     vi.mocked(tradingApi.createStrategy).mockResolvedValue({
       success: true,
       data: { id: "s1", name: "My Grid" },
@@ -109,13 +204,21 @@ describe("GridStrategyForm submissions", () => {
     const onSuccess = vi.fn();
 
     renderForm(<GridStrategyForm onClose={() => {}} onSuccess={onSuccess} />);
+    await waitForOptions();
     fillValidGridForm();
-    fireEvent.click(screen.getByRole("button", { name: /create strategy/i }));
+    // TEMP DEBUG
+    fireEvent.submit(
+      screen.getByRole("button", { name: /create strategy/i }).closest("form")!
+    );
+    await new Promise(r => setTimeout(r, 300));
+    // eslint disable-next-line no-console
+    console.error("BODY SNIPPET:", document.body.innerHTML.slice(0, 4000));
 
     await waitFor(() =>
       expect(tradingApi.createStrategy).toHaveBeenCalledWith({
         name: "My Grid",
         type: StrategyType.GRID,
+        ...KODIAK,
         config: {
           symbol: "PERP_BTC_USDC",
           gridSize: 10,
@@ -130,6 +233,8 @@ describe("GridStrategyForm submissions", () => {
     expect(payload.config).not.toHaveProperty("stopLoss");
     expect(payload.config).not.toHaveProperty("entryThreshold");
     expect(payload.config).not.toHaveProperty("exitThreshold");
+    expect(payload.config).not.toHaveProperty("exchange");
+    expect(payload.config).not.toHaveProperty("environment");
     expect(onSuccess).toHaveBeenCalled();
   });
 
@@ -141,6 +246,7 @@ describe("GridStrategyForm submissions", () => {
     const onSuccess = vi.fn();
 
     renderForm(<GridStrategyForm onClose={() => {}} onSuccess={onSuccess} />);
+    await waitForOptions();
     fillValidGridForm();
     fireEvent.change(screen.getByLabelText(/stop loss/i), {
       target: { value: "7.5" },
@@ -151,6 +257,7 @@ describe("GridStrategyForm submissions", () => {
       expect(tradingApi.createStrategy).toHaveBeenCalledWith({
         name: "My Grid",
         type: StrategyType.GRID,
+        ...KODIAK,
         config: {
           symbol: "PERP_BTC_USDC",
           gridSize: 10,
@@ -165,6 +272,7 @@ describe("GridStrategyForm submissions", () => {
 
   it("rejects a gridSize below the engine floor (2)", async () => {
     renderForm(<GridStrategyForm onClose={() => {}} onSuccess={() => {}} />);
+    await waitForOptions();
     fireEvent.change(screen.getByPlaceholderText("My Grid Strategy"), {
       target: { value: "Bad Grid" },
     });
@@ -205,7 +313,9 @@ describe("GridStrategyForm submissions", () => {
         gridRange: 8,
         orderQuantity: 2,
       },
-      true
+      true,
+      "kodiak",
+      "mainnet"
     );
 
     renderForm(
@@ -215,12 +325,14 @@ describe("GridStrategyForm submissions", () => {
         onSuccess={() => {}}
       />
     );
+    await waitForOptions();
 
     fireEvent.click(screen.getByRole("button", { name: /update strategy/i }));
     await waitFor(() =>
       expect(tradingApi.updateStrategy).toHaveBeenCalledWith("s1", {
         name: "Existing",
         type: StrategyType.GRID,
+        ...KODIAK,
         config: {
           symbol: "PERP_ETH_USDC",
           gridSize: 20,
@@ -231,7 +343,7 @@ describe("GridStrategyForm submissions", () => {
     );
   });
 
-  it("publishes the live grid geometry for the chart preview (F5)", () => {
+  it("publishes the live grid geometry with venue for the chart preview (F5)", async () => {
     const onPreviewChange = vi.fn();
     renderForm(
       <GridStrategyForm
@@ -240,15 +352,18 @@ describe("GridStrategyForm submissions", () => {
         onPreviewChange={onPreviewChange}
       />
     );
+    await waitForOptions();
 
-    // Create mode opens on the engine defaults and publishes immediately, so
-    // the chart has a band to draw from the start. The symbol picker's first
-    // option is what the browser selects by default.
-    expect(onPreviewChange).toHaveBeenLastCalledWith({
-      symbol: "PERP_BTC_USDC",
-      gridSize: 10,
-      gridRange: 5,
-    });
+    // Create mode defaults to the first catalog option and publishes venue +
+    // geometry, so the chart has a band to draw from the start.
+    await waitFor(() =>
+      expect(onPreviewChange).toHaveBeenLastCalledWith({
+        symbol: "PERP_BTC_USDC",
+        ...KODIAK,
+        gridSize: 10,
+        gridRange: 5,
+      })
+    );
 
     // A geometry edit republishes while the operator types — that is what
     // makes the preview live rather than a snapshot at submit.
@@ -257,6 +372,7 @@ describe("GridStrategyForm submissions", () => {
     });
     expect(onPreviewChange).toHaveBeenLastCalledWith({
       symbol: "PERP_BTC_USDC",
+      ...KODIAK,
       gridSize: 20,
       gridRange: 5,
     });
@@ -266,12 +382,13 @@ describe("GridStrategyForm submissions", () => {
     });
     expect(onPreviewChange).toHaveBeenLastCalledWith({
       symbol: "PERP_BTC_USDC",
+      ...KODIAK,
       gridSize: 20,
       gridRange: 12,
     });
   });
 
-  it("publishes the loaded row's geometry in edit mode (F5)", () => {
+  it("publishes the loaded row's geometry with venue in edit mode (F5)", async () => {
     const onPreviewChange = vi.fn();
     const strategy = new Strategy(
       "s1",
@@ -285,7 +402,9 @@ describe("GridStrategyForm submissions", () => {
         gridRange: 8,
         orderQuantity: 2,
       },
-      true
+      true,
+      "kodiak",
+      "mainnet"
     );
 
     renderForm(
@@ -297,10 +416,38 @@ describe("GridStrategyForm submissions", () => {
       />
     );
 
-    expect(onPreviewChange).toHaveBeenLastCalledWith({
-      symbol: "PERP_ETH_USDC",
-      gridSize: 20,
-      gridRange: 8,
+    await waitFor(() =>
+      expect(onPreviewChange).toHaveBeenLastCalledWith({
+        symbol: "PERP_ETH_USDC",
+        ...KODIAK,
+        gridSize: 20,
+        gridRange: 8,
+      })
+    );
+  });
+
+  it("uses the Lighter venue when the operator picks a Lighter symbol (026)", async () => {
+    const onPreviewChange = vi.fn();
+    renderForm(
+      <GridStrategyForm
+        onClose={() => {}}
+        onSuccess={() => {}}
+        onPreviewChange={onPreviewChange}
+      />
+    );
+    await waitForOptions();
+
+    fireEvent.change(screen.getByLabelText(/trading symbol/i), {
+      target: { value: "lighter|testnet|ETH" },
     });
+
+    await waitFor(() =>
+      expect(onPreviewChange).toHaveBeenLastCalledWith({
+        symbol: "ETH",
+        ...LIGHTER,
+        gridSize: 10,
+        gridRange: 5,
+      })
+    );
   });
 });

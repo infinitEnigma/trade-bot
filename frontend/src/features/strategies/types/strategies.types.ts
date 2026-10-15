@@ -155,6 +155,10 @@ export interface TradingBalance {
 export interface StrategyFormData {
   name: string;
   type: StrategyType;
+  /** Venue exchange (migration 026): required, atomic with environment. */
+  exchange: "kodiak" | "lighter";
+  /** Venue environment (migration 026): required, atomic with exchange. */
+  environment: "testnet" | "mainnet";
   config: StrategyConfig;
   active: boolean;
 }

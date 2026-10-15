@@ -18,6 +18,8 @@ import {
   ILogger,
   Strategy,
   StrategyConfig,
+  StrategyType,
+  StrategyVenue,
 } from "@trade-bot/shared";
 
 export interface StrategyServiceDependencies {
@@ -107,13 +109,23 @@ export class StrategyService {
   }
 
   /**
-   * Update strategy
+   * Full-replacement update (migration 026). The caller supplies the complete
+   * strategy — name, type, full config, and the atomic venue pair. Partial
+   * config patches are rejected: a partial would be serialized over the whole
+   * JSONB column and silently erase omitted fields.
    */
   async updateStrategy(
     id: string,
-    updates: Partial<StrategyConfig>
+    updates: {
+      name: string;
+      type: StrategyType;
+      config: StrategyConfig;
+      exchange: StrategyVenue["exchange"];
+      environment: StrategyVenue["environment"];
+    }
   ): Promise<Strategy | null> {
     try {
+      StrategyService.assertCompleteConfig(updates.type, updates.config);
       await this.deps.strategyRepository.updateStrategy(id, updates);
       const updatedStrategy =
         await this.deps.strategyRepository.getStrategy(id);
@@ -127,6 +139,125 @@ export class StrategyService {
         strategyId: id,
         updates,
       });
+      if ((error as Error & { statusCode?: number }).statusCode) throw error;
+      throw new Error("Failed to update strategy");
+    }
+  }
+
+  /**
+   * Validate that `config` is complete for `type` (migration 026). Mirrors
+   * the route Joi schemas — the three layers (API, service, repository
+   * contract) enforce the same rules so Joi never accepts what the service
+   * rejects, and the service never persists an incomplete config.
+   */
+  static assertCompleteConfig(
+    type: StrategyType,
+    config: StrategyConfig
+  ): void {
+    const fail = (message: string): never => {
+      const error = new Error(message);
+      (error as Error & { statusCode?: number }).statusCode = 400;
+      throw error;
+    };
+    if (!config || typeof config.symbol !== "string" || !config.symbol.trim()) {
+      fail("Strategy config is missing symbol");
+    }
+    if (type === StrategyType.GRID) {
+      if (
+        !Number.isInteger(config.gridSize) ||
+        (config.gridSize as number) < 2
+      ) {
+        fail("GRID config requires gridSize (integer >= 2)");
+      }
+      if (
+        typeof config.gridRange !== "number" ||
+        !((config.gridRange as number) > 0)
+      ) {
+        fail("GRID config requires gridRange (positive number)");
+      }
+      if (
+        typeof config.orderQuantity !== "number" ||
+        !((config.orderQuantity as number) > 0)
+      ) {
+        fail("GRID config requires orderQuantity (positive number)");
+      }
+    } else if (type === StrategyType.TREND_FOLLOWING) {
+      if (
+        typeof config.entryThreshold !== "number" ||
+        typeof config.exitThreshold !== "number"
+      ) {
+        fail(
+          "TREND_FOLLOWING config requires entryThreshold and exitThreshold"
+        );
+      }
+    }
+  }
+
+  /**
+   * Guarded full-replacement update (migration 026, P0 race). The edit
+   * blocker check and the write share one strategy-row `FOR UPDATE` lock so
+   * a start/attach racing this PUT cannot interleave: either the edit commits
+   * first (admission revalidates the new row) or admission wins (PUT 409s).
+   * Only symbol/venue-affecting fields go through the blocker gate — but the
+   * write itself is always the full replacement, so the row never holds a
+   * half-applied patch.
+   */
+  async updateStrategyGuarded(
+    id: string,
+    updates: {
+      name: string;
+      type: StrategyType;
+      config: StrategyConfig;
+      exchange: StrategyVenue["exchange"];
+      environment: StrategyVenue["environment"];
+    }
+  ): Promise<Strategy | null> {
+    StrategyService.assertCompleteConfig(updates.type, updates.config);
+    const { transaction } = await import("../../database/pool");
+    const { BotLifecycleRepository } =
+      await import("../bots/lifecycle/bot-lifecycle.repository");
+    const lifecycleRepo = new BotLifecycleRepository();
+    try {
+      await transaction(async client => {
+        const locked = await lifecycleRepo.lockStrategyRow(client, id);
+        if (!locked) {
+          const notFound = new Error("Strategy not found");
+          (notFound as Error & { statusCode?: number }).statusCode = 404;
+          throw notFound;
+        }
+        const symbolChanged =
+          String(
+            (updates.config as unknown as { symbol?: unknown }).symbol ?? ""
+          ) !== locked.symbol;
+        const venueChanged =
+          updates.exchange !== locked.exchange ||
+          updates.environment !== locked.environment;
+        if (symbolChanged || venueChanged) {
+          const block = await lifecycleRepo.findEditBlockersTx(client, id);
+          if (block.blocked) {
+            const locked_err = new Error(
+              `Strategy cannot be edited while live: ${block.reason}. Stop the run and resolve orders/exposure first.`
+            );
+            (locked_err as Error & { statusCode?: number }).statusCode = 409;
+            throw locked_err;
+          }
+        }
+        await this.deps.strategyRepository.updateStrategyTx?.(
+          id,
+          updates,
+          client
+        );
+        if (!this.deps.strategyRepository.updateStrategyTx) {
+          await this.deps.strategyRepository.updateStrategy(id, updates);
+        }
+      });
+      return this.deps.strategyRepository.getStrategy(id);
+    } catch (error) {
+      this.deps.logger.error("Failed guarded strategy update", {
+        error: error instanceof Error ? error.message : String(error),
+        strategyId: id,
+      });
+      if ((error as Error & { statusCode?: number }).statusCode) throw error;
       throw new Error("Failed to update strategy");
     }
   }

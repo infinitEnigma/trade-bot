@@ -146,6 +146,19 @@ describe("resolveChartSelection", () => {
     ).toEqual(FALLBACK_CHART_SELECTION);
   });
 
+  it("prefers the stored venue over catalog order, even when Kodiak lists the symbol first (026)", () => {
+    const both: VenueCatalog[] = [
+      { ...KODIAK, symbols: ["BTC"] },
+      { ...LIGHTER, symbols: ["BTC"] },
+    ];
+    expect(
+      resolveChartSelection(both, ["BTC"], {
+        exchange: "lighter",
+        environment: "testnet",
+      })
+    ).toEqual({ symbol: "BTC", exchange: "lighter", environment: "testnet" });
+  });
+
   it("treats a malformed catalog (non-array symbols) as unavailable — never throws", () => {
     // Prod 2026-10-14: `q.filter is not a function` blanked /strategies for a
     // fresh Lighter-only account. These helpers run during render, so any

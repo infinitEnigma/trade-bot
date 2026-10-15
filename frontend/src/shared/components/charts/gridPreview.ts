@@ -45,9 +45,13 @@ export const DEFAULT_GRID_SIZE = 10;
 /** Mirrors `DEFAULT_GRID_RANGE_PERCENT` — applied when the field is empty. */
 export const DEFAULT_GRID_RANGE_PERCENT = 5;
 
-/** The form fields the preview needs (symbol included for attribution). */
+/** The form fields the preview needs (symbol + venue for attribution). */
 export interface GridPreviewInput {
   symbol: string;
+  /** Venue exchange (migration 026). Absent = legacy unknown → withhold band. */
+  exchange?: "kodiak" | "lighter" | null;
+  /** Venue environment (migration 026). Absent = legacy unknown → withhold band. */
+  environment?: "testnet" | "mainnet" | null;
   gridSize?: number;
   gridRange?: number;
 }

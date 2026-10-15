@@ -15,6 +15,8 @@ const baseStrategy: Strategy = {
   userId: "user-123",
   name: "Test Strategy",
   type: StrategyType.GRID,
+  exchange: "kodiak",
+  environment: "mainnet",
   config: { symbol: "PERP_BTC_USDC" },
   active: true,
   createdAt: new Date("2026-01-01T00:00:00Z"),
@@ -170,6 +172,8 @@ describe("StrategyService", () => {
       const testStrategyData = {
         name: "New Strategy",
         type: StrategyType.GRID,
+        exchange: "kodiak" as const,
+        environment: "mainnet" as const,
         config: { symbol: "PERP_BTC_USDC" },
         active: true,
       };
@@ -207,6 +211,8 @@ describe("StrategyService", () => {
       const testStrategyData = {
         name: "New Strategy",
         type: StrategyType.GRID,
+        exchange: "kodiak" as const,
+        environment: "mainnet" as const,
         config: { symbol: "PERP_BTC_USDC" },
         active: true,
       };
@@ -223,12 +229,23 @@ describe("StrategyService", () => {
   });
 
   describe("updateStrategy", () => {
-    it("should update an existing strategy", async () => {
+    it("should update an existing strategy (full replacement)", async () => {
       const deps = createMockDependencies();
       const strategyService = new StrategyService(deps);
 
       const testStrategyId = "strategy-123";
-      const testUpdates = { symbol: "PERP_ETH_USDC" };
+      const testUpdates = {
+        name: "Updated",
+        type: StrategyType.GRID,
+        config: {
+          symbol: "PERP_ETH_USDC",
+          gridSize: 10,
+          gridRange: 5,
+          orderQuantity: 1,
+        },
+        exchange: "kodiak" as const,
+        environment: "mainnet" as const,
+      };
       const mockUpdatedStrategy = {
         ...baseStrategy,
         id: testStrategyId,
@@ -257,12 +274,39 @@ describe("StrategyService", () => {
       expect(deps.logger.info).toHaveBeenCalled();
     });
 
+    it("should reject an incomplete GRID config without touching the repository", async () => {
+      const deps = createMockDependencies();
+      const strategyService = new StrategyService(deps);
+
+      await expect(
+        strategyService.updateStrategy("strategy-123", {
+          name: "Bad",
+          type: StrategyType.GRID,
+          config: { symbol: "BTC" },
+          exchange: "lighter",
+          environment: "testnet",
+        })
+      ).rejects.toMatchObject({ statusCode: 400 });
+      expect(deps.strategyRepository.updateStrategy).not.toHaveBeenCalled();
+    });
+
     it("should handle errors when updating strategy", async () => {
       const deps = createMockDependencies();
       const strategyService = new StrategyService(deps);
 
       const testStrategyId = "strategy-123";
-      const testUpdates = { symbol: "PERP_ETH_USDC" };
+      const testUpdates = {
+        name: "Updated",
+        type: StrategyType.GRID,
+        config: {
+          symbol: "PERP_ETH_USDC",
+          gridSize: 10,
+          gridRange: 5,
+          orderQuantity: 1,
+        },
+        exchange: "kodiak" as const,
+        environment: "mainnet" as const,
+      };
       const testError = new Error("Failed to update strategy");
       (deps.strategyRepository.updateStrategy as jest.Mock).mockRejectedValue(
         testError

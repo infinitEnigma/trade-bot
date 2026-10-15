@@ -161,10 +161,20 @@ export interface Strategy {
   userId: string;
   name: string;
   type: StrategyType;
+  /** Venue exchange (migration 026). NULL = legacy unknown. Never inside config. */
+  exchange: "kodiak" | "lighter" | null;
+  /** Venue environment (migration 026). NULL = legacy unknown. Paired with exchange. */
+  environment: "testnet" | "mainnet" | null;
   config: StrategyConfig;
   active: boolean;
   createdAt: Date;
   updatedAt: Date;
+}
+
+/** A complete venue pair — the unit the strategy stores and admission enforces. */
+export interface StrategyVenue {
+  exchange: "kodiak" | "lighter";
+  environment: "testnet" | "mainnet";
 }
 
 export interface StrategyConfig {

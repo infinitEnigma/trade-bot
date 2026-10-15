@@ -138,7 +138,11 @@ export class Strategy {
     public type: StrategyType,
     public symbol: string,
     public config: StrategyConfig,
-    public active: boolean = false
+    public active: boolean = false,
+    /** Venue exchange (migration 026). null = legacy unknown. */
+    public exchange: "kodiak" | "lighter" | null = null,
+    /** Venue environment (migration 026). Paired with exchange. */
+    public environment: "testnet" | "mainnet" | null = null
   ) {}
 
   isTradable(currentPrice: number): boolean {

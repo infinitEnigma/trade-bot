@@ -45,8 +45,11 @@ import {
 import { BotLifecycleRepository } from "./lifecycle/bot-lifecycle.repository";
 import { RunNotionalCapExceededError } from "./lifecycle/bot-lifecycle.repository";
 import { exchangeAccountRepositoryAdapter } from "../../infrastructure/adapters/repositories/exchange-account-repository.adapter";
-import { assertSymbolSupported } from "../../infrastructure/external/venue-symbols";
-import { query } from "../../database/pool";
+import {
+  listVenueSymbols,
+  revalidateSymbolAgainstCatalog,
+} from "../../infrastructure/external/venue-symbols";
+import { transaction } from "../../database/pool";
 import { syncSessionStrategiesActive } from "./lifecycle/strategy-active-sync";
 import {
   BotLifecycleResult,
@@ -359,25 +362,39 @@ export class BotLifecycleService {
       throw error;
     }
 
-    // L20: the strategy's symbol must be listed on the bound venue. Rejected
-    // here — before any state change or BOT_START dispatch — with a
-    // user-facing reason (start route passes 400 messages through). Fail-open
-    // when the venue catalog cannot be fetched: the engine's own market
-    // resolution stays the authority.
-    const config = await this.repository.findStrategyConfig(strategyId);
-    if (typeof config.symbol === "string" && config.symbol) {
-      await assertSymbolSupported(
-        config.symbol,
-        account.exchange,
-        account.environment
+    // L20 + 026 Phase A (no tx, network allowed): venue equality first, then
+    // the symbol catalog snapshot. Venue-bound rows fail CLOSED on an
+    // unavailable catalog; legacy null rows keep the fail-open check.
+    const venueSnap = await this.repository.findStrategyVenue(strategyId);
+    BotLifecycleService.assertVenueMatchesAccount(
+      venueSnap.exchange,
+      venueSnap.environment,
+      account.exchange,
+      account.environment
+    );
+    const boundVenue =
+      venueSnap.exchange !== null && venueSnap.environment !== null;
+    const symbolExchange = boundVenue
+      ? String(venueSnap.exchange)
+      : String(account.exchange ?? "");
+    const symbolEnvironment = boundVenue
+      ? String(venueSnap.environment)
+      : String(account.environment ?? "");
+    let catalog: string[] | null = null;
+    if (venueSnap.symbol) {
+      catalog = await listVenueSymbols(symbolExchange, symbolEnvironment);
+      revalidateSymbolAgainstCatalog(
+        venueSnap.symbol,
+        symbolExchange,
+        symbolEnvironment,
+        catalog,
+        { strict: boundVenue }
       );
     }
 
     // F1 residual notional admission: the boot run's notional must fit the
     // account's residual capacity (venue exposure + new <= cap) BEFORE any
     // session row is created, so an over-cap request leaves no orphan bot.
-    // pendingSum is 0 (no runs yet). `start()` re-checks the aggregate once the
-    // run exists, so this only needs to screen the request's own notional here.
     await this.assertSessionNotionalAllowed(
       userId,
       exchangeAccountId,
@@ -385,50 +402,116 @@ export class BotLifecycleService {
       notionalAmount
     );
 
-    // Create the instance in the deterministic initial state, bound to the
-    // venue account (C3a, migration 013).
-    const botId = await this.repository.insertBotInstance(
-      strategyId,
-      userId,
-      exchangeAccountId
-    );
-
-    // Attach the initial run (plan §D, migration 019): snapshot the live
-    // strategy config, size the run. The partial unique index refuses a
-    // strategy live elsewhere — map the 23505 to the 409 above. A failed
-    // attach rolls back the just-created session so no orphan bot remains.
-    const bootConfig = await this.repository.findStrategyConfig(strategyId);
-    try {
-      await this.repository.attachRun(
-        botId,
-        strategyId,
-        bootConfig,
-        notionalAmount
+    // 026 Phase B (one tx, no network): lock strategy FIRST, revalidate the
+    // locked row against the Phase A catalog snapshot, then insert. A PUT
+    // racing this start either committed first (we admit the new row) or
+    // loses (its blocker check sees our live run → 409). Rollback removes
+    // session + run + audit together — no orphans, locks released.
+    const botId: string = await transaction(async client => {
+      const cur = await this.repository.lockStrategyRow(client, strategyId);
+      if (!cur) {
+        const error = new Error("Strategy not found");
+        (error as Error & { statusCode?: number }).statusCode = 404;
+        throw error;
+      }
+      BotLifecycleService.assertVenueMatchesAccount(
+        cur.exchange,
+        cur.environment,
+        account.exchange,
+        account.environment
       );
-    } catch (error) {
-      await query(`DELETE FROM bot_instances WHERE id = $1`, [botId]);
-      const err = error as Error & { code?: string };
-      if (err?.code === "23505") {
-        const conflict = new Error(
+      const curBound = cur.exchange !== null && cur.environment !== null;
+      if (cur.symbol) {
+        revalidateSymbolAgainstCatalog(
+          cur.symbol,
+          curBound ? String(cur.exchange) : symbolExchange,
+          curBound ? String(cur.environment) : symbolEnvironment,
+          catalog,
+          { strict: curBound }
+        );
+      }
+      const lockedLive = await this.repository.findLiveRunForStrategyTx(
+        client,
+        strategyId
+      );
+      if (lockedLive) {
+        const error = new Error(
           "Strategy is already running in another session"
         );
-        (conflict as Error & { statusCode?: number }).statusCode = 409;
-        throw conflict;
+        (error as Error & { statusCode?: number }).statusCode = 409;
+        throw error;
       }
-      throw error;
-    }
-
-    await this.repository.recordLifecycleEvent(botId, {
-      eventType: "BOT_CREATED",
-      fromState: null,
-      toState: "STOPPED",
-      correlationId: null,
-      messageId: null,
-      metadata: { userId, strategyId, notionalAmount, exchangeAccountId },
+      const lockedSession =
+        await this.repository.findLiveSessionForAccount(exchangeAccountId);
+      if (lockedSession) {
+        const error = new Error(
+          "A live session already exists for this exchange account. Attach the strategy to it instead."
+        );
+        (error as Error & { statusCode?: number }).statusCode = 409;
+        throw error;
+      }
+      const txBotId = await this.repository.insertBotInstanceTx(
+        client,
+        userId,
+        exchangeAccountId
+      );
+      try {
+        await this.repository.attachRunTx(
+          client,
+          txBotId,
+          strategyId,
+          cur.config,
+          notionalAmount
+        );
+      } catch (error) {
+        const err = error as Error & { code?: string };
+        if (err?.code === "23505") {
+          const conflict = new Error(
+            "Strategy is already running in another session"
+          );
+          (conflict as Error & { statusCode?: number }).statusCode = 409;
+          throw conflict;
+        }
+        throw error;
+      }
+      await this.repository.recordLifecycleEventTx(client, txBotId, {
+        eventType: "BOT_CREATED",
+        fromState: null,
+        toState: "STOPPED",
+        correlationId: null,
+        messageId: null,
+        metadata: { userId, strategyId, notionalAmount, exchangeAccountId },
+      });
+      return txBotId;
     });
 
     // Delegate to start() so the transition/command logic has a single home.
     return this.start(botId, userId);
+  }
+
+  /**
+   * Strict venue equality (migration 026): when the strategy names a venue,
+   * the account must match exactly — a symbol listed on both venues still
+   * cannot cross-start. Legacy null rows skip this gate and keep the
+   * symbol-catalog check only. Throws 400, before any session row.
+   */
+  private static assertVenueMatchesAccount(
+    strategyExchange: string | null,
+    strategyEnvironment: string | null,
+    accountExchange: string,
+    accountEnvironment: string
+  ): void {
+    if (strategyExchange === null && strategyEnvironment === null) return;
+    if (
+      strategyExchange !== accountExchange ||
+      strategyEnvironment !== accountEnvironment
+    ) {
+      const error = new Error(
+        `Strategy venue ${strategyExchange} ${strategyEnvironment} does not match account ${accountExchange} ${accountEnvironment}. Pick a ${strategyExchange} ${strategyEnvironment} account.`
+      );
+      (error as Error & { statusCode?: number }).statusCode = 400;
+      throw error;
+    }
   }
 
   // ===========================================
@@ -471,6 +554,50 @@ export class BotLifecycleService {
       (error as Error & { statusCode?: number }).statusCode = 409;
       throw error;
     }
+    // 026 Phase A (no tx, network allowed): the session's bound account must
+    // load — a missing account fails CLOSED, never skips venue validation.
+    // Then venue equality + catalog snapshot (bound rows fail closed).
+    if (!bot.exchange_account_id) {
+      const error = new Error("Session has no verifiable bound account");
+      (error as Error & { statusCode?: number }).statusCode = 400;
+      throw error;
+    }
+    const botAccount =
+      await exchangeAccountRepositoryAdapter.getAccountWithSecret(
+        userId,
+        bot.exchange_account_id
+      );
+    if (!botAccount) {
+      const error = new Error("Session has no verifiable bound account");
+      (error as Error & { statusCode?: number }).statusCode = 400;
+      throw error;
+    }
+    const attachSnap = await this.repository.findStrategyVenue(strategyId);
+    BotLifecycleService.assertVenueMatchesAccount(
+      attachSnap.exchange,
+      attachSnap.environment,
+      botAccount.exchange,
+      botAccount.environment
+    );
+    const snapBound =
+      attachSnap.exchange !== null && attachSnap.environment !== null;
+    const snapEx = snapBound
+      ? String(attachSnap.exchange)
+      : String(botAccount.exchange);
+    const snapEnv = snapBound
+      ? String(attachSnap.environment)
+      : String(botAccount.environment);
+    let attachCatalog: string[] | null = null;
+    if (attachSnap.symbol) {
+      attachCatalog = await listVenueSymbols(snapEx, snapEnv);
+      revalidateSymbolAgainstCatalog(
+        attachSnap.symbol,
+        snapEx,
+        snapEnv,
+        attachCatalog,
+        { strict: snapBound }
+      );
+    }
     // F1 residual notional admission (concurrency-safe): resolve the account
     // cap + existing venue exposure OUTSIDE the transaction (no DB lock across
     // the venue balance + positions calls), then let the repository re-check the
@@ -482,17 +609,62 @@ export class BotLifecycleService {
       userId,
       bot.exchange_account_id
     );
-    const snapConfig = await this.repository.findStrategyConfig(strategyId);
+    // 026: venue equality + symbol check were resolved in Phase A (above);
+    // revalidate the locked strategy row against that snapshot inside the tx.
+    // const snapConfig = await this.repository.findStrategyConfig(strategyId);
     let runId: string;
     try {
-      runId = await this.repository.attachRunWithCapGuard(
-        botId,
-        strategyId,
-        snapConfig,
-        notionalAmount,
-        cap,
-        existingExposure
-      );
+      runId = await transaction(async client => {
+        const cur = await this.repository.lockStrategyRow(client, strategyId);
+        if (!cur) {
+          const error = new Error("Strategy not found");
+          (error as Error & { statusCode?: number }).statusCode = 404;
+          throw error;
+        }
+        BotLifecycleService.assertVenueMatchesAccount(
+          cur.exchange,
+          cur.environment,
+          botAccount.exchange,
+          botAccount.environment
+        );
+        const curBound = cur.exchange !== null && cur.environment !== null;
+        if (cur.symbol) {
+          revalidateSymbolAgainstCatalog(
+            cur.symbol,
+            curBound ? String(cur.exchange) : snapEx,
+            curBound ? String(cur.environment) : snapEnv,
+            attachCatalog,
+            { strict: curBound }
+          );
+        }
+        const txLive = await this.repository.findLiveRunForStrategyTx(
+          client,
+          strategyId
+        );
+        if (txLive) {
+          const error = new Error(
+            "Strategy is already running in another session"
+          );
+          (error as Error & { statusCode?: number }).statusCode = 409;
+          throw error;
+        }
+        try {
+          return await this.repository.attachRunWithCapGuardTx(
+            client,
+            botId,
+            strategyId,
+            cur.config,
+            notionalAmount,
+            cap,
+            existingExposure
+          );
+        } catch (err) {
+          if (err instanceof RunNotionalCapExceededError) {
+            (err as Error & { statusCode?: number }).statusCode = 409;
+          }
+          throw err;
+        }
+      });
     } catch (err) {
       if (err instanceof RunNotionalCapExceededError) {
         (err as Error & { statusCode?: number }).statusCode = 409;

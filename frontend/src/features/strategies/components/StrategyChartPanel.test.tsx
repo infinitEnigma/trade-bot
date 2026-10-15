@@ -69,6 +69,8 @@ const GROUPS: ChartSymbolGroup[] = [
 
 const PREVIEW: GridPreviewInput = {
   symbol: "PERP_ETH_USDC",
+  exchange: "kodiak",
+  environment: "mainnet",
   gridSize: 10,
   gridRange: 5,
 };
@@ -132,7 +134,13 @@ describe("StrategyChartPanel", () => {
 
   it("withholds the band and says why when the draft names another market", async () => {
     renderPanel({
-      previewGrid: { symbol: "PERP_BTC_USDC", gridSize: 10, gridRange: 5 },
+      previewGrid: {
+        symbol: "PERP_BTC_USDC",
+        exchange: "kodiak",
+        environment: "mainnet",
+        gridSize: 10,
+        gridRange: 5,
+      },
     });
 
     const chart = await screen.findByTestId("candlestick-chart");
@@ -146,7 +154,15 @@ describe("StrategyChartPanel", () => {
     // different venues. The band is centred on the live price of whichever
     // market is on screen, so previewing the other venue's grid would place
     // its levels around the wrong book.
-    renderPanel({ previewGrid: { symbol: "ETH", gridSize: 10, gridRange: 5 } });
+    renderPanel({
+      previewGrid: {
+        symbol: "ETH",
+        exchange: "lighter",
+        environment: "testnet",
+        gridSize: 10,
+        gridRange: 5,
+      },
+    });
 
     const chart = await screen.findByTestId("candlestick-chart");
     expect(chart.getAttribute("data-preview")).toBe("null");
@@ -163,7 +179,15 @@ describe("StrategyChartPanel", () => {
   it("withholds the band when the draft names another VENUE (review P1)", async () => {
     // `BTC` is Lighter naming while the chart shows Kodiak. The band would be
     // centred on the wrong book, so nothing is drawn and the panel says why.
-    renderPanel({ previewGrid: { symbol: "BTC", gridSize: 10, gridRange: 5 } });
+    renderPanel({
+      previewGrid: {
+        symbol: "BTC",
+        exchange: "lighter",
+        environment: "testnet",
+        gridSize: 10,
+        gridRange: 5,
+      },
+    });
 
     const chart = await screen.findByTestId("candlestick-chart");
     expect(chart.getAttribute("data-preview")).toBe("null");
@@ -173,12 +197,30 @@ describe("StrategyChartPanel", () => {
   it("draws the band when the draft's spelling matches the charted venue", async () => {
     // `PERP_ETH_USDC` on the Kodiak ETH chart: same market AND same venue.
     renderPanel({
-      previewGrid: { symbol: "PERP_ETH_USDC", gridSize: 10, gridRange: 5 },
+      previewGrid: {
+        symbol: "PERP_ETH_USDC",
+        exchange: "kodiak",
+        environment: "mainnet",
+        gridSize: 10,
+        gridRange: 5,
+      },
     });
 
     const chart = await screen.findByTestId("candlestick-chart");
     expect(chart.getAttribute("data-preview")).toContain("PERP_ETH_USDC");
     expect(screen.queryByText(/switch the chart to that market/i)).toBeNull();
+  });
+
+  it("withholds the band when the preview venue is unknown, even for the same spelling (026)", async () => {
+    // Legacy preview without a venue binding: symbol equivalence alone
+    // (PERP_ETH_USDC === chart) must not draw — the binding is unknown.
+    renderPanel({
+      previewGrid: { symbol: "PERP_ETH_USDC", gridSize: 10, gridRange: 5 },
+    });
+
+    const chart = await screen.findByTestId("candlestick-chart");
+    expect(chart.getAttribute("data-preview")).toBe("null");
+    expect(screen.getByText(/unknown venue/i)).toBeDefined();
   });
 
   it("states whose orders the levels come from (review P1)", async () => {

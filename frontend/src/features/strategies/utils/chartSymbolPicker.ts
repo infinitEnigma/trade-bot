@@ -156,12 +156,25 @@ export function buildChartSymbolGroups(
 /**
  * The default selection (rules 1–4 in the module doc). `catalogs` must be in
  * ACTIVE-account order — first membership match then wins ties.
+ *
+ * Migration 026: when the strategy's stored venue is known, it wins outright
+ * — even if another catalog earlier in the list also contains the string.
+ * Catalog-membership / orphan / fallback rules below serve legacy null-venue
+ * rows only.
  */
 export function resolveChartSelection(
   catalogs: VenueCatalog[],
-  strategySymbols: string[]
+  strategySymbols: string[],
+  strategyVenue?: ChartVenueRef | null
 ): ChartSelection {
   const first = strategySymbols[0];
+  if (first && strategyVenue?.exchange && strategyVenue?.environment) {
+    return {
+      symbol: first,
+      exchange: strategyVenue.exchange,
+      environment: strategyVenue.environment,
+    };
+  }
   if (first) {
     const wanted = first.trim().toUpperCase();
     for (const catalog of catalogs) {
