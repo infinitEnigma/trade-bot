@@ -11,7 +11,7 @@
  */
 
 import { BotCommandDispatcher } from "../../src/core/bots/lifecycle/bot-command-dispatcher";
-import { BotLifecycleRepository } from "../../src/core/bots/lifecycle/bot-lifecycle.repository";
+import { ILifecycleRepository } from "../../src/core/bots/lifecycle/lifecycle-repository.port";
 import {
   EngineProtocolService,
   SendCommandResult,
@@ -27,7 +27,7 @@ jest.mock("../../src/core/logging", () => ({
 }));
 
 describe("BotCommandDispatcher (record-before-publish)", () => {
-  let repository: jest.Mocked<BotLifecycleRepository>;
+  let repository: jest.Mocked<ILifecycleRepository>;
   let engineProtocol: jest.Mocked<EngineProtocolService>;
   let dispatcher: BotCommandDispatcher;
 
@@ -39,13 +39,13 @@ describe("BotCommandDispatcher (record-before-publish)", () => {
         .fn()
         .mockResolvedValue({ symbol: "PERP_BTC_USDC", gridSize: 10 }),
       getRunsForBot: jest.fn().mockResolvedValue([]),
-    } as unknown as jest.Mocked<BotLifecycleRepository>;
+    } as unknown as jest.Mocked<ILifecycleRepository>;
 
     engineProtocol = {
       sendCommand: jest.fn(),
     } as unknown as jest.Mocked<EngineProtocolService>;
 
-    dispatcher = new BotCommandDispatcher(engineProtocol, repository);
+    dispatcher = new BotCommandDispatcher(engineProtocol, () => repository);
 
     jest.clearAllMocks();
     jest.resetAllMocks();

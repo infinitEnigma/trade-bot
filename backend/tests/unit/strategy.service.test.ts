@@ -45,6 +45,13 @@ describe("StrategyService", () => {
         updateBotPerformance: jest.fn(),
         deleteBotInstance: jest.fn(),
       },
+      lifecycleRepository: {
+        inTransaction: jest.fn(
+          async (fn: (tx: unknown) => Promise<unknown>) => fn({} as never)
+        ),
+        lockStrategyRow: jest.fn().mockResolvedValue(null),
+        findEditBlockersTx: jest.fn().mockResolvedValue({ blocked: false }),
+      } as never,
       logger: {
         debug: jest.fn(),
         info: jest.fn(),

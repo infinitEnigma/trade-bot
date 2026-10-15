@@ -30,6 +30,7 @@ import { strategyRepositoryAdapter } from "./adapters/repositories/strategy-repo
 import { auditLogRepositoryAdapter } from "./adapters/repositories/audit-log-repository.adapter";
 import { roleRepositoryAdapter } from "./adapters/repositories/role-repository.adapter";
 import { botInstanceRepositoryAdapter } from "./adapters/repositories/bot-instance-repository.adapter";
+import { BotLifecycleRepositoryAdapter } from "./adapters/repositories/bot-lifecycle-repository.adapter";
 import { query as poolQuery } from "../database/pool";
 
 // Pure Services
@@ -289,6 +290,9 @@ export class DependencyInjectionContainer {
       strategyRepository: this.strategyRepository,
       botInstanceRepository: this.botInstanceRepository,
       logger: this.loggerService,
+      // Guarded edit locks the strategy row through the lifecycle port
+      // (review P1: the PostgreSQL adapter is infrastructure's side of it).
+      lifecycleRepository: new BotLifecycleRepositoryAdapter(),
     });
   }
 

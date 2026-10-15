@@ -67,7 +67,7 @@ describe("BotEventProcessor ledger routing (Phase 4)", () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    processor = new BotEventProcessor({} as never, {} as never);
+    processor = new BotEventProcessor(() => ({} as never), {} as never);
     ledgerHandler = jest.fn().mockResolvedValue(undefined);
     processor.setTradeLedgerHandler(ledgerHandler);
   });

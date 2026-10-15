@@ -15,20 +15,43 @@
  * lifecycle operation it decorates (the bot is the source of truth; the
  * badge is presentation).
  *
+ * Dependency inversion (review P1, 2026-10-15): the strategy repository
+ * adapter is no longer imported here — the badge writer is setter-injected
+ * at startup (`index.ts` `setStrategyBadgeWriter`). Unwired → flips are
+ * logged and skipped, same best-effort contract as a repository failure.
+ *
  * @format
  */
 
 import { contextLogger as logger } from "../../logging";
-import { strategyRepositoryAdapter } from "../../../infrastructure/adapters/repositories/strategy-repository.adapter";
-import { BotLifecycleRepository } from "./bot-lifecycle.repository";
+import { ILifecycleRepository } from "./lifecycle-repository.port";
+
+/** The one repository call the badge flip needs (strategies domain). */
+export interface StrategyBadgeWriter {
+  toggleStrategy(strategyId: string, active: boolean): Promise<void>;
+}
+
+let badgeWriter: StrategyBadgeWriter | null = null;
+
+/** Composition-root wiring (index.ts). Tests inject their fake the same way. */
+export function setStrategyBadgeWriter(writer: StrategyBadgeWriter): void {
+  badgeWriter = writer;
+}
 
 export async function syncStrategyActive(
   strategyId: string | null | undefined,
   active: boolean
 ): Promise<void> {
   if (!strategyId) return;
+  if (!badgeWriter) {
+    logger.warn("Strategy badge writer not wired - skipping badge flip", {
+      strategyId,
+      active,
+    });
+    return;
+  }
   try {
-    await strategyRepositoryAdapter.toggleStrategy(strategyId, active);
+    await badgeWriter.toggleStrategy(strategyId, active);
   } catch (error) {
     logger.warn("Failed to sync strategy active flag", {
       strategyId,
@@ -45,7 +68,7 @@ export async function syncStrategyActive(
  * Best-effort like the single flip: never fails the lifecycle operation.
  */
 export async function syncSessionStrategiesActive(
-  repository: Pick<BotLifecycleRepository, "getRunsForBot">,
+  repository: Pick<ILifecycleRepository, "getRunsForBot">,
   botId: string,
   active: boolean
 ): Promise<void> {

@@ -31,6 +31,7 @@ jest.mock(
 import {
   syncStrategyActive,
   syncSessionStrategiesActive,
+  setStrategyBadgeWriter,
 } from "../../src/core/bots/lifecycle/strategy-active-sync";
 import { strategyRepositoryAdapter } from "../../src/infrastructure/adapters/repositories/strategy-repository.adapter";
 import { contextLogger } from "../../src/core/logging";
@@ -39,6 +40,10 @@ const toggleStrategy = strategyRepositoryAdapter.toggleStrategy as jest.Mock;
 const warn = contextLogger.warn as jest.Mock;
 
 const STRATEGY_ID = "3f1c9a2e-6b7d-4c8f-9a1b-2d3e4f5a6b7c";
+
+// Review P1: the badge writer is setter-injected (index.ts wires the real
+// adapter); wire the mocked module object here exactly the same way.
+setStrategyBadgeWriter(strategyRepositoryAdapter);
 
 describe("syncStrategyActive", () => {
   beforeEach(() => {

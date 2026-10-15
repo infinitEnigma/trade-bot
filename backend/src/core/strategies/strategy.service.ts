@@ -21,11 +21,18 @@ import {
   StrategyType,
   StrategyVenue,
 } from "@trade-bot/shared";
+import { ILifecycleRepository } from "../bots/lifecycle/lifecycle-repository.port";
 
 export interface StrategyServiceDependencies {
   strategyRepository: IStrategyRepository;
   botInstanceRepository: IBotInstanceRepository;
   logger: ILogger;
+  /**
+   * Lifecycle persistence port (review P1): `updateStrategyGuarded` locks the
+   * strategy row through it so a start/attach cannot interleave with the edit.
+   * The PostgreSQL adapter is wired by the DI container.
+   */
+  lifecycleRepository: ILifecycleRepository;
 }
 
 /** Placeholder performance metrics returned by `getStrategyPerformance`. */
@@ -213,13 +220,12 @@ export class StrategyService {
     }
   ): Promise<Strategy | null> {
     StrategyService.assertCompleteConfig(updates.type, updates.config);
-    const { transaction } = await import("../../database/pool");
-    const { BotLifecycleRepository } =
-      await import("../bots/lifecycle/bot-lifecycle.repository");
-    const lifecycleRepo = new BotLifecycleRepository();
     try {
-      await transaction(async client => {
-        const locked = await lifecycleRepo.lockStrategyRow(client, id);
+      await this.deps.lifecycleRepository.inTransaction(async tx => {
+        const locked = await this.deps.lifecycleRepository.lockStrategyRow(
+          tx,
+          id
+        );
         if (!locked) {
           const notFound = new Error("Strategy not found");
           (notFound as Error & { statusCode?: number }).statusCode = 404;
@@ -233,7 +239,10 @@ export class StrategyService {
           updates.exchange !== locked.exchange ||
           updates.environment !== locked.environment;
         if (symbolChanged || venueChanged) {
-          const block = await lifecycleRepo.findEditBlockersTx(client, id);
+          const block = await this.deps.lifecycleRepository.findEditBlockersTx(
+            tx,
+            id
+          );
           if (block.blocked) {
             const locked_err = new Error(
               `Strategy cannot be edited while live: ${block.reason}. Stop the run and resolve orders/exposure first.`
@@ -242,11 +251,10 @@ export class StrategyService {
             throw locked_err;
           }
         }
-        await this.deps.strategyRepository.updateStrategyTx?.(
-          id,
-          updates,
-          client
-        );
+        // `tx` is core's opaque LifecycleTx; the shared `updateStrategyTx`
+        // types its client as unknown and the adapter narrows to { query } —
+        // at runtime it is the same pg client the lifecycle tx wraps.
+        await this.deps.strategyRepository.updateStrategyTx?.(id, updates, tx);
         if (!this.deps.strategyRepository.updateStrategyTx) {
           await this.deps.strategyRepository.updateStrategy(id, updates);
         }

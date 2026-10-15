@@ -13,13 +13,18 @@ import {
 } from "../engine-protocol.service";
 import { EmergencyStopAction } from "@trade-bot/shared";
 import { contextLogger as logger } from "../../logging";
-import { BotLifecycleRepository } from "./bot-lifecycle.repository";
+import { ILifecycleRepository } from "./lifecycle-repository.port";
 
 export class BotCommandDispatcher {
   constructor(
     private engineProtocol: EngineProtocolService,
-    private repository: BotLifecycleRepository
+    private repositoryProvider: () => ILifecycleRepository
   ) {}
+
+  /** Fail-fast accessor — the repository is setter-injected at startup. */
+  private get repository(): ILifecycleRepository {
+    return this.repositoryProvider();
+  }
 
   /**
    * Send BOT_START. Non-secret strategy configuration travels with the

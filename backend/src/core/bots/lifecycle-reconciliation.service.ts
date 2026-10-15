@@ -24,7 +24,7 @@
 
 import { contextLogger as logger } from "../logging";
 import { botLifecycleService } from "./bot-lifecycle.service";
-import { BotLifecycleRepository } from "./lifecycle/bot-lifecycle.repository";
+import { ILifecycleRepository } from "./lifecycle/lifecycle-repository.port";
 import {
   BOT_COMMAND_TIMEOUT_MS,
   MAX_STOP_REISSUES_PER_HOUR,
@@ -47,10 +47,27 @@ export interface ReconcileRunResult {
 }
 
 export class LifecycleReconciliationService {
-  private repository = new BotLifecycleRepository();
+  private repositoryImpl?: ILifecycleRepository;
   private intervalId: NodeJS.Timeout | null = null;
   private running = false;
   private lastRunResult: ReconcileRunResult | null = null;
+
+  /**
+   * Fail-fast accessor — the repository is setter-injected at startup
+   * (index.ts, beside the lifecycle service wiring; review P1).
+   */
+  private get repository(): ILifecycleRepository {
+    if (!this.repositoryImpl) {
+      throw new Error(
+        "Lifecycle repository not wired — call setLifecycleRepository() at startup"
+      );
+    }
+    return this.repositoryImpl;
+  }
+
+  setLifecycleRepository(repository: ILifecycleRepository): void {
+    this.repositoryImpl = repository;
+  }
 
   start(): void {
     if (this.intervalId) {

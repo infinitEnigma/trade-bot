@@ -1,10 +1,13 @@
 /**
- * Bot Lifecycle Repository - all PostgreSQL persistence for the lifecycle
+ * Bot Lifecycle Repository Adapter — all PostgreSQL persistence for the
+ * lifecycle, implementing the core `ILifecycleRepository` port.
  *
- * Extracted from BotLifecycleService so the service can focus on
- * orchestration. Every lifecycle-related SQL statement lives here:
- * bot reads, compare-and-set transitions, audit trail, command
- * tracking and timeout-sweep queries.
+ * Moved here from `core/bots/lifecycle/bot-lifecycle.repository.ts`
+ * (dependency inversion — external review P1, 2026-10-15): every
+ * lifecycle-related SQL statement lives in this infrastructure adapter —
+ * bot reads, compare-and-set transitions, audit trail, command tracking,
+ * timeout-sweep queries and the F1 cap-guarded run attach. Core consumes the
+ * port; `index.ts` wires this adapter at startup.
  *
  * @format
  */
@@ -12,7 +15,14 @@
 import { BotActualState } from "@trade-bot/shared";
 import { query, transaction } from "../../../database/pool";
 import type { PoolClient } from "pg";
-import { contextLogger as logger } from "../../logging";
+import { contextLogger as logger } from "../../../core/logging";
+import {
+  ILifecycleRepository,
+  LifecycleTx,
+  EditBlockers,
+  StrategyVenueRow,
+  RunNotionalCapExceededError,
+} from "../../../core/bots/lifecycle/lifecycle-repository.port";
 import {
   BOT_COMMAND_TIMEOUT_MS,
   BotRow,
@@ -21,32 +31,14 @@ import {
   PersistTransitionInput,
   StrategyRunRow,
   TrackedCommandRow,
-} from "./types";
+} from "../../../core/bots/lifecycle/types";
 
-/**
- * F1 notional admission: thrown by {@link BotLifecycleRepository.attachRunWithCapGuard}
- * when residual capacity is exceeded — `existingExposure + pendingSum + incoming`
- * (recalculated under the session row lock) exceeds the cap. Carries the
- * breakdown so the service can build a 409 ops can act on; the enclosing
- * transaction has already rolled back, so no run row is written.
- */
-export class RunNotionalCapExceededError extends Error {
-  constructor(
-    public readonly existingExposure: number,
-    public readonly pendingSum: number,
-    public readonly incoming: number,
-    public readonly cap: number
-  ) {
-    super(
-      `Session cap exceeded: venue exposure $${existingExposure} + pending runs $${pendingSum} + new $${incoming} = $${
-        existingExposure + pendingSum + incoming
-      } exceeds the account cap $${cap} (balance × leverage).`
-    );
-    this.name = "RunNotionalCapExceededError";
-  }
+/** Cast the opaque core tx handle back to the concrete pg client. */
+function clientOf(tx: LifecycleTx): PoolClient {
+  return tx as unknown as PoolClient;
 }
 
-export class BotLifecycleRepository {
+export class BotLifecycleRepositoryAdapter implements ILifecycleRepository {
   /**
    * Session columns (022 shim-drop): `strategy_id` is gone — strategy
    * attribution resolves via `strategy_runs`.
@@ -56,7 +48,7 @@ export class BotLifecycleRepository {
 
   async findBot(botId: string): Promise<BotRow | null> {
     const result = await query<BotRow>(
-      `SELECT ${BotLifecycleRepository.BOT_COLUMNS} FROM bot_instances WHERE id = $1`,
+      `SELECT ${BotLifecycleRepositoryAdapter.BOT_COLUMNS} FROM bot_instances WHERE id = $1`,
       [botId]
     );
     return result.rows[0] ?? null;
@@ -199,10 +191,11 @@ export class BotLifecycleRepository {
    * failed attach leaves no BOT_CREATED/RUN_ATTACHED trail for a missing row.
    */
   async recordLifecycleEventTx(
-    client: PoolClient,
+    tx: LifecycleTx,
     botId: string,
     input: LifecycleEventInput
   ): Promise<void> {
+    const client = clientOf(tx);
     await client.query(
       `INSERT INTO bot_lifecycle_events (bot_id, event_type, from_state, to_state, correlation_id, message_id, metadata)
               VALUES ($1, $2, $3, $4, $5, $6, $7)`,
@@ -351,7 +344,7 @@ export class BotLifecycleRepository {
   /** All RUNNING bots assigned to an engine (heartbeat-loss supervision). */
   async findRunningBotsForEngine(engineId: string): Promise<BotRow[]> {
     const result = await query<BotRow>(
-      `SELECT ${BotLifecycleRepository.BOT_COLUMNS}
+      `SELECT ${BotLifecycleRepositoryAdapter.BOT_COLUMNS}
              FROM bot_instances
              WHERE engine_id = $1 AND actual_state = 'RUNNING'`,
       [engineId]
@@ -366,7 +359,7 @@ export class BotLifecycleRepository {
     }
     const placeholders = botIds.map((_, i) => `$${i + 1}`).join(", ");
     const result = await query<BotRow>(
-      `SELECT ${BotLifecycleRepository.BOT_COLUMNS}
+      `SELECT ${BotLifecycleRepositoryAdapter.BOT_COLUMNS}
              FROM bot_instances
              WHERE id IN (${placeholders})`,
       botIds
@@ -402,7 +395,17 @@ export class BotLifecycleRepository {
     }>("SELECT exchange, environment, config FROM strategies WHERE id = $1", [
       strategyId,
     ]);
-    return BotLifecycleRepository.toVenue(result.rows[0]);
+    return BotLifecycleRepositoryAdapter.toVenue(result.rows[0]);
+  }
+
+  /**
+   * Run `fn` inside one database transaction (BEGIN/COMMIT/ROLLBACK via the
+   * shared pool helper). The tx handle handed to `fn` is the port's opaque
+   * `LifecycleTx` — core composes lock→validate→insert sequences through
+   * this method without ever touching pg types.
+   */
+  async inTransaction<T>(fn: (tx: LifecycleTx) => Promise<T>): Promise<T> {
+    return transaction(client => fn(client as unknown as LifecycleTx));
   }
 
   /**
@@ -410,14 +413,10 @@ export class BotLifecycleRepository {
    * symbol + config. Lock order everywhere: strategies → bot_instances.
    */
   async lockStrategyRow(
-    client: PoolClient,
+    tx: LifecycleTx,
     strategyId: string
-  ): Promise<{
-    exchange: string | null;
-    environment: string | null;
-    symbol: string;
-    config: Record<string, unknown>;
-  } | null> {
+  ): Promise<StrategyVenueRow | null> {
+    const client = clientOf(tx);
     const result = await client.query<{
       exchange: string | null;
       environment: string | null;
@@ -427,7 +426,7 @@ export class BotLifecycleRepository {
       [strategyId]
     );
     if (!result.rows[0]) return null;
-    return BotLifecycleRepository.toVenue(result.rows[0]);
+    return BotLifecycleRepositoryAdapter.toVenue(result.rows[0]);
   }
 
   private static toVenue(
@@ -472,9 +471,10 @@ export class BotLifecycleRepository {
 
   /** Live run occupying a strategy, read under the caller's lock. */
   async findLiveRunForStrategyTx(
-    client: PoolClient,
+    tx: LifecycleTx,
     strategyId: string
   ): Promise<StrategyRunRow | null> {
+    const client = clientOf(tx);
     const result = await client.query<StrategyRunRow>(
       `SELECT id, bot_id, strategy_id, config_version, config, notional_amount,
               state, last_error_code, created_at, updated_at
@@ -490,9 +490,10 @@ export class BotLifecycleRepository {
 
   /** Live-or-parked session on an account, read under the caller's lock. */
   async findLiveSessionForAccountTx(
-    client: PoolClient,
+    tx: LifecycleTx,
     exchangeAccountId: string
   ): Promise<{ id: string } | null> {
+    const client = clientOf(tx);
     const result = await client.query<{ id: string }>(
       `SELECT id FROM bot_instances
         WHERE exchange_account_id = $1
@@ -509,9 +510,10 @@ export class BotLifecycleRepository {
    * venue cleanup, or an unresolved RECONCILE_NEEDS_USER_ACTION tail block.
    */
   async findEditBlockersTx(
-    client: PoolClient,
+    tx: LifecycleTx,
     strategyId: string
-  ): Promise<{ blocked: boolean; reason: string }> {
+  ): Promise<EditBlockers> {
+    const client = clientOf(tx);
     const runs = await client.query<{ id: string; state: string }>(
       `SELECT id, state FROM strategy_runs
         WHERE strategy_id = $1 AND state IN ('STARTING', 'RUNNING', 'STOPPING')`,
@@ -597,10 +599,11 @@ export class BotLifecycleRepository {
 
   /** Insert a session via the caller's tx — no nested transaction. */
   async insertBotInstanceTx(
-    client: PoolClient,
+    tx: LifecycleTx,
     userId: string,
     exchangeAccountId: string
   ): Promise<string> {
+    const client = clientOf(tx);
     const insertResult = await client.query<{ id: string }>(
       `INSERT INTO bot_instances
                 (user_id, exchange_account_id, status, running_time, total_trades, total_pnl, desired_state, actual_state)
@@ -724,12 +727,13 @@ export class BotLifecycleRepository {
    * a nested transaction. The caller holds the strategy lock already.
    */
   async attachRunTx(
-    client: PoolClient,
+    tx: LifecycleTx,
     botId: string,
     strategyId: string,
     config: Record<string, unknown>,
     notionalAmount: number
   ): Promise<string> {
+    const client = clientOf(tx);
     await client.query(
       `SELECT id FROM bot_instances WHERE id = $1 FOR UPDATE`,
       [botId]
@@ -810,7 +814,7 @@ export class BotLifecycleRepository {
    * re-read under the session lock so concurrent attaches serialize.
    */
   async attachRunWithCapGuardTx(
-    client: PoolClient,
+    tx: LifecycleTx,
     botId: string,
     strategyId: string,
     config: Record<string, unknown>,
@@ -818,6 +822,7 @@ export class BotLifecycleRepository {
     cap: number,
     existingExposure: number
   ): Promise<string> {
+    const client = clientOf(tx);
     await client.query(
       `SELECT id FROM bot_instances WHERE id = $1 FOR UPDATE`,
       [botId]
@@ -913,7 +918,7 @@ export class BotLifecycleRepository {
   /** Bots the user wants stopped but the engine still reports as active. */
   async findDesiredStoppedButActiveBots(): Promise<BotRow[]> {
     const result = await query<BotRow>(
-      `SELECT ${BotLifecycleRepository.BOT_COLUMNS}
+      `SELECT ${BotLifecycleRepositoryAdapter.BOT_COLUMNS}
              FROM bot_instances
              WHERE desired_state = 'STOPPED'
                AND actual_state IN ('STARTING', 'RUNNING', 'STOPPING')`
@@ -944,7 +949,7 @@ export class BotLifecycleRepository {
   /** Bots the user wants running but whose actual state is unconfirmed (ERROR/UNKNOWN). */
   async findDesiredRunningUnconfirmedBots(): Promise<BotRow[]> {
     const result = await query<BotRow>(
-      `SELECT ${BotLifecycleRepository.BOT_COLUMNS}
+      `SELECT ${BotLifecycleRepositoryAdapter.BOT_COLUMNS}
              FROM bot_instances
              WHERE desired_state = 'RUNNING'
                AND actual_state IN ('ERROR', 'UNKNOWN')`

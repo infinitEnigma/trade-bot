@@ -9,8 +9,9 @@
  *
  * The service is pure orchestration; the actual work lives in focused
  * components under `lifecycle/`:
- * - BotLifecycleRepository  - all PostgreSQL persistence (CAS transitions,
- *                             audit trail, command tracking)
+ * - ILifecycleRepository (port) - persistence contract (CAS transitions,
+ *                             audit trail, command tracking); the PostgreSQL
+ *                             adapter is wired at startup (review P1)
  * - BotCommandDispatcher    - command payloads + pending-command tracking
  * - BotLifecycleNotifier    - Socket.IO `bot.stateChanged` bridge
  * - BotEventProcessor       - engine event handling + supervision sweeps
@@ -42,14 +43,13 @@ import {
   TradeLedgerEventHandler,
   isTerminalActualState,
 } from "./lifecycle/bot-event-processor";
-import { BotLifecycleRepository } from "./lifecycle/bot-lifecycle.repository";
-import { RunNotionalCapExceededError } from "./lifecycle/bot-lifecycle.repository";
-import { exchangeAccountRepositoryAdapter } from "../../infrastructure/adapters/repositories/exchange-account-repository.adapter";
 import {
-  listVenueSymbols,
-  revalidateSymbolAgainstCatalog,
-} from "../../infrastructure/external/venue-symbols";
-import { transaction } from "../../database/pool";
+  ILifecycleRepository,
+  RunNotionalCapExceededError,
+} from "./lifecycle/lifecycle-repository.port";
+import { ExchangeAccountLookup } from "./lifecycle/exchange-account-lookup.port";
+import { IVenueSymbolCatalog } from "./lifecycle/venue-symbol-catalog.port";
+import { revalidateSymbolAgainstCatalog } from "../market/venue-catalog.policy";
 import { syncSessionStrategiesActive } from "./lifecycle/strategy-active-sync";
 import {
   BotLifecycleResult,
@@ -61,6 +61,8 @@ import {
 // Re-exported for existing consumers (timeout sweeper, tests).
 export { BOT_COMMAND_TIMEOUT_MS };
 export type { BotLifecycleResult };
+// Re-exported for existing consumers (routes, tests) that catch the F1 error.
+export { RunNotionalCapExceededError };
 
 /**
  * F1 notional admission — residual-capacity snapshot for the bound exchange
@@ -98,7 +100,9 @@ export interface SessionCapProvider {
 }
 
 export class BotLifecycleService {
-  private repository = new BotLifecycleRepository();
+  private repositoryImpl?: ILifecycleRepository;
+  private accountLookupImpl?: ExchangeAccountLookup;
+  private venueCatalogImpl?: IVenueSymbolCatalog;
   private notifier = new BotLifecycleNotifier();
   private dispatcher: BotCommandDispatcher;
   private eventProcessor: BotEventProcessor;
@@ -108,14 +112,74 @@ export class BotLifecycleService {
   private sessionCapProvider?: SessionCapProvider;
 
   constructor(engineProtocol: EngineProtocolService) {
-    this.dispatcher = new BotCommandDispatcher(engineProtocol, this.repository);
-    this.eventProcessor = new BotEventProcessor(this.repository, this.notifier);
+    // Lazy accessor: the repository is setter-injected at startup (the
+    // module-load singleton is constructed before the composition root can
+    // hand over the infrastructure adapter). An unwired repository must
+    // throw — never no-op a lifecycle write.
+    this.dispatcher = new BotCommandDispatcher(
+      engineProtocol,
+      () => this.repository
+    );
+    this.eventProcessor = new BotEventProcessor(
+      () => this.repository,
+      this.notifier
+    );
     // L24: when a supervision sweep declares a bot terminal (timeout → ERROR/
     // UNKNOWN, heartbeat drift), the engine-side runner must be stopped too -
     // this service owns command dispatch, so the repair is wired back in here.
     this.eventProcessor.setTerminalBotStopRepair((botId, reason) =>
       this.stopEngineRunnerForTerminalBot(botId, reason)
     );
+  }
+
+  /**
+   * Fail-fast accessor — an unwired port must never no-op a lifecycle write.
+   * Wired in index.ts (`setLifecycleRepository`), beside setSessionCapProvider.
+   */
+  private get repository(): ILifecycleRepository {
+    if (!this.repositoryImpl) {
+      throw new Error(
+        "Lifecycle repository not wired — call setLifecycleRepository() at startup"
+      );
+    }
+    return this.repositoryImpl;
+  }
+
+  private get accountLookup(): ExchangeAccountLookup {
+    if (!this.accountLookupImpl) {
+      throw new Error(
+        "Exchange account lookup not wired — call setExchangeAccountLookup() at startup"
+      );
+    }
+    return this.accountLookupImpl;
+  }
+
+  private get venueCatalog(): IVenueSymbolCatalog {
+    if (!this.venueCatalogImpl) {
+      throw new Error(
+        "Venue symbol catalog not wired — call setVenueSymbolCatalog() at startup"
+      );
+    }
+    return this.venueCatalogImpl;
+  }
+
+  /**
+   * Composition-root wiring (index.ts, beside setSessionCapProvider): the
+   * PostgreSQL lifecycle adapter. Tests inject their own (backed by the
+   * mocked pool) the same way.
+   */
+  setLifecycleRepository(repository: ILifecycleRepository): void {
+    this.repositoryImpl = repository;
+  }
+
+  /** Account venue/status read for create/attach admission (C3a, 026). */
+  setExchangeAccountLookup(lookup: ExchangeAccountLookup): void {
+    this.accountLookupImpl = lookup;
+  }
+
+  /** Live symbol catalog for start/attach venue validation (L20, 026). */
+  setVenueSymbolCatalog(catalog: IVenueSymbolCatalog): void {
+    this.venueCatalogImpl = catalog;
   }
 
   /** Register the Socket.IO server for frontend `bot.stateChanged` events. */
@@ -321,7 +385,7 @@ export class BotLifecycleService {
     }
 
     // Account must exist, belong to the user, and be ACTIVE (verified).
-    const account = await exchangeAccountRepositoryAdapter.getAccountWithSecret(
+    const account = await this.accountLookup.getAccountWithSecret(
       userId,
       exchangeAccountId
     );
@@ -382,7 +446,10 @@ export class BotLifecycleService {
       : String(account.environment ?? "");
     let catalog: string[] | null = null;
     if (venueSnap.symbol) {
-      catalog = await listVenueSymbols(symbolExchange, symbolEnvironment);
+      catalog = await this.venueCatalog.listSymbols(
+        symbolExchange,
+        symbolEnvironment
+      );
       revalidateSymbolAgainstCatalog(
         venueSnap.symbol,
         symbolExchange,
@@ -407,8 +474,8 @@ export class BotLifecycleService {
     // racing this start either committed first (we admit the new row) or
     // loses (its blocker check sees our live run → 409). Rollback removes
     // session + run + audit together — no orphans, locks released.
-    const botId: string = await transaction(async client => {
-      const cur = await this.repository.lockStrategyRow(client, strategyId);
+    const botId: string = await this.repository.inTransaction(async tx => {
+      const cur = await this.repository.lockStrategyRow(tx, strategyId);
       if (!cur) {
         const error = new Error("Strategy not found");
         (error as Error & { statusCode?: number }).statusCode = 404;
@@ -431,7 +498,7 @@ export class BotLifecycleService {
         );
       }
       const lockedLive = await this.repository.findLiveRunForStrategyTx(
-        client,
+        tx,
         strategyId
       );
       if (lockedLive) {
@@ -451,13 +518,13 @@ export class BotLifecycleService {
         throw error;
       }
       const txBotId = await this.repository.insertBotInstanceTx(
-        client,
+        tx,
         userId,
         exchangeAccountId
       );
       try {
         await this.repository.attachRunTx(
-          client,
+          tx,
           txBotId,
           strategyId,
           cur.config,
@@ -474,7 +541,7 @@ export class BotLifecycleService {
         }
         throw error;
       }
-      await this.repository.recordLifecycleEventTx(client, txBotId, {
+      await this.repository.recordLifecycleEventTx(tx, txBotId, {
         eventType: "BOT_CREATED",
         fromState: null,
         toState: "STOPPED",
@@ -562,11 +629,10 @@ export class BotLifecycleService {
       (error as Error & { statusCode?: number }).statusCode = 400;
       throw error;
     }
-    const botAccount =
-      await exchangeAccountRepositoryAdapter.getAccountWithSecret(
-        userId,
-        bot.exchange_account_id
-      );
+    const botAccount = await this.accountLookup.getAccountWithSecret(
+      userId,
+      bot.exchange_account_id
+    );
     if (!botAccount) {
       const error = new Error("Session has no verifiable bound account");
       (error as Error & { statusCode?: number }).statusCode = 400;
@@ -589,7 +655,7 @@ export class BotLifecycleService {
       : String(botAccount.environment);
     let attachCatalog: string[] | null = null;
     if (attachSnap.symbol) {
-      attachCatalog = await listVenueSymbols(snapEx, snapEnv);
+      attachCatalog = await this.venueCatalog.listSymbols(snapEx, snapEnv);
       revalidateSymbolAgainstCatalog(
         attachSnap.symbol,
         snapEx,
@@ -614,8 +680,8 @@ export class BotLifecycleService {
     // const snapConfig = await this.repository.findStrategyConfig(strategyId);
     let runId: string;
     try {
-      runId = await transaction(async client => {
-        const cur = await this.repository.lockStrategyRow(client, strategyId);
+      runId = await this.repository.inTransaction(async tx => {
+        const cur = await this.repository.lockStrategyRow(tx, strategyId);
         if (!cur) {
           const error = new Error("Strategy not found");
           (error as Error & { statusCode?: number }).statusCode = 404;
@@ -638,7 +704,7 @@ export class BotLifecycleService {
           );
         }
         const txLive = await this.repository.findLiveRunForStrategyTx(
-          client,
+          tx,
           strategyId
         );
         if (txLive) {
@@ -650,7 +716,7 @@ export class BotLifecycleService {
         }
         try {
           return await this.repository.attachRunWithCapGuardTx(
-            client,
+            tx,
             botId,
             strategyId,
             cur.config,

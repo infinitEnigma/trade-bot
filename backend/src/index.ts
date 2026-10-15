@@ -58,6 +58,12 @@ import { Server } from "socket.io";
 import { contextLogger as logger } from "./core/logging";
 import { engineProtocolService } from "./core/bots/engine-protocol.service";
 import { botLifecycleService } from "./core/bots/bot-lifecycle.service";
+import { lifecycleReconciliationService } from "./core/bots/lifecycle-reconciliation.service";
+import { setStrategyBadgeWriter } from "./core/bots/lifecycle/strategy-active-sync";
+import { BotLifecycleRepositoryAdapter } from "./infrastructure/adapters/repositories/bot-lifecycle-repository.adapter";
+import { exchangeAccountRepositoryAdapter } from "./infrastructure/adapters/repositories/exchange-account-repository.adapter";
+import { strategyRepositoryAdapter } from "./infrastructure/adapters/repositories/strategy-repository.adapter";
+import { venueSymbolCatalog } from "./infrastructure/external/venue-symbols";
 import { createSessionCapProvider } from "./infrastructure/external/exchange-accounts/session-cap.provider";
 import { commandTimeoutSweeper } from "./core/bots/command-timeout.sweeper";
 import { engineRegistryService } from "./core/bots/engine-registry.service";
@@ -150,10 +156,8 @@ import { diContainer } from "./infrastructure/dependency-injection.container";
 // 🤖 Bot Reconciliation Worker (legacy) - SUPERSEDED by lifecycle reconciliation
 // The legacy worker was removed: its SQL predates desired/actual lifecycle
 // state and its only external-call paths were placeholders. Reconciliation is
-// handled by lifecycleReconciliationService.
-
-// 🩺 Lifecycle Reconciliation (authoritative desired/actual drift repair)
-import { lifecycleReconciliationService } from "./core/bots/lifecycle-reconciliation.service";
+// handled by lifecycleReconciliationService (imported at the top with the
+// other lifecycle wiring).
 
 // ===========================================
 // 🗄️ 3. DATABASE & REDIS INITIALIZATION
@@ -443,6 +447,21 @@ export const startServer = (): Promise<typeof httpServer> => {
 
       logger.info("🌐 WebSocket server ready");
       logger.info(`🏭 Environment: ${process.env.NODE_ENV || "development"}`);
+
+      // 🩺 LIFECYCLE PERSISTENCE WIRING (review P1, dependency inversion):
+      // core consumes ports; the PostgreSQL adapters are wired here, BEFORE
+      // any lifecycle consumer (reconciler, sweeper, engine protocol) runs.
+      // Unwired ports fail fast — they can never no-op a lifecycle write.
+      const lifecycleRepository = new BotLifecycleRepositoryAdapter();
+      botLifecycleService.setLifecycleRepository(lifecycleRepository);
+      botLifecycleService.setExchangeAccountLookup(
+        exchangeAccountRepositoryAdapter
+      );
+      botLifecycleService.setVenueSymbolCatalog(venueSymbolCatalog);
+      lifecycleReconciliationService.setLifecycleRepository(
+        lifecycleRepository
+      );
+      setStrategyBadgeWriter(strategyRepositoryAdapter);
 
       // ✅ START LIFECYCLE RECONCILIATION (after DB, engine protocol,
       // command-timeout sweeper and engine registry supervision are up).

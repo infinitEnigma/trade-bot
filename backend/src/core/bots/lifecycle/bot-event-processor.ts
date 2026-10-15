@@ -21,7 +21,7 @@ import {
   canTransition,
 } from "@trade-bot/shared";
 import { contextLogger as logger } from "../../logging";
-import { BotLifecycleRepository } from "./bot-lifecycle.repository";
+import { ILifecycleRepository } from "./lifecycle-repository.port";
 import { BotLifecycleNotifier } from "./bot-lifecycle-notifier";
 import { syncSessionStrategiesActive } from "./strategy-active-sync";
 import {
@@ -81,9 +81,14 @@ export class BotEventProcessor {
   private terminalBotStopRepair: TerminalBotStopRepair | null = null;
 
   constructor(
-    private repository: BotLifecycleRepository,
+    private repositoryProvider: () => ILifecycleRepository,
     private notifier: BotLifecycleNotifier
   ) {}
+
+  /** Fail-fast accessor — the repository is setter-injected at startup. */
+  private get repository(): ILifecycleRepository {
+    return this.repositoryProvider();
+  }
 
   /** Injected to avoid a circular dependency with EngineRegistryService. */
   setEngineLifecycleHandler(handler: EngineLifecycleEventHandler): void {

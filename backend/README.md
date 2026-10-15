@@ -32,7 +32,7 @@ The `BotLifecycleService` is the sole owner of bot lifecycle state. API routes m
 ```
 BotLifecycleService (orchestrator)
         │
-        ├── BotLifecycleRepository  - PostgreSQL persistence (CAS transitions, audit trail)
+        ├── ILifecycleRepository (port) → BotLifecycleRepositoryAdapter - PostgreSQL persistence (CAS transitions, audit trail)
         ├── BotCommandDispatcher    - command payloads + pending-command tracking
         ├── BotLifecycleNotifier    - Socket.IO bot.stateChanged bridge
         └── BotEventProcessor       - engine event handling + supervision sweeps

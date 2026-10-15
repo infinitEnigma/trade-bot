@@ -62,8 +62,10 @@ jest.mock(
 );
 
 import { query, transaction } from "../../src/database/pool";
-import { BotLifecycleRepository } from "../../src/core/bots/lifecycle/bot-lifecycle.repository";
+import { BotLifecycleRepositoryAdapter } from "../../src/infrastructure/adapters/repositories/bot-lifecycle-repository.adapter";
 import { exchangeAccountRepositoryAdapter } from "../../src/infrastructure/adapters/repositories/exchange-account-repository.adapter";
+import { venueSymbolCatalog } from "../../src/infrastructure/external/venue-symbols";
+import { setStrategyBadgeWriter } from "../../src/core/bots/lifecycle/strategy-active-sync";
 import {
   getTimeoutReason,
   TimeoutReason,
@@ -75,6 +77,25 @@ const mockTransaction = transaction as jest.Mock;
 const mockAccountAdapter = exchangeAccountRepositoryAdapter as unknown as {
   getAccountWithSecret: jest.Mock;
 };
+
+/**
+ * Construct + wire a service against the mocked pool/adapters (review P1:
+ * the ports are setter-injected, exactly like the production composition
+ * root in index.ts does).
+ */
+function createWiredService(
+  engineProtocol: EngineProtocolService
+): BotLifecycleService {
+  const service = new BotLifecycleService(engineProtocol);
+  service.setLifecycleRepository(new BotLifecycleRepositoryAdapter());
+  service.setExchangeAccountLookup(mockAccountAdapter);
+  service.setVenueSymbolCatalog(venueSymbolCatalog);
+  return service;
+}
+
+// Badge writer (strategy-active-sync port): tests assert on the real
+// adapter's toggleStrategy, same object the sync module is wired to in prod.
+setStrategyBadgeWriter(strategyRepositoryAdapter);
 
 /** Successful non-SELECT result (UPDATE/INSERT/DELETE) for the query mock. */
 const okResult = () => Promise.resolve({ rows: [], rowCount: 1 });
@@ -245,7 +266,7 @@ describe("BotLifecycleService", () => {
         correlationId: "c1",
       }),
     };
-    service = new BotLifecycleService(
+    service = createWiredService(
       engineProtocol as unknown as EngineProtocolService
     );
     // Permissive authority checker by default; individual tests override it.
@@ -960,7 +981,7 @@ describe("BotLifecycleService", () => {
     });
 
     it("rejects all runtime events when no authority checker is wired", async () => {
-      service = new BotLifecycleService(
+      service = createWiredService(
         engineProtocol as unknown as EngineProtocolService
       );
       const event = createBotEvent(
@@ -1283,7 +1304,7 @@ describe("bot → account binding", () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    service = new BotLifecycleService({
+    service = createWiredService({
       sendCommand: jest.fn().mockResolvedValue({
         success: true,
         messageId: "m1",
@@ -1398,7 +1419,7 @@ describe("bot → account binding", () => {
   });
 
   it("writes the binding to bot_instances.exchange_account_id", async () => {
-    const repository = new BotLifecycleRepository();
+    const repository = new BotLifecycleRepositoryAdapter();
     mockQuery.mockResolvedValue({ rows: [{ id: "bot-1" }] });
 
     const botId = await repository.insertBotInstance(
@@ -1498,7 +1519,7 @@ describe("createAndStart venue symbol gate (L20)", () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    service = new BotLifecycleService({
+    service = createWiredService({
       sendCommand: jest.fn().mockResolvedValue({
         success: true,
         messageId: "m1",
@@ -1733,7 +1754,7 @@ describe("BotLifecycleService F1 notional admission", () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    service = new BotLifecycleService({
+    service = createWiredService({
       sendCommand: jest.fn().mockResolvedValue({
         success: true,
         messageId: "m1",

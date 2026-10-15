@@ -9,44 +9,31 @@
  * list cannot be fetched (or the venue is unknown), start proceeds and the
  * engine's own resolution (Lighter market directory / ticker lookup) stays
  * the authority — this is a UX guard, not a security boundary.
+ *
+ * Split (dependency inversion — review P1): the pure comparison policy
+ * (`VenueSymbolError`, `VenueCatalogUnavailableError`,
+ * `revalidateSymbolAgainstCatalog`) now lives in
+ * `core/market/venue-catalog.policy.ts` and is re-exported here for
+ * existing importers. This module keeps the network fetch and exposes
+ * `venueSymbolCatalog` — the `IVenueSymbolCatalog` port implementation the
+ * lifecycle service is wired to at startup.
  */
 
 import { contextLogger as logger } from "../../core/logging";
 import { lighterBaseUrl } from "./exchange-accounts/lighter-verifier";
+import { IVenueSymbolCatalog } from "../../core/bots/lifecycle/venue-symbol-catalog.port";
+import {
+  VenueCatalogUnavailableError,
+  buildVenueSymbolError,
+} from "../../core/market/venue-catalog.policy";
+
+export {
+  VenueSymbolError,
+  VenueCatalogUnavailableError,
+  revalidateSymbolAgainstCatalog,
+} from "../../core/market/venue-catalog.policy";
 
 const FETCH_TIMEOUT_MS = 5_000;
-/** Cap the supported-symbol list in the error message (kodiak lists dozens). */
-const MAX_LISTED = 12;
-
-/**
- * Validation failure carrying HTTP 400 semantics for the start route
- * (same `statusCode` convention as the lifecycle service's errors).
- */
-export class VenueSymbolError extends Error {
-  readonly statusCode = 400;
-
-  constructor(message: string) {
-    super(message);
-    this.name = "VenueSymbolError";
-  }
-}
-
-/**
- * Catalog-unavailable failure (migration 026). Venue-bound strategies fail
- * CLOSED when symbol support cannot be verified: a matching venue does not
- * prove the symbol is listed there. Legacy null-venue rows keep the
- * fail-open `assertSymbolSupported` path. Carries HTTP 503 semantics.
- */
-export class VenueCatalogUnavailableError extends Error {
-  readonly statusCode = 503;
-
-  constructor(exchange: string, environment: string) {
-    super(
-      `Venue catalog for ${exchange} (${environment}) is unavailable - cannot verify symbol support. Try again shortly.`
-    );
-    this.name = "VenueCatalogUnavailableError";
-  }
-}
 
 async function fetchJson(url: string): Promise<unknown> {
   const res = await fetch(url, {
@@ -106,6 +93,15 @@ export async function listVenueSymbols(
 }
 
 /**
+ * The `IVenueSymbolCatalog` port implementation — the single source the
+ * lifecycle service's admission reads through the port.
+ */
+export const venueSymbolCatalog: IVenueSymbolCatalog = {
+  listSymbols: (exchange, environment) =>
+    listVenueSymbols(exchange, environment),
+};
+
+/**
  * Reject (HTTP 400) when `symbol` is not listed on `(exchange, environment)`.
  * Resolves when the symbol is listed, when the catalog is unavailable
  * (fail-open — the engine remains authoritative), or for unknown venues.
@@ -145,46 +141,4 @@ export async function assertSymbolSupportedStrict(
     return;
   }
   throw buildVenueSymbolError(symbol, exchange, environment, symbols);
-}
-
-/**
- * Revalidate inside the admission tx against the already-fetched catalog
- * (no fetch inside the tx). `catalog` is the `listVenueSymbols` result from
- * Phase A: `null` = unavailable, array = available snapshot.
- */
-export function revalidateSymbolAgainstCatalog(
-  symbol: string,
-  exchange: string,
-  environment: string,
-  catalog: string[] | null,
-  opts: { strict: boolean }
-): void {
-  if (catalog === null) {
-    if (opts.strict)
-      throw new VenueCatalogUnavailableError(exchange, environment);
-    return;
-  }
-  if (catalog.some(listed => listed.toUpperCase() === symbol.toUpperCase())) {
-    return;
-  }
-  throw buildVenueSymbolError(symbol, exchange, environment, catalog);
-}
-
-function buildVenueSymbolError(
-  symbol: string,
-  exchange: string,
-  environment: string,
-  symbols: string[]
-): VenueSymbolError {
-  const sorted = [...symbols].sort();
-  const shown = sorted.slice(0, MAX_LISTED).join(", ");
-  const more =
-    sorted.length > MAX_LISTED
-      ? ` … (+${sorted.length - MAX_LISTED} more)`
-      : "";
-  throw new VenueSymbolError(
-    `Symbol "${symbol}" is not listed on ${exchange} (${environment}). ` +
-      `Supported symbols: ${shown}.${more} ` +
-      `Edit the strategy's symbol and start again.`
-  );
 }

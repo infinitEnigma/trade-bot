@@ -146,7 +146,7 @@ export class BotInstanceRepositoryAdapter implements IBotInstanceRepository {
    * Create a new bot instance.
    *
    * Retired path (022 shim-drop): session creation goes through
-   * `BotLifecycleRepository.insertBotInstance` (no `strategy_id` column).
+   * `BotLifecycleRepositoryAdapter.insertBotInstance` (no `strategy_id` column).
    * This adapter keeps the interface shape but fails closed — sessions
    * must not be created with a per-strategy column that no longer exists.
    */
@@ -154,7 +154,7 @@ export class BotInstanceRepositoryAdapter implements IBotInstanceRepository {
     _bot: Omit<BotInstanceRecord, "created_at" | "updated_at">
   ): Promise<BotInstanceRecord> {
     throw new Error(
-      "Bot instance creation moved to BotLifecycleRepository.insertBotInstance " +
+      "Bot instance creation moved to BotLifecycleRepositoryAdapter.insertBotInstance " +
         "(022 shim-drop: sessions carry no strategy_id column)"
     );
   }

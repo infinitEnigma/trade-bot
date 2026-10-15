@@ -33,6 +33,10 @@ import {
   MAX_STOP_REISSUES_PER_HOUR,
 } from "../../src/core/bots/lifecycle/types";
 import { strategyRepositoryAdapter } from "../../src/infrastructure/adapters/repositories/strategy-repository.adapter";
+import { BotLifecycleRepositoryAdapter } from "../../src/infrastructure/adapters/repositories/bot-lifecycle-repository.adapter";
+import { exchangeAccountRepositoryAdapter } from "../../src/infrastructure/adapters/repositories/exchange-account-repository.adapter";
+import { venueSymbolCatalog } from "../../src/infrastructure/external/venue-symbols";
+import { setStrategyBadgeWriter } from "../../src/core/bots/lifecycle/strategy-active-sync";
 
 jest.mock("../../src/database/pool", () => {
   const actual = { query: jest.fn() };
@@ -133,6 +137,11 @@ describe("lifecycle command authority (L21) & terminal stop repair (L24)", () =>
     service = new BotLifecycleService(
       engineProtocol as unknown as EngineProtocolService
     );
+    // Review P1: ports are setter-injected (composition root in index.ts).
+    service.setLifecycleRepository(new BotLifecycleRepositoryAdapter());
+    service.setExchangeAccountLookup(exchangeAccountRepositoryAdapter);
+    service.setVenueSymbolCatalog(venueSymbolCatalog);
+    setStrategyBadgeWriter(strategyRepositoryAdapter);
     // Permissive authority checker: authority itself is covered by the
     // engine-registry suite (including the BIGINT string epoch regression).
     service.setAuthorityChecker(async () => true);

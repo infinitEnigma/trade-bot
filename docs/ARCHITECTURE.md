@@ -125,7 +125,7 @@ state; a lost race returns 409.
 
 ```
         API routes ─┐
-  Reconciler ───────┼──▶ BotLifecycleService ──┬──▶ BotLifecycleRepository (CAS + audit)
+  Reconciler ───────┼──▶ BotLifecycleService ──┬──▶ ILifecycleRepository port → BotLifecycleRepositoryAdapter (CAS + audit)
   Engine events ────┘                          ├──▶ BotCommandDispatcher   (command payloads + pending tracking)
                                                ├──▶ BotLifecycleNotifier   (Socket.IO bot.stateChanged)
                                                └──▶ BotEventProcessor      (engine events + supervision sweeps)

@@ -2,6 +2,7 @@
 
 import { LifecycleReconciliationService } from "../../src/core/bots/lifecycle-reconciliation.service";
 import { botLifecycleService } from "../../src/core/bots/bot-lifecycle.service";
+import { BotLifecycleRepositoryAdapter } from "../../src/infrastructure/adapters/repositories/bot-lifecycle-repository.adapter";
 import { query } from "../../src/database/pool";
 import { contextLogger as logger } from "../../src/core/logging";
 
@@ -99,6 +100,9 @@ describe("LifecycleReconciliationService", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     service = new LifecycleReconciliationService();
+    // Review P1: the repository port is setter-injected (index.ts wires the
+    // same PostgreSQL adapter in prod); the pool below is jest-mocked.
+    service.setLifecycleRepository(new BotLifecycleRepositoryAdapter());
   });
 
   it("reissues BOT_STOP for desired-stopped drift within budget", async () => {
