@@ -15,6 +15,7 @@ import { EngineJournalIntegrityNotice } from "../components/EngineJournalIntegri
 import { ConfirmDialog } from "../../../shared/components/ui";
 import {
   buildChartSymbolGroups,
+  venueLabel,
   type ChartVenueRef,
   type VenueCatalog,
 } from "../utils/chartSymbolPicker";
@@ -29,6 +30,7 @@ import { StrategyChartPanel } from "../components/StrategyChartPanel";
 import { StrategyWorkspace } from "../components/StrategyWorkspace";
 import { useOpenOrders, useAccountPositions } from "../hooks";
 import type { GridPreviewInput } from "../../../shared/components/charts/gridPreview";
+import type { OpenOrderRow } from "../../../infrastructure/api/market";
 
 // Lazy load heavy components for better performance
 const StrategyForm = lazy(() =>
@@ -365,6 +367,36 @@ const Strategies: React.FC = React.memo(() => {
     );
   }, []);
 
+  /**
+   * Review P1: the chart's order levels are the SELECTED strategy's account
+   * book, so they may only be drawn while the chart shows THAT venue — two
+   * venues list the same symbol, and a foreign venue's rows on this chart
+   * would claim resting orders the charted market never had. The environment
+   * (mainnet vs testnet) is not on the row, so it can only be checked here,
+   * where the bound account is known.
+   *
+   * With no bound account the read falls back to the backend's default
+   * account (the documented D4 unscoped fallback) and its venue is unknown:
+   * the rows are still forwarded, the chart's own per-row exchange filter
+   * still applies, and the caption says which account answered rather than
+   * implying a binding that does not exist.
+   */
+  const accountBook = unwrapRows<OpenOrderRow>(workspaceOrdersQuery.data?.data);
+  const chartOrders =
+    workspaceAccount != null &&
+    (workspaceAccount.exchange !== chartSelection.exchange ||
+      workspaceAccount.environment !== chartSelection.environment)
+      ? []
+      : accountBook;
+  const chartOrdersNote = workspaceAccount
+    ? `Levels: ${venueLabel(
+        workspaceAccount.exchange,
+        workspaceAccount.environment
+      )} · account ${workspaceAccount.accountRef || workspaceAccount.id}`
+    : accountBook.length > 0
+      ? "Levels: this strategy has no bound account, so the venue's default account read answered"
+      : undefined;
+
   return (
     <PageLayout
       header={
@@ -460,7 +492,8 @@ const Strategies: React.FC = React.memo(() => {
               selection,
             })
           }
-          orders={unwrapRows(workspaceOrdersQuery.data?.data)}
+          orders={chartOrders}
+          ordersNote={chartOrdersNote}
           previewGrid={previewGrid}
         />
 

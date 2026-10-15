@@ -55,6 +55,19 @@ const sameMarket = (left: string, right: string): boolean => {
   return normalise(left) === normalise(right);
 };
 
+/**
+ * The venue a symbol spelling implies. `PERP_*_USDC` is Kodiak/Orderly naming;
+ * a bare or slash-quoted symbol (`BTC`, `ETH/USDC`) is Lighter's. This is the
+ * only venue signal the form's symbol field carries — strategies store no
+ * exchange today (the documented X2 gap), so the spelling is a proxy, not an
+ * authoritative binding.
+ */
+const impliedVenue = (raw: string): string | null => {
+  const symbol = raw.trim().toUpperCase();
+  if (!symbol) return null;
+  return symbol.includes("_") ? "kodiak" : "lighter";
+};
+
 interface StrategyChartPanelProps {
   /** The charted market + venue (page-owned selection). */
   selection: ChartSelection;
@@ -74,6 +87,14 @@ interface StrategyChartPanelProps {
    * wrong market is worse than no band — the panel says so instead.
    */
   previewGrid?: GridPreviewInput | null;
+  /**
+   * Review P1: where the forwarded order levels come from, in one honest line
+   * (e.g. "Levels: Lighter testnet · account 42"). Rendered under the picker so
+   * the operator always knows whose resting orders are drawn — an
+   * attribution the chart itself cannot state, because the backend's book
+   * response carries rows but not the account that answered.
+   */
+  ordersNote?: string;
 }
 
 export const StrategyChartPanel: React.FC<StrategyChartPanelProps> = ({
@@ -83,7 +104,17 @@ export const StrategyChartPanel: React.FC<StrategyChartPanelProps> = ({
   onSelectionChange,
   orders,
   previewGrid,
+  ordersNote,
 }) => {
+  // Review P1: the preview must name the charted MARKET *and* the charted
+  // VENUE. A band is centred on the live price of whichever market is on
+  // screen, so previewing a grid that will run on the other venue would place
+  // its levels around the wrong book. The form's symbol spelling is the only
+  // venue signal it carries (strategies store no exchange — X2).
+  const previewOffVenue =
+    previewGrid != null &&
+    (impliedVenue(previewGrid.symbol) ?? selection.exchange) !==
+      selection.exchange;
   const previewOffMarket =
     previewGrid != null && !sameMarket(previewGrid.symbol, selection.symbol);
 
@@ -137,7 +168,7 @@ export const StrategyChartPanel: React.FC<StrategyChartPanelProps> = ({
         )}
       </div>
 
-      {previewGrid && previewOffMarket && (
+      {previewGrid && (previewOffMarket || previewOffVenue) && (
         <p className="text-xs text-textMuted">
           You are configuring{" "}
           <span className="text-text">
@@ -146,6 +177,8 @@ export const StrategyChartPanel: React.FC<StrategyChartPanelProps> = ({
           — switch the chart to that market to see its levels here.
         </p>
       )}
+
+      {ordersNote && <p className="text-xs text-textMuted">{ordersNote}</p>}
 
       <Suspense
         fallback={
@@ -164,7 +197,7 @@ export const StrategyChartPanel: React.FC<StrategyChartPanelProps> = ({
             environment: selection.environment,
           }}
           orders={orders}
-          previewGrid={previewOffMarket ? null : previewGrid}
+          previewGrid={previewOffMarket || previewOffVenue ? null : previewGrid}
         />
       </Suspense>
     </Card>

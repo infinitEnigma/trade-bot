@@ -400,11 +400,19 @@ export const CandlestickChart: React.FC<CandlestickChartProps> = ({
   }, [chartData, markPriceData]);
 
   // Phase 3: draw the open-orders book for this market. Redraws whenever the
-  // order set, the loaded candles (they gate marker placement) or the symbol
-  // change; cleanup removes the lines it created and empties the markers so a
-  // scope/symbol switch never leaves stale levels on the pane — but only
-  // while the chart this run drew with is still the mounted one (see the
-  // F4 note in that cleanup).
+  // order set, the loaded candles (they gate marker placement), the symbol or
+  // the charted VENUE change; cleanup removes the lines it created and empties
+  // the markers so a scope/symbol switch never leaves stale levels on the pane
+  // — but only while the chart this run drew with is still the mounted one
+  // (see the F4 note in that cleanup).
+  //
+  // The venue is read as two primitives, not the object: callers build the
+  // `venue` object inline, and keying the effect on that identity would re-run
+  // it (with its line churn) on every parent render. Swapping venue while
+  // keeping the symbol is a real move (BTC on Lighter -> BTC on Kodiak), so
+  // the venue MUST be a dependency.
+  const venueExchange = venue?.exchange;
+  const venueEnvironment = venue?.environment;
   useEffect(() => {
     const series = candlestickSeriesRef.current;
     const markersPlugin = markersPluginRef.current;
@@ -416,9 +424,17 @@ export const CandlestickChart: React.FC<CandlestickChartProps> = ({
     const lines: IPriceLine[] = [];
     try {
       const drawnSymbol = toDisplaySymbol(symbol);
-      const visibleOrders = (orders ?? []).filter(
-        order => toDisplaySymbol(order.symbol) === drawnSymbol
-      );
+      // Review P1: a row's VENUE must match the charted venue, not just its
+      // symbol. The forwarded book is scoped to one account, and two venues
+      // can list the same symbol (`BTC` on Lighter, `PERP_BTC_USDC` on
+      // Kodiak) — drawing a foreign venue's rows here would claim resting
+      // orders the charted market never had. Only checkable when the caller
+      // declared a venue; every current caller does.
+      const visibleOrders = (orders ?? []).filter(order => {
+        if (toDisplaySymbol(order.symbol) !== drawnSymbol) return false;
+        if (venueExchange && order.exchange !== venueExchange) return false;
+        return true;
+      });
 
       // Limit levels — one dashed line per priced order, side-coloured,
       // labelled with side + size on the price axis.
@@ -492,7 +508,10 @@ export const CandlestickChart: React.FC<CandlestickChartProps> = ({
         // Plugin already detached with its series.
       }
     };
-  }, [orders, chartData, symbol]);
+    // `venueExchange` / `venueEnvironment` are the venue's primitives (see the
+    // note above) — keying on them, not on the inline object, keeps a parent
+    // re-render from re-running this effect.
+  }, [orders, chartData, symbol, venueExchange, venueEnvironment]);
 
   // F5: the live grid preview. Kept out of the orders effect on purpose —
   // the plan changes as the operator types, independently of the resting

@@ -141,12 +141,16 @@ describe("StrategyChartPanel", () => {
     expect(screen.getByText(/switch the chart to that market/i)).toBeDefined();
   });
 
-  it("treats bare and perp spellings as the same market", async () => {
+  it("treats bare and perp spellings of ANOTHER venue as not drawable (review P1)", async () => {
+    // `ETH` (Lighter) and `PERP_ETH_USDC` (Kodiak) are the same MARKET but
+    // different venues. The band is centred on the live price of whichever
+    // market is on screen, so previewing the other venue's grid would place
+    // its levels around the wrong book.
     renderPanel({ previewGrid: { symbol: "ETH", gridSize: 10, gridRange: 5 } });
 
     const chart = await screen.findByTestId("candlestick-chart");
-    expect(chart.getAttribute("data-preview")).toContain("ETH");
-    expect(screen.queryByText(/switch the chart to that market/i)).toBeNull();
+    expect(chart.getAttribute("data-preview")).toBe("null");
+    expect(screen.getByText(/switch the chart to that market/i)).toBeDefined();
   });
 
   it("draws no preview when no form is open", async () => {
@@ -154,5 +158,37 @@ describe("StrategyChartPanel", () => {
 
     const chart = await screen.findByTestId("candlestick-chart");
     expect(chart.getAttribute("data-preview")).toBe("null");
+  });
+
+  it("withholds the band when the draft names another VENUE (review P1)", async () => {
+    // `BTC` is Lighter naming while the chart shows Kodiak. The band would be
+    // centred on the wrong book, so nothing is drawn and the panel says why.
+    renderPanel({ previewGrid: { symbol: "BTC", gridSize: 10, gridRange: 5 } });
+
+    const chart = await screen.findByTestId("candlestick-chart");
+    expect(chart.getAttribute("data-preview")).toBe("null");
+    expect(screen.getByText(/switch the chart to that market/i)).toBeDefined();
+  });
+
+  it("draws the band when the draft's spelling matches the charted venue", async () => {
+    // `PERP_ETH_USDC` on the Kodiak ETH chart: same market AND same venue.
+    renderPanel({
+      previewGrid: { symbol: "PERP_ETH_USDC", gridSize: 10, gridRange: 5 },
+    });
+
+    const chart = await screen.findByTestId("candlestick-chart");
+    expect(chart.getAttribute("data-preview")).toContain("PERP_ETH_USDC");
+    expect(screen.queryByText(/switch the chart to that market/i)).toBeNull();
+  });
+
+  it("states whose orders the levels come from (review P1)", async () => {
+    // The backend's book response carries rows but not the account that
+    // answered, so the caller supplies the attribution.
+    renderPanel({ ordersNote: "Levels: Kodiak mainnet · account 42" });
+
+    await screen.findByTestId("candlestick-chart");
+    expect(
+      screen.getByText(/Levels: Kodiak mainnet · account 42/)
+    ).toBeDefined();
   });
 });

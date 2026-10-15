@@ -143,12 +143,17 @@ const renderChart = (props: {
   orders?: OpenOrderRow[];
   height?: number;
   previewGrid?: GridPreviewInput | null;
+  venue?: {
+    exchange: "kodiak" | "lighter";
+    environment: "testnet" | "mainnet";
+  };
 }) =>
   render(
     <CandlestickChart
       symbol={props.symbol ?? "PERP_BTC_USDC"}
       interval="1h"
       height={props.height ?? 400}
+      {...(props.venue !== undefined ? { venue: props.venue } : {})}
       {...(props.orders !== undefined ? { orders: props.orders } : {})}
       {...(props.previewGrid !== undefined
         ? { previewGrid: props.previewGrid }
@@ -238,6 +243,57 @@ describe("CandlestickChart order levels + markers (Phase 3)", () => {
     expect(fakes.markersPlugin.setMarkers).toHaveBeenLastCalledWith([
       expect.objectContaining({ shape: "arrowUp" }),
     ]);
+  });
+
+  it("drops rows from a venue other than the charted one (review P1)", () => {
+    // Same symbol, two venues. The forwarded book is scoped to ONE account,
+    // so a row from the other venue must never claim a level here — it would
+    // read as a resting order the charted market never had.
+    renderChart({
+      symbol: "PERP_BTC_USDC",
+      venue: { exchange: "kodiak", environment: "mainnet" },
+      orders: [
+        order({ orderId: "k", symbol: "PERP_BTC_USDC", price: 100 }),
+        order({
+          orderId: "l",
+          symbol: "PERP_BTC_USDC",
+          exchange: "lighter",
+          price: 200,
+        }),
+      ],
+    });
+
+    expect(fakes.candleSeries.createPriceLine).toHaveBeenCalledTimes(1);
+    expect(fakes.candleSeries.createPriceLine).toHaveBeenCalledWith(
+      expect.objectContaining({ price: 100 })
+    );
+    // The foreign venue's row draws no placement marker either.
+    expect(fakes.markersPlugin.setMarkers).toHaveBeenLastCalledWith([
+      expect.objectContaining({ text: "LIMIT" }),
+    ]);
+  });
+
+  it("keeps drawing the charted venue's rows across a venue-only switch", () => {
+    // BTC on Lighter -> BTC on Kodiak keeps the symbol, so the venue must be
+    // a real dependency of the orders effect or the old rows would linger.
+    const element = (venue: "kodiak" | "lighter") => (
+      <CandlestickChart
+        symbol="PERP_BTC_USDC"
+        interval="1h"
+        height={400}
+        venue={{ exchange: venue, environment: "mainnet" }}
+        orders={[
+          order({ symbol: "PERP_BTC_USDC", exchange: venue, price: 100 }),
+        ]}
+      />
+    );
+    const { rerender } = render(element("lighter"));
+    expect(fakes.candleSeries.createPriceLine).toHaveBeenCalledTimes(1);
+
+    rerender(element("kodiak"));
+    // The Lighter row is removed and the Kodiak row is drawn — not both.
+    expect(fakes.candleSeries.removePriceLine).toHaveBeenCalledTimes(1);
+    expect(fakes.candleSeries.createPriceLine).toHaveBeenCalledTimes(2);
   });
 
   it("removes the levels and clears the markers when the book empties", () => {
