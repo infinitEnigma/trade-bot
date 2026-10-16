@@ -55,10 +55,8 @@ export default tseslint.config(
   // rule above stays enforced everywhere else; shrink this list as ports land.
   {
     files: [
-      "src/core/bots/engine-registry.service.ts",
       "src/core/service-factory.ts",
       "src/core/wallet/wallet-proof.service.ts",
-      "src/core/strategies/engine-manager.service.pure.ts",
     ],
     rules: {
       "no-restricted-imports": "off",

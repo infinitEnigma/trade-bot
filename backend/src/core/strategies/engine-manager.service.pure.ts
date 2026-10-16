@@ -24,12 +24,16 @@ import {
   ProcessSupervisor,
 } from "./engine";
 import { RedisStreamOperations } from "../../infrastructure/cache/redis";
+import { ENGINE_HEARTBEAT_TIMEOUT_MS } from "../bots/lifecycle/engine-registry.repository.port";
 
 /**
- * Mirrors ENGINE_HEARTBEAT_TIMEOUT_MS in core/bots/engine-registry.service
- * (kept local to avoid importing the registry's service graph here).
+ * Registry-backed engine liveness (the `engine_registry` heartbeat table).
+ * Implemented by the engine-registry repository adapter; injected so core
+ * never queries PostgreSQL directly (review P1).
  */
-const ENGINE_HEARTBEAT_TIMEOUT_S = 30;
+export interface EngineLivenessProbe {
+  hasLiveEngines(olderThanSeconds: number): Promise<boolean>;
+}
 
 interface EngineStatus {
   running: boolean;
@@ -44,6 +48,12 @@ export interface EngineManagerServiceDependencies {
   botInstanceRepository: IBotInstanceRepository;
   logger: ILogger;
   redisStreamOperations: RedisStreamOperations;
+  /**
+   * Registry-backed liveness probe (engine_registry heartbeats). Wired by the
+   * DI container; absent in unit tests, which fall back to the child-process
+   * check below.
+   */
+  engineLiveness?: EngineLivenessProbe;
 }
 
 /**
@@ -125,29 +135,21 @@ export class EngineManager {
    * message above instead of a misleading one.
    */
   private async isEngineAlive(): Promise<boolean> {
-    // 1. Externally supervised engine? Trust the registry heartbeat.
-    try {
-      // TODO(architecture): core imports PostgreSQL dynamically — inject an
-      // engine-liveness port (follow-up: remove from this allowlist).
-      // See backend/eslint.config.mjs.
-      const { query } = await import("../../database/pool");
-      const live = await query<{ engine_id: string }>(
-        `SELECT engine_id FROM engine_registry
-          WHERE status = 'ONLINE'
-            AND last_seen_at > NOW() - make_interval(secs => $1)
-          LIMIT 1`,
-        [ENGINE_HEARTBEAT_TIMEOUT_S]
-      );
-      if ((live.rowCount ?? 0) > 0) {
-        this.deps.logger.debug("Engine alive (registry heartbeat)", {
-          engineId: live.rows[0].engine_id,
+    // 1. Externally supervised engine? Trust the injected registry probe.
+    if (this.deps.engineLiveness) {
+      try {
+        const live = await this.deps.engineLiveness.hasLiveEngines(
+          ENGINE_HEARTBEAT_TIMEOUT_MS / 1000
+        );
+        if (live) {
+          this.deps.logger.debug("Engine alive (registry heartbeat)");
+          return true;
+        }
+      } catch (error) {
+        this.deps.logger.warn("Engine registry liveness check failed", {
+          error: error instanceof Error ? error.message : String(error),
         });
-        return true;
       }
-    } catch (error) {
-      this.deps.logger.warn("Engine registry liveness check failed", {
-        error: error instanceof Error ? error.message : String(error),
-      });
     }
 
     // 2. Legacy backend-owned child process (dev only).

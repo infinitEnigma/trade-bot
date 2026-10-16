@@ -31,6 +31,7 @@ import { auditLogRepositoryAdapter } from "./adapters/repositories/audit-log-rep
 import { roleRepositoryAdapter } from "./adapters/repositories/role-repository.adapter";
 import { botInstanceRepositoryAdapter } from "./adapters/repositories/bot-instance-repository.adapter";
 import { BotLifecycleRepositoryAdapter } from "./adapters/repositories/bot-lifecycle-repository.adapter";
+import { EngineRegistryRepositoryAdapter } from "./adapters/repositories/engine-registry-repository.adapter";
 import { query as poolQuery } from "../database/pool";
 
 // Pure Services
@@ -457,6 +458,9 @@ export class DependencyInjectionContainer {
       botInstanceRepository: this.botInstanceRepository,
       logger: this.loggerService,
       redisStreamOperations: this.redisStreamOperations,
+      // Registry-backed liveness (engine_registry heartbeats) so core never
+      // queries PostgreSQL directly (review P1).
+      engineLiveness: new EngineRegistryRepositoryAdapter(),
     });
   }
 

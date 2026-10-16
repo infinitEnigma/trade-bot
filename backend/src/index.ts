@@ -64,6 +64,7 @@ import { BotLifecycleRepositoryAdapter } from "./infrastructure/adapters/reposit
 import { exchangeAccountRepositoryAdapter } from "./infrastructure/adapters/repositories/exchange-account-repository.adapter";
 import { strategyRepositoryAdapter } from "./infrastructure/adapters/repositories/strategy-repository.adapter";
 import { TradeLedgerRepositoryAdapter } from "./infrastructure/adapters/repositories/trade-ledger-repository.adapter";
+import { EngineRegistryRepositoryAdapter } from "./infrastructure/adapters/repositories/engine-registry-repository.adapter";
 import { venueSymbolCatalog } from "./infrastructure/external/venue-symbols";
 import { createSessionCapProvider } from "./infrastructure/external/exchange-accounts/session-cap.provider";
 import { commandTimeoutSweeper } from "./core/bots/command-timeout.sweeper";
@@ -495,6 +496,15 @@ export const startServer = (): Promise<typeof httpServer> => {
       // idempotent ledger writes (trade-ledger.service).
       tradeLedgerService.setTradeLedgerRepository(
         new TradeLedgerRepositoryAdapter()
+      );
+      engineRegistryService.setEngineRegistryRepository(
+        new EngineRegistryRepositoryAdapter()
+      );
+      engineRegistryService.setUnknownMarker(engineId =>
+        botLifecycleService.markBotsUnknownForEngine(engineId)
+      );
+      engineRegistryService.setInventoryReconciler((engineId, activeBotIds) =>
+        botLifecycleService.reconcileHeartbeatInventory(engineId, activeBotIds)
       );
       botLifecycleService.setTradeLedgerHandler(event =>
         tradeLedgerService.handle(event)

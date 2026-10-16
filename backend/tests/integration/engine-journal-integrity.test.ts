@@ -19,6 +19,7 @@
 import { query, getClient } from "../../src/database/pool";
 import { PoolClient } from "pg";
 import { EngineRegistryService } from "../../src/core/bots/engine-registry.service";
+import { EngineRegistryRepositoryAdapter } from "../../src/infrastructure/adapters/repositories/engine-registry-repository.adapter";
 import logger from "../../src/core/logging/logger.service";
 
 jest.mock("../../src/core/logging/logger.service");
@@ -26,6 +27,9 @@ jest.mock("../../src/core/logging/logger.service");
 describe("Engine journal integrity (F4) - recovery concurrency", () => {
   const engineId = `itest-journal-${Date.now()}`;
   const service = new EngineRegistryService();
+  // Concrete port wiring: the service is persistence-agnostic (review P1),
+  // so the integration suite injects the real adapter explicitly.
+  service.setEngineRegistryRepository(new EngineRegistryRepositoryAdapter());
   let dbAvailable = false;
 
   // recordJournalIntegrity is private; the integration test drives the real

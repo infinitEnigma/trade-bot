@@ -38,6 +38,18 @@ BotLifecycleService (orchestrator)
         └── BotEventProcessor       - engine event handling + supervision sweeps
 ```
 
+### Engine Registry Service
+
+The `EngineRegistryService` owns engine liveness and authoritative identity
+(`engine_registry`). Like the lifecycle service it is persistence-agnostic: it
+depends on the `IEngineRegistryRepository` port
+(`src/core/bots/lifecycle/engine-registry.repository.port.ts`), implemented by
+`EngineRegistryRepositoryAdapter`. Sweep orchestration (claim-first OFFLINE
+marking, UNKNOWN transitions, dead-row pruning) lives in the service;
+collaborators (`BotLifecycleService` marker + inventory reconciler) and the
+`EngineManager` liveness probe are setter/constructor-injected, so core never
+imports `database/pool` or a repository adapter.
+
 ### Engine Protocol Service
 
 The `EngineProtocolService` implements the Redis Streams control plane:

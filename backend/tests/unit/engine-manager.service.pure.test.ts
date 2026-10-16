@@ -219,6 +219,52 @@ describe("EngineManager", () => {
       expect(mockSpawn).not.toHaveBeenCalled();
     });
 
+    it("should trust the injected registry probe for liveness (port, not SQL)", async () => {
+      // Arrange: EngineManager never queries PostgreSQL directly — the
+      // registry liveness arrives through the injected EngineLivenessProbe.
+      const hasLiveEngines = jest.fn().mockResolvedValue(true);
+      const probed = createEngineManager({
+        logger: mockLogger,
+        botInstanceRepository: mockBotInstanceRepository,
+        redisStreamOperations: mockStreamOperations as any,
+        engineLiveness: { hasLiveEngines },
+      });
+
+      // Act
+      await expect(probed.ensureEngineRunning()).resolves.toBeUndefined();
+
+      // Assert
+      expect(hasLiveEngines).toHaveBeenCalledTimes(1);
+      expect(hasLiveEngines.mock.calls[0][0]).toBeGreaterThan(0);
+    });
+
+    it("should treat a failing probe as engine-down (fail fast 503)", async () => {
+      const hasLiveEngines = jest
+        .fn()
+        .mockRejectedValue(new Error("db down"));
+      const probed = createEngineManager({
+        logger: mockLogger,
+        botInstanceRepository: mockBotInstanceRepository,
+        redisStreamOperations: mockStreamOperations as any,
+        engineLiveness: { hasLiveEngines },
+      });
+      const mockSpawn = jest
+        .spyOn((probed as any).processSpawner, "spawn")
+        .mockResolvedValue({});
+
+      const error = await probed
+        .ensureEngineRunning()
+        .then(() => undefined)
+        .catch((e: Error & { statusCode?: number }) => e);
+
+      expect(error?.statusCode).toBe(503);
+      expect(mockLogger.warn).toHaveBeenCalledWith(
+        "Engine registry liveness check failed",
+        expect.anything()
+      );
+      expect(mockSpawn).not.toHaveBeenCalled();
+    });
+
     it("should get engine status when running", async () => {
       // Arrange
       const mockAxios = {

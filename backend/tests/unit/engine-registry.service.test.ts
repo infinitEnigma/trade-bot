@@ -6,72 +6,117 @@
 
 import { createBotEvent } from "@trade-bot/shared";
 
-jest.mock("../../src/database/pool", () => ({
-  query: jest.fn(),
-  getClient: jest.fn(),
-}));
-jest.mock("../../src/core/logging/context-aware-logger.service", () => ({
-  redisLogger: {
+jest.mock("../../src/core/logging", () => {
+  const makeMockLogger = () => ({
     info: jest.fn(),
     warn: jest.fn(),
     error: jest.fn(),
     debug: jest.fn(),
-  },
-}));
-jest.mock("../../src/core/bots/bot-lifecycle.service", () => ({
-  botLifecycleService: {
-    markBotsUnknownForEngine: jest.fn().mockResolvedValue(2),
-    reconcileHeartbeatInventory: jest
-      .fn()
-      .mockResolvedValue({ unlisted: 0, drift: 0 }),
-  },
-}));
+  });
+  return {
+    // The service under test binds `logger` through this barrel, so the mock
+    // must live here — mocking the implementation file would leave the
+    // service holding the real instance.
+    contextLogger: makeMockLogger(),
+  };
+});
 
-import { query, getClient } from "../../src/database/pool";
-import { botLifecycleService } from "../../src/core/bots/bot-lifecycle.service";
-import { redisLogger } from "../../src/core/logging/context-aware-logger.service";
+import { contextLogger } from "../../src/core/logging";
+import {
+  IEngineRegistryRepository,
+  EngineRegistryRow,
+  EngineRegistryTx,
+} from "../../src/core/bots/lifecycle/engine-registry.repository.port";
 import {
   ENGINE_HEARTBEAT_TIMEOUT_MS,
+  ENGINE_DEAD_ROW_RETENTION_MS,
+} from "../../src/core/bots/lifecycle/engine-registry.repository.port";
+import {
   EngineRegistryService,
+  InventoryReconciler,
+  UnknownMarker,
 } from "../../src/core/bots/engine-registry.service";
 
-const mockQuery = query as jest.Mock;
-const mockGetClient = getClient as unknown as jest.Mock;
-const mockLogger = redisLogger as unknown as {
+const mockLogger = contextLogger as unknown as {
   info: jest.Mock;
   warn: jest.Mock;
   error: jest.Mock;
   debug: jest.Mock;
 };
-const ok = () => ({ rows: [], rowCount: 1 });
+
+/** Fully-typed pure port double — no SQL, no pool mocks. */
+type MockRepository = jest.Mocked<IEngineRegistryRepository>;
+
+function makeMockRepository(): MockRepository {
+  return {
+    upsertEngine: jest.fn().mockResolvedValue({ rowCount: 1 }),
+    refreshEngineHeartbeat: jest.fn().mockResolvedValue(true),
+    inTransaction: jest
+      .fn()
+      .mockImplementation(
+        async <T>(fn: (tx: EngineRegistryTx) => Promise<T>): Promise<T> =>
+          fn({} as EngineRegistryTx)
+      ),
+    lockEngineRow: jest.fn().mockResolvedValue(null),
+    updateJournalIntegrity: jest.fn().mockResolvedValue(undefined),
+    selectEngineById: jest.fn().mockResolvedValue(null),
+    recoverJournalIntegrity: jest
+      .fn()
+      .mockResolvedValue({ recovered: false, reason: "no row" }),
+    selectAllEngines: jest.fn().mockResolvedValue([]),
+    selectExpiredOnlineEngines: jest.fn().mockResolvedValue([]),
+    markEngineOffline: jest.fn().mockResolvedValue(false),
+    pruneDeadEngines: jest.fn().mockResolvedValue({ rowCount: 0 }),
+    hasLiveEngines: jest.fn().mockResolvedValue(false),
+  };
+}
 
 /**
- * A fake locked PoolClient for recordJournalIntegrity's transaction. Records
- * every statement so tests can assert the ordering UPDATE's params, and
- * returns the supplied SELECT ... FOR UPDATE row (or none).
+ * Wire the port's transactional lock/update for recordJournalIntegrity tests.
+ * The service calls these on the REPOSITORY (tx passed as first arg), so stub
+ * them at the repository level and record update params — asserting port-call
+ * ordering, never SQL strings.
  */
-function makeLockedClient(selectRow: Record<string, unknown> | null) {
-  const calls: Array<{ sql: string; params?: unknown[] }> = [];
-  const client = {
-    query: jest.fn(async (sql: string, params?: unknown[]) => {
-      calls.push({ sql, params });
-      const s = String(sql);
-      if (s === "BEGIN" || s === "COMMIT" || s === "ROLLBACK") {
-        return { rows: [], rowCount: 0 };
+function wireTx(
+  repo: jest.Mocked<IEngineRegistryRepository>,
+  selectRow: Record<string, unknown> | null
+) {
+  const updates: Array<{
+    engineId: string;
+    isUnknown: boolean;
+    isOk: boolean;
+    pending: number | null;
+    nextEpoch: number | string;
+    nextSeq: number | string;
+  }> = [];
+  repo.lockEngineRow.mockImplementation(
+    async (_tx: EngineRegistryTx, _engineId: string) =>
+      selectRow
+        ? {
+            journal_integrity_alert: Boolean(
+              selectRow.journal_integrity_alert
+            ),
+            last_hb_epoch: selectRow.last_hb_epoch as number | string,
+            last_hb_seq: selectRow.last_hb_seq as number | string,
+          }
+        : null
+  );
+  repo.updateJournalIntegrity.mockImplementation(
+    async (
+      _tx: EngineRegistryTx,
+      params: {
+        engineId: string;
+        isUnknown: boolean;
+        isOk: boolean;
+        pending: number | null;
+        nextEpoch: number | string;
+        nextSeq: number | string;
       }
-      if (s.includes("FOR UPDATE")) {
-        return {
-          rows: selectRow ? [selectRow] : [],
-          rowCount: selectRow ? 1 : 0,
-        };
-      }
-      if (s.startsWith("UPDATE")) return { rows: [], rowCount: 1 };
-      return { rows: [], rowCount: 0 };
-    }),
-    release: jest.fn(),
-  };
-  const updateCall = () => calls.find(c => c.sql.startsWith("UPDATE"));
-  return { client, calls, updateCall };
+    ) => {
+      updates.push(params);
+    }
+  );
+  return updates;
 }
 
 function heartbeatEvent(
@@ -93,15 +138,28 @@ function heartbeatEvent(
 
 describe("EngineRegistryService", () => {
   let service: EngineRegistryService;
+  let mockRepository: MockRepository;
+  let markBotsUnknown: jest.Mock;
+  let reconcileInventory: jest.Mock;
 
   beforeEach(() => {
     jest.clearAllMocks();
     service = new EngineRegistryService();
+    mockRepository = makeMockRepository();
+    markBotsUnknown = jest.fn().mockResolvedValue(2);
+    reconcileInventory = jest
+      .fn()
+      .mockResolvedValue({ unlisted: 0, drift: 0 });
+    service.setEngineRegistryRepository(mockRepository);
+    service.setUnknownMarker(markBotsUnknown as unknown as UnknownMarker);
+    service.setInventoryReconciler(
+      reconcileInventory as unknown as InventoryReconciler
+    );
   });
 
   describe("handleEngineEvent", () => {
     it("registers an engine from an ENGINE_REGISTER event", async () => {
-      mockQuery.mockReturnValue(ok());
+      mockRepository.upsertEngine.mockResolvedValue({ rowCount: 1 });
       const event = createBotEvent(
         "ENGINE_REGISTER",
         {
@@ -116,16 +174,16 @@ describe("EngineRegistryService", () => {
       const handled = await service.handleEngineEvent(event);
 
       expect(handled).toBe(true);
-      const insert = mockQuery.mock.calls.find(call =>
-        String(call[0]).includes("INSERT INTO engine_registry")
-      );
-      expect(insert).toBeDefined();
-      expect(insert![1][0]).toBe("engine-1");
-      expect(insert![1][1]).toBe(3);
+      expect(mockRepository.upsertEngine).toHaveBeenCalledWith({
+        engineId: "engine-1",
+        epoch: 3,
+        version: "kodiak@1.0.0",
+        startedAt: expect.any(String),
+      });
     });
 
     it("processes an ENGINE_HEARTBEAT event (self-healing upsert)", async () => {
-      mockQuery.mockReturnValue(ok());
+      mockRepository.refreshEngineHeartbeat.mockResolvedValue(true);
       const event = createBotEvent(
         "ENGINE_HEARTBEAT",
         {
@@ -140,13 +198,13 @@ describe("EngineRegistryService", () => {
       const handled = await service.handleEngineEvent(event);
 
       expect(handled).toBe(true);
-      const upsert = mockQuery.mock.calls.find(call =>
-        String(call[0]).includes("INSERT INTO engine_registry")
-      );
-      expect(upsert).toBeDefined();
-      // Heartbeat is an upsert (registers an unknown engine), so a lost
-      // initial ENGINE_REGISTER self-heals on the first heartbeat.
-      expect(String(upsert![0])).toContain("ON CONFLICT (engine_id)");
+      // Heartbeat refreshes liveness; a lost initial ENGINE_REGISTER
+      // self-heals via the port's refresh upsert.
+      expect(mockRepository.refreshEngineHeartbeat).toHaveBeenCalledWith({
+        engineId: "engine-1",
+        epoch: 3,
+        version: "kodiak@1.0.0",
+      });
     });
 
     it("returns false for non-engine-lifecycle events", async () => {
@@ -166,8 +224,9 @@ describe("EngineRegistryService", () => {
   });
 
   describe("heartbeat epoch guards", () => {
-    it("rejects heartbeats from a stale epoch (rowCount 0)", async () => {
-      mockQuery.mockReturnValue({ rows: [], rowCount: 0 });
+    it("skips reconciliation for heartbeats from a stale epoch", async () => {
+      // Port's refresh returns false -> stale epoch, nothing more to do.
+      mockRepository.refreshEngineHeartbeat.mockResolvedValue(false);
       const event = createBotEvent(
         "ENGINE_HEARTBEAT",
         {
@@ -181,22 +240,23 @@ describe("EngineRegistryService", () => {
 
       await service.handleEngineEvent(event);
 
-      const upsert = mockQuery.mock.calls.find(call =>
-        String(call[0]).includes("INSERT INTO engine_registry")
-      );
-      expect(upsert).toBeDefined();
-      // The epoch guard clause keeps a stale heartbeat from refreshing/inserting.
-      expect(String(upsert![0])).toContain(
-        "WHERE EXCLUDED.epoch >= engine_registry.epoch"
-      );
+      expect(mockRepository.refreshEngineHeartbeat).toHaveBeenCalledWith({
+        engineId: "engine-1",
+        epoch: 2,
+        version: "kodiak@1.0.0",
+      });
+      expect(reconcileInventory).not.toHaveBeenCalled();
     });
   });
 
   describe("isEngineAuthoritative (fail closed)", () => {
     it("rejects an engine whose epoch is superseded", async () => {
-      mockQuery.mockReturnValue({
-        rows: [{ engine_id: "engine-1", epoch: 5, status: "ONLINE" }],
-        rowCount: 1,
+      mockRepository.selectEngineById.mockResolvedValue({
+        engine_id: "engine-1",
+        epoch: 5,
+        status: "ONLINE",
+        version: null,
+        last_seen_at: new Date(),
       });
       expect(await service.isEngineAuthoritative("engine-1", 4)).toBe(false);
     });
@@ -204,17 +264,23 @@ describe("EngineRegistryService", () => {
     it("rejects an engine whose event epoch is ahead of the registered epoch", async () => {
       // Invariant is exact match, not "not yet superseded": an event
       // carrying an impossible future epoch is just as untrustworthy.
-      mockQuery.mockReturnValue({
-        rows: [{ engine_id: "engine-1", epoch: 5, status: "ONLINE" }],
-        rowCount: 1,
+      mockRepository.selectEngineById.mockResolvedValue({
+        engine_id: "engine-1",
+        epoch: 5,
+        status: "ONLINE",
+        version: null,
+        last_seen_at: new Date(),
       });
       expect(await service.isEngineAuthoritative("engine-1", 999)).toBe(false);
     });
 
     it("accepts an engine with a current epoch", async () => {
-      mockQuery.mockReturnValue({
-        rows: [{ engine_id: "engine-1", epoch: 5, status: "ONLINE" }],
-        rowCount: 1,
+      mockRepository.selectEngineById.mockResolvedValue({
+        engine_id: "engine-1",
+        epoch: 5,
+        status: "ONLINE",
+        version: null,
+        last_seen_at: new Date(),
       });
       expect(await service.isEngineAuthoritative("engine-1", 5)).toBe(true);
     });
@@ -225,39 +291,48 @@ describe("EngineRegistryService", () => {
       // former strict `!==` rejected EVERY runtime event as "epoch mismatch",
       // so accepts/failures were dropped and healthy engines were reported as
       // ENGINE_NO_RESPONSE while they kept trading.
-      mockQuery.mockReturnValue({
-        rows: [{ engine_id: "engine-1", epoch: "19", status: "ONLINE" }],
-        rowCount: 1,
+      mockRepository.selectEngineById.mockResolvedValue({
+        engine_id: "engine-1",
+        epoch: "19",
+        status: "ONLINE",
+        version: null,
+        last_seen_at: new Date(),
       });
       expect(await service.isEngineAuthoritative("engine-1", 19)).toBe(true);
     });
 
     it("still rejects a genuine epoch mismatch when the registered epoch is a string", async () => {
-      mockQuery.mockReturnValue({
-        rows: [{ engine_id: "engine-1", epoch: "19", status: "ONLINE" }],
-        rowCount: 1,
+      mockRepository.selectEngineById.mockResolvedValue({
+        engine_id: "engine-1",
+        epoch: "19",
+        status: "ONLINE",
+        version: null,
+        last_seen_at: new Date(),
       });
       expect(await service.isEngineAuthoritative("engine-1", 20)).toBe(false);
       expect(await service.isEngineAuthoritative("engine-1", 18)).toBe(false);
     });
 
     it("rejects an OFFLINE engine", async () => {
-      mockQuery.mockReturnValue({
-        rows: [{ engine_id: "engine-1", epoch: 5, status: "OFFLINE" }],
-        rowCount: 1,
+      mockRepository.selectEngineById.mockResolvedValue({
+        engine_id: "engine-1",
+        epoch: 5,
+        status: "OFFLINE",
+        version: null,
+        last_seen_at: new Date(),
       });
       expect(await service.isEngineAuthoritative("engine-1")).toBe(false);
     });
 
     it("rejects an unregistered engine (fail closed)", async () => {
-      mockQuery.mockReturnValue({ rows: [], rowCount: 0 });
+      mockRepository.selectEngineById.mockResolvedValue(null);
       expect(await service.isEngineAuthoritative("unknown-engine", 1)).toBe(
         false
       );
     });
 
     it("throws on DB failure so the event stays unacked for redelivery", async () => {
-      mockQuery.mockRejectedValue(new Error("db down"));
+      mockRepository.selectEngineById.mockRejectedValue(new Error("db down"));
       await expect(
         service.isEngineAuthoritative("engine-1", 5)
       ).rejects.toThrow("db down");
@@ -265,9 +340,11 @@ describe("EngineRegistryService", () => {
   });
 
   describe("stale registration guard", () => {
-    it("ignores a registration whose epoch is superseded (no resurrection)", async () => {
-      // Guarded ON CONFLICT UPDATE matches 0 rows for a stale epoch.
-      mockQuery.mockReturnValue({ rows: [], rowCount: 0 });
+    it("passes the stale registration through to the port (adapter guards the epoch)", async () => {
+      // The epoch-guard clause (WHERE EXCLUDED.epoch >= ...) lives in the
+      // adapter now; the service forwards the register payload unchanged.
+      // A superseded epoch matches 0 rows there.
+      mockRepository.upsertEngine.mockResolvedValue({ rowCount: 0 });
       const event = createBotEvent(
         "ENGINE_REGISTER",
         {
@@ -281,25 +358,18 @@ describe("EngineRegistryService", () => {
 
       await service.handleEngineEvent(event);
 
-      const upsert = mockQuery.mock.calls.find(call =>
-        String(call[0]).includes("INSERT INTO engine_registry")
-      );
-      expect(upsert).toBeDefined();
-      // The epoch guard clause keeps stale registers from refreshing the row.
-      expect(String(upsert![0])).toContain(
-        "WHERE EXCLUDED.epoch >= engine_registry.epoch"
-      );
+      expect(mockRepository.upsertEngine).toHaveBeenCalledWith({
+        engineId: "engine-1",
+        epoch: 4,
+        version: "kodiak@1.0.0",
+        startedAt: expect.any(String),
+      });
     });
   });
 
   describe("heartbeat inventory reconciliation", () => {
     it("reconciles activeBotIds on a successful heartbeat", async () => {
-      mockQuery.mockImplementation((sql: string) => {
-        if (String(sql).includes("ON CONFLICT (engine_id)")) {
-          return Promise.resolve({ rows: [], rowCount: 1 });
-        }
-        return ok();
-      });
+      mockRepository.refreshEngineHeartbeat.mockResolvedValue(true);
       const event = createBotEvent(
         "ENGINE_HEARTBEAT",
         {
@@ -313,13 +383,11 @@ describe("EngineRegistryService", () => {
 
       await service.handleEngineEvent(event);
 
-      expect(
-        botLifecycleService.reconcileHeartbeatInventory
-      ).toHaveBeenCalledWith("engine-1", ["b1"]);
+      expect(reconcileInventory).toHaveBeenCalledWith("engine-1", ["b1"]);
     });
 
     it("does not reconcile heartbeats from a stale epoch", async () => {
-      mockQuery.mockReturnValue({ rows: [], rowCount: 0 });
+      mockRepository.refreshEngineHeartbeat.mockResolvedValue(false);
       const event = createBotEvent(
         "ENGINE_HEARTBEAT",
         {
@@ -333,122 +401,76 @@ describe("EngineRegistryService", () => {
 
       await service.handleEngineEvent(event);
 
-      expect(
-        botLifecycleService.reconcileHeartbeatInventory
-      ).not.toHaveBeenCalled();
+      expect(reconcileInventory).not.toHaveBeenCalled();
     });
   });
 
   describe("sweepOfflineEngines", () => {
+    const expiredRow = (overrides: Record<string, unknown> = {}) =>
+      ({
+        engine_id: "engine-1",
+        epoch: 3,
+        status: "ONLINE",
+        version: null,
+        last_seen_at: new Date(),
+        ...overrides,
+      }) as EngineRegistryRow;
+
     it("marks expired engines OFFLINE and marks their RUNNING bots UNKNOWN", async () => {
-      mockQuery.mockImplementation((sql: string) => {
-        if (
-          String(sql).includes("FROM engine_registry") &&
-          String(sql).startsWith("SELECT")
-        ) {
-          return Promise.resolve({
-            rows: [
-              {
-                engine_id: "engine-1",
-                epoch: 3,
-                status: "ONLINE",
-                version: null,
-                last_seen_at: new Date(),
-              },
-            ],
-          });
-        }
-        return Promise.resolve({ rows: [], rowCount: 1 });
-      });
+      mockRepository.selectExpiredOnlineEngines.mockResolvedValue([
+        expiredRow(),
+      ]);
+      mockRepository.markEngineOffline.mockResolvedValue(true);
 
       const marked = await service.sweepOfflineEngines();
 
       expect(marked).toBe(1);
-      expect(botLifecycleService.markBotsUnknownForEngine).toHaveBeenCalledWith(
-        "engine-1"
+      expect(mockRepository.selectExpiredOnlineEngines).toHaveBeenCalledWith(
+        ENGINE_HEARTBEAT_TIMEOUT_MS / 1000
       );
+      expect(mockRepository.markEngineOffline).toHaveBeenCalledWith("engine-1");
+      expect(markBotsUnknown).toHaveBeenCalledWith("engine-1");
     });
 
     it("does not double-mark an engine whose claim loses the race", async () => {
-      mockQuery.mockImplementation((sql: string) => {
-        if (
-          String(sql).includes("FROM engine_registry") &&
-          String(sql).startsWith("SELECT")
-        ) {
-          return Promise.resolve({
-            rows: [
-              {
-                engine_id: "engine-1",
-                epoch: 3,
-                status: "ONLINE",
-                version: null,
-                last_seen_at: new Date(),
-              },
-            ],
-          });
-        }
-        // The OFFLINE claim loses the race.
-        return Promise.resolve({ rows: [], rowCount: 0 });
-      });
+      mockRepository.selectExpiredOnlineEngines.mockResolvedValue([
+        expiredRow(),
+      ]);
+      // The OFFLINE claim loses the race.
+      mockRepository.markEngineOffline.mockResolvedValue(false);
 
       const marked = await service.sweepOfflineEngines();
 
       expect(marked).toBe(0);
-      expect(
-        botLifecycleService.markBotsUnknownForEngine
-      ).not.toHaveBeenCalled();
+      expect(markBotsUnknown).not.toHaveBeenCalled();
     });
 
     it("prunes dead OFFLINE rows past retention without affecting the marked count", async () => {
-      mockQuery.mockImplementation((sql: string) => {
-        if (String(sql).startsWith("SELECT")) {
-          return Promise.resolve({ rows: [] });
-        }
-        if (String(sql).startsWith("DELETE")) {
-          return Promise.resolve({ rows: [], rowCount: 2 });
-        }
-        return Promise.resolve({ rows: [], rowCount: 0 });
-      });
+      mockRepository.selectExpiredOnlineEngines.mockResolvedValue([]);
+      mockRepository.pruneDeadEngines.mockResolvedValue({ rowCount: 2 });
 
       const marked = await service.sweepOfflineEngines();
 
       expect(marked).toBe(0);
-      const pruneCall = mockQuery.mock.calls.find(call =>
-        String(call[0]).startsWith("DELETE")
+      expect(mockRepository.pruneDeadEngines).toHaveBeenCalledWith(
+        ENGINE_DEAD_ROW_RETENTION_MS / 1000
       );
-      expect(pruneCall).toBeDefined();
-      expect(String(pruneCall![0])).toContain("status = 'OFFLINE'");
-      expect(String(pruneCall![0])).toContain("last_seen_at");
     });
 
     it("keeps sweeping when the prune DELETE fails", async () => {
-      mockQuery.mockImplementation((sql: string) => {
-        if (String(sql).startsWith("SELECT")) {
-          return Promise.resolve({
-            rows: [
-              {
-                engine_id: "engine-1",
-                epoch: 3,
-                status: "ONLINE",
-                version: null,
-                last_seen_at: new Date(),
-              },
-            ],
-          });
-        }
-        if (String(sql).startsWith("DELETE")) {
-          return Promise.reject(new Error("prune boom"));
-        }
-        return Promise.resolve({ rows: [], rowCount: 1 });
-      });
+      mockRepository.selectExpiredOnlineEngines.mockResolvedValue([
+        expiredRow(),
+      ]);
+      mockRepository.markEngineOffline.mockResolvedValue(true);
+      mockRepository.pruneDeadEngines.mockRejectedValue(
+        new Error("prune boom")
+      );
 
       const marked = await service.sweepOfflineEngines();
 
       // The mark still succeeds; the prune failure is logged, not thrown.
       expect(marked).toBe(1);
-      expect(botLifecycleService.markBotsUnknownForEngine).toHaveBeenCalledWith(
-        "engine-1"
-      );
+      expect(markBotsUnknown).toHaveBeenCalledWith("engine-1");
     });
   });
 
@@ -463,7 +485,7 @@ describe("EngineRegistryService", () => {
     });
 
     it("is running when an engine is ONLINE with a fresh heartbeat", async () => {
-      mockQuery.mockReturnValue({ rows: [engineRow()] });
+      mockRepository.selectAllEngines.mockResolvedValue([engineRow()]);
 
       const liveness = await service.getEngineLiveness();
 
@@ -485,15 +507,13 @@ describe("EngineRegistryService", () => {
     });
 
     it("is not running when the ONLINE engine's heartbeat is stale (sweep not yet run)", async () => {
-      mockQuery.mockReturnValue({
-        rows: [
-          engineRow({
-            last_seen_at: new Date(
-              Date.now() - ENGINE_HEARTBEAT_TIMEOUT_MS * 3
-            ),
-          }),
-        ],
-      });
+      mockRepository.selectAllEngines.mockResolvedValue([
+        engineRow({
+          last_seen_at: new Date(
+            Date.now() - ENGINE_HEARTBEAT_TIMEOUT_MS * 3
+          ),
+        }),
+      ]);
 
       const liveness = await service.getEngineLiveness();
 
@@ -505,7 +525,9 @@ describe("EngineRegistryService", () => {
     });
 
     it("is not running when the engine is OFFLINE", async () => {
-      mockQuery.mockReturnValue({ rows: [engineRow({ status: "OFFLINE" })] });
+      mockRepository.selectAllEngines.mockResolvedValue([
+        engineRow({ status: "OFFLINE" }),
+      ]);
 
       const liveness = await service.getEngineLiveness();
 
@@ -514,7 +536,7 @@ describe("EngineRegistryService", () => {
     });
 
     it("is not running when the registry is empty", async () => {
-      mockQuery.mockReturnValue({ rows: [] });
+      mockRepository.selectAllEngines.mockResolvedValue([]);
 
       const liveness = await service.getEngineLiveness();
 
@@ -524,21 +546,20 @@ describe("EngineRegistryService", () => {
   });
 
   describe("journal integrity (F4) - heartbeat ordering", () => {
-    // Each heartbeat() first runs the liveness upsert via `query`; return
-    // rowCount 1 so the stale-epoch guard passes and recordJournalIntegrity runs.
+    // Each heartbeat() first runs the port's liveness refresh; return true
+    // so the stale-epoch guard passes and recordJournalIntegrity runs.
     beforeEach(() => {
-      mockQuery.mockReturnValue({ rows: [], rowCount: 1 });
+      mockRepository.refreshEngineHeartbeat.mockResolvedValue(true);
     });
 
     it("advances the (epoch, seq) pair together when the epoch advances (seq resets)", async () => {
       // Stored (7, 500); a restarted process sends (8, 1). The pair must move
       // as a unit -> last_hb_epoch=8, last_hb_seq=1 (NOT GREATEST keeping 500).
-      const { client, updateCall } = makeLockedClient({
+      const updates = wireTx(mockRepository, {
         journal_integrity_alert: false,
         last_hb_epoch: "7",
         last_hb_seq: "500",
       });
-      mockGetClient.mockResolvedValue(client);
 
       await service.handleEngineEvent(
         heartbeatEvent({
@@ -548,20 +569,16 @@ describe("EngineRegistryService", () => {
         })
       );
 
-      const upd = updateCall();
-      expect(upd).toBeDefined();
-      // params: [engineId, isUnknown, isOk, pending, nextEpoch, nextSeq]
-      expect(upd!.params?.[4]).toBe(8);
-      expect(upd!.params?.[5]).toBe(1);
+      expect(updates).toHaveLength(1);
+      expect(updates[0]).toMatchObject({ nextEpoch: 8, nextSeq: 1 });
     });
 
     it("accepts subsequent heartbeats after an epoch reset (8,2)", async () => {
-      const { client, updateCall } = makeLockedClient({
+      const updates = wireTx(mockRepository, {
         journal_integrity_alert: false,
         last_hb_epoch: "8",
         last_hb_seq: "1",
       });
-      mockGetClient.mockResolvedValue(client);
 
       await service.handleEngineEvent(
         heartbeatEvent({
@@ -571,47 +588,45 @@ describe("EngineRegistryService", () => {
         })
       );
 
-      expect(updateCall()!.params?.[5]).toBe(2);
+      expect(updates).toHaveLength(1);
+      expect(updates[0].nextSeq).toBe(2);
     });
 
     it("treats an equal (epoch, seq) as a duplicate and does NOT reapply the payload", async () => {
-      const { client, updateCall } = makeLockedClient({
+      const updates = wireTx(mockRepository, {
         journal_integrity_alert: false,
         last_hb_epoch: "8",
         last_hb_seq: "5",
       });
-      mockGetClient.mockResolvedValue(client);
 
       await service.handleEngineEvent(
         // Same pair as stored, but a DIFFERENT (conflicting) integrity signal.
         heartbeatEvent({ heartbeatSeq: 5, epoch: 8, pendingFillsUnknown: true })
       );
 
-      expect(updateCall()).toBeUndefined();
+      expect(updates).toHaveLength(0);
     });
 
     it("drops a same-epoch older sequence", async () => {
-      const { client, updateCall } = makeLockedClient({
+      const updates = wireTx(mockRepository, {
         journal_integrity_alert: false,
         last_hb_epoch: "8",
         last_hb_seq: "10",
       });
-      mockGetClient.mockResolvedValue(client);
 
       await service.handleEngineEvent(
         heartbeatEvent({ heartbeatSeq: 3, epoch: 8, pendingFillsUnknown: true })
       );
 
-      expect(updateCall()).toBeUndefined();
+      expect(updates).toHaveLength(0);
     });
 
     it("drops a heartbeat from an older (superseded) epoch", async () => {
-      const { client, updateCall } = makeLockedClient({
+      const updates = wireTx(mockRepository, {
         journal_integrity_alert: false,
         last_hb_epoch: "9",
         last_hb_seq: "2",
       });
-      mockGetClient.mockResolvedValue(client);
 
       await service.handleEngineEvent(
         heartbeatEvent({
@@ -621,17 +636,17 @@ describe("EngineRegistryService", () => {
         })
       );
 
-      expect(updateCall()).toBeUndefined();
+      expect(updates).toHaveLength(0);
     });
 
     it("rejects a heartbeat with no heartbeatSeq for integrity (no write, no lock)", async () => {
-      mockGetClient.mockResolvedValue(makeLockedClient(null).client);
+      wireTx(mockRepository, null);
 
       await service.handleEngineEvent(
         heartbeatEvent({ pendingFillsUnknown: true }) // no heartbeatSeq
       );
 
-      expect(mockGetClient).not.toHaveBeenCalled();
+      expect(mockRepository.inTransaction).not.toHaveBeenCalled();
       expect(mockLogger.warn).toHaveBeenCalledWith(
         "Engine heartbeat rejected for integrity: missing/invalid heartbeatSeq",
         expect.objectContaining({ engineId: "engine-1" })
@@ -639,17 +654,17 @@ describe("EngineRegistryService", () => {
     });
 
     it("rejects a malformed heartbeatSeq (0) without writing", async () => {
-      mockGetClient.mockResolvedValue(makeLockedClient(null).client);
+      wireTx(mockRepository, null);
 
       await service.handleEngineEvent(
         heartbeatEvent({ heartbeatSeq: 0, pendingFillsUnknown: true })
       );
 
-      expect(mockGetClient).not.toHaveBeenCalled();
+      expect(mockRepository.inTransaction).not.toHaveBeenCalled();
     });
 
     it("rejects a malformed epoch without normalizing to zero", async () => {
-      mockGetClient.mockResolvedValue(makeLockedClient(null).client);
+      wireTx(mockRepository, null);
 
       await service.handleEngineEvent(
         heartbeatEvent({
@@ -659,7 +674,7 @@ describe("EngineRegistryService", () => {
         })
       );
 
-      expect(mockGetClient).not.toHaveBeenCalled();
+      expect(mockRepository.inTransaction).not.toHaveBeenCalled();
       expect(mockLogger.warn).toHaveBeenCalledWith(
         "Engine heartbeat rejected for integrity: invalid epoch",
         expect.objectContaining({ engineId: "engine-1" })
@@ -669,24 +684,23 @@ describe("EngineRegistryService", () => {
 
   describe("journal integrity (F4) - alert edge & stickiness", () => {
     beforeEach(() => {
-      mockQuery.mockReturnValue({ rows: [], rowCount: 1 });
+      mockRepository.refreshEngineHeartbeat.mockResolvedValue(true);
     });
 
     it("raises the sticky alert and logs the UNKNOWN error exactly once on the edge", async () => {
-      const { client, updateCall } = makeLockedClient({
+      const updates = wireTx(mockRepository, {
         journal_integrity_alert: false,
         last_hb_epoch: "8",
         last_hb_seq: "1",
       });
-      mockGetClient.mockResolvedValue(client);
 
       await service.handleEngineEvent(
         heartbeatEvent({ heartbeatSeq: 2, epoch: 8, pendingFillsUnknown: true })
       );
 
-      const upd = updateCall();
+      const upd = updates[0];
       expect(upd).toBeDefined();
-      expect(upd!.params?.[1]).toBe(true); // isUnknown
+      expect(upd.isUnknown).toBe(true);
       expect(mockLogger.error).toHaveBeenCalledTimes(1);
       expect(mockLogger.error).toHaveBeenCalledWith(
         "Engine fill-journal integrity UNKNOWN - operator reconciliation required",
@@ -696,12 +710,11 @@ describe("EngineRegistryService", () => {
     });
 
     it("does NOT re-log when the alert is already raised (wasAlerted true)", async () => {
-      const { client } = makeLockedClient({
+      wireTx(mockRepository, {
         journal_integrity_alert: true,
         last_hb_epoch: "8",
         last_hb_seq: "1",
       });
-      mockGetClient.mockResolvedValue(client);
 
       await service.handleEngineEvent(
         heartbeatEvent({ heartbeatSeq: 2, epoch: 8, pendingFillsUnknown: true })
@@ -711,12 +724,11 @@ describe("EngineRegistryService", () => {
     });
 
     it("a healthy heartbeat after UNKNOWN retains the sticky alert (does not clear)", async () => {
-      const { client, updateCall } = makeLockedClient({
+      const updates = wireTx(mockRepository, {
         journal_integrity_alert: true,
         last_hb_epoch: "8",
         last_hb_seq: "1",
       });
-      mockGetClient.mockResolvedValue(client);
 
       await service.handleEngineEvent(
         heartbeatEvent({
@@ -726,34 +738,16 @@ describe("EngineRegistryService", () => {
         })
       );
 
-      const upd = updateCall();
+      const upd = updates[0];
       expect(upd).toBeDefined();
-      expect(upd!.params?.[1]).toBe(false); // isUnknown
-      expect(upd!.params?.[2]).toBe(true); // isOk
+      expect(upd.isUnknown).toBe(false);
+      expect(upd.isOk).toBe(true);
       expect(mockLogger.error).not.toHaveBeenCalled();
     });
 
     it("a persistence failure is caught in heartbeat() and logged, not thrown", async () => {
-      const failing = {
-        query: jest.fn(async (sql: string) => {
-          if (String(sql) === "BEGIN") return { rows: [], rowCount: 0 };
-          if (String(sql).includes("FOR UPDATE")) {
-            return {
-              rows: [
-                {
-                  journal_integrity_alert: false,
-                  last_hb_epoch: "8",
-                  last_hb_seq: "1",
-                },
-              ],
-              rowCount: 1,
-            };
-          }
-          throw new Error("db down");
-        }),
-        release: jest.fn(),
-      };
-      mockGetClient.mockResolvedValue(failing);
+      // Port transaction fails after the liveness refresh succeeded.
+      mockRepository.inTransaction.mockRejectedValueOnce(new Error("db down"));
 
       await expect(
         service.handleEngineEvent(
@@ -775,7 +769,9 @@ describe("EngineRegistryService", () => {
 
   describe("journal integrity (F4) - recovery", () => {
     it("clears the sticky alert atomically and stamps audit fields on success", async () => {
-      mockQuery.mockReturnValue({ rows: [], rowCount: 1 });
+      mockRepository.recoverJournalIntegrity.mockResolvedValue({
+        recovered: true,
+      });
 
       const result = await service.recoverJournalIntegrity(
         "engine-1",
@@ -784,14 +780,11 @@ describe("EngineRegistryService", () => {
       );
 
       expect(result).toEqual({ recovered: true });
-      const upd = mockQuery.mock.calls.find(c =>
-        String(c[0]).includes("journal_integrity_alert = FALSE")
-      );
-      expect(upd).toBeDefined();
-      expect(String(upd![0])).toContain("journal_integrity = 'OK'");
-      expect(String(upd![0])).toContain("pending_fills = 0");
-      expect(String(upd![0])).toContain("journal_integrity_alert = TRUE");
-      expect(upd![1]).toEqual(["engine-1", "admin-42", "INC-1234"]);
+      expect(mockRepository.recoverJournalIntegrity).toHaveBeenCalledWith({
+        engineId: "engine-1",
+        operatorUserId: "admin-42",
+        reconciliationRef: "INC-1234",
+      });
       expect(mockLogger.warn).toHaveBeenCalledWith(
         "Engine fill-journal integrity recovered (operator-attested)",
         expect.objectContaining({
@@ -802,7 +795,10 @@ describe("EngineRegistryService", () => {
     });
 
     it("refuses recovery when the conditional update matches no row (rowCount 0)", async () => {
-      mockQuery.mockReturnValue({ rows: [], rowCount: 0 });
+      mockRepository.recoverJournalIntegrity.mockResolvedValue({
+        recovered: false,
+        reason: "no active alert, or journal not currently OK and fully drained",
+      });
 
       const result = await service.recoverJournalIntegrity(
         "engine-1",
@@ -817,20 +813,18 @@ describe("EngineRegistryService", () => {
 
   describe("getEngineLiveness journal-integrity fields", () => {
     it("maps per-engine integrity, sticky alert and pending count", async () => {
-      mockQuery.mockReturnValue({
-        rows: [
-          {
-            engine_id: "engine-1",
-            epoch: 8,
-            status: "ONLINE",
-            version: "v",
-            last_seen_at: new Date(),
-            journal_integrity: "UNKNOWN",
-            journal_integrity_alert: true,
-            pending_fills: 3,
-          },
-        ],
-      });
+      mockRepository.selectAllEngines.mockResolvedValue([
+        {
+          engine_id: "engine-1",
+          epoch: 8,
+          status: "ONLINE",
+          version: "v",
+          last_seen_at: new Date(),
+          journal_integrity: "UNKNOWN",
+          journal_integrity_alert: true,
+          pending_fills: 3,
+        },
+      ]);
 
       const liveness = await service.getEngineLiveness();
 
@@ -843,17 +837,15 @@ describe("EngineRegistryService", () => {
     });
 
     it("defaults a pre-025 row to UNVERIFIED / no-alert / 0 pending", async () => {
-      mockQuery.mockReturnValue({
-        rows: [
-          {
-            engine_id: "engine-legacy",
-            epoch: 1,
-            status: "ONLINE",
-            version: "v",
-            last_seen_at: new Date(),
-          },
-        ],
-      });
+      mockRepository.selectAllEngines.mockResolvedValue([
+        {
+          engine_id: "engine-legacy",
+          epoch: 1,
+          status: "ONLINE",
+          version: "v",
+          last_seen_at: new Date(),
+        },
+      ]);
 
       const liveness = await service.getEngineLiveness();
 
