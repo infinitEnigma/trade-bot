@@ -18,9 +18,12 @@ describe("flushLogs (L10)", () => {
     await flushLogs(2000);
 
     const dir = path.join(process.cwd(), "logs");
+    // Size rotation: when the day's file crosses maxSize (20m), new writes go
+    // to numbered siblings (app-YYYY-MM-DD.log.1, .2, …) — match those too,
+    // or the marker lands outside the candidate set and the flush looks lost.
     const candidates = fs
       .readdirSync(dir)
-      .filter(f => /^app-.*\.log$/.test(f))
+      .filter(f => /^app-.*\.log(\.\d+)?$/.test(f))
       .map(f => path.join(dir, f));
     const found = candidates.some(f => {
       try {
