@@ -73,6 +73,9 @@ import {
   AuthenticatedRequest,
 } from "../../middleware/auth.middleware";
 import { query } from "../../../database/pool";
+// TODO(architecture): HTTP route calls PostgreSQL directly — move data access
+// into a use case wired in server/route-config.ts (follow-up: remove this
+// import). See backend/eslint.config.mjs.
 import {
   ValidationError,
   NotFoundError,
@@ -101,6 +104,8 @@ import { RateLimiters } from "../../../infrastructure/security/rate-limiter.serv
 import { redisService } from "../../../infrastructure/cache/redis.service";
 import { httpLogger as logger } from "../../../core/logging/context-aware-logger.service";
 import { exchangeAccountRepositoryAdapter } from "../../../infrastructure/adapters/repositories/exchange-account-repository.adapter";
+// TODO(architecture): HTTP route imports a repository adapter directly — call
+// an injected use case instead (follow-up). See backend/eslint.config.mjs.
 
 const router = Router();
 

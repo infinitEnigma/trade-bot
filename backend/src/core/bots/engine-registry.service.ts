@@ -21,6 +21,9 @@ import {
   BotEvent,
 } from "@trade-bot/shared";
 import { query, getClient } from "../../database/pool";
+// TODO(architecture): core imports PostgreSQL directly — extract to an
+// IEngineRegistryRepository port + adapter (follow-up: remove from this
+// allowlist once the port exists). See backend/eslint.config.mjs.
 import { redisLogger as logger } from "../../core/logging/context-aware-logger.service";
 import { botLifecycleService } from "./bot-lifecycle.service";
 

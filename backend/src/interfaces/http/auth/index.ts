@@ -20,6 +20,9 @@ import { validators } from "../../middleware/validation.middleware";
 import { authLogger } from "../../../core/logging";
 import { progressiveAuthLimiter } from "../../../infrastructure/security/rate-limiter.service";
 import { query } from "../../../database/pool";
+// TODO(architecture): HTTP route calls PostgreSQL directly — move data access
+// into a use case wired in server/route-config.ts (follow-up: remove this
+// import). See backend/eslint.config.mjs.
 
 // Select service implementation based on feature flags
 const authService = serviceProvider.getAuthService();

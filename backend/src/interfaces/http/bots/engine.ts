@@ -23,12 +23,17 @@
 import { Router, Request, Response, NextFunction } from "express";
 import { timingSafeEqual } from "crypto";
 import { query } from "../../../database/pool";
+// TODO(architecture): HTTP route calls PostgreSQL directly — move data access
+// into a use case wired in server/route-config.ts (follow-up: remove this
+// import). See backend/eslint.config.mjs.
 // Bot services have been removed - using direct database operations instead
 import { engineRegistryService } from "../../../core/bots/engine-registry.service";
 import {
   exchangeAccountRepositoryAdapter,
   getBotBoundAccountSecrets,
 } from "../../../infrastructure/adapters/repositories/exchange-account-repository.adapter";
+// TODO(architecture): HTTP route imports a repository adapter directly — call
+// an injected use case instead (follow-up). See backend/eslint.config.mjs.
 import { encryptionService } from "../../../infrastructure/security/encryption.service";
 import { httpLogger as logger } from "../../../core/logging/context-aware-logger.service";
 

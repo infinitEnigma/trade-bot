@@ -127,6 +127,9 @@ export class EngineManager {
   private async isEngineAlive(): Promise<boolean> {
     // 1. Externally supervised engine? Trust the registry heartbeat.
     try {
+      // TODO(architecture): core imports PostgreSQL dynamically — inject an
+      // engine-liveness port (follow-up: remove from this allowlist).
+      // See backend/eslint.config.mjs.
       const { query } = await import("../../database/pool");
       const live = await query<{ engine_id: string }>(
         `SELECT engine_id FROM engine_registry

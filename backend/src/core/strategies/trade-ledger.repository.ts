@@ -34,6 +34,9 @@
  */
 
 import { query, transaction } from "../../database/pool";
+// TODO(architecture): core imports PostgreSQL directly — extract to an
+// ITradeLedgerRepository port + adapter (follow-up: remove from this
+// allowlist once the port exists). See backend/eslint.config.mjs.
 import { tradingLogger as logger } from "../logging/context-aware-logger.service";
 
 /** Narrowed fill status as stored by both the ledger and `trades`. */

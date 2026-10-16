@@ -8,6 +8,8 @@ import {
   getLighterTrades,
 } from "../../../infrastructure/external/lighter/portfolio";
 import { exchangeAccountRepositoryAdapter } from "../../../infrastructure/adapters/repositories/exchange-account-repository.adapter";
+// TODO(architecture): HTTP route imports a repository adapter directly — call
+// an injected use case instead (follow-up). See backend/eslint.config.mjs.
 import {
   authMiddleware,
   AuthenticatedRequest,

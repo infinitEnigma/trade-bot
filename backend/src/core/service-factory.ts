@@ -31,6 +31,9 @@ import { walletRepositoryAdapter } from "../infrastructure/adapters/repositories
 import { exchangeAccountRepositoryAdapter } from "../infrastructure/adapters/repositories/exchange-account-repository.adapter";
 import { resolveVenueOwner } from "../infrastructure/external/exchange-accounts/venue-owner";
 import { query as poolQuery } from "../database/pool";
+// TODO(architecture): core imports PostgreSQL directly — move these two
+// queries behind a port + adapter (follow-up: remove from this allowlist).
+// See backend/eslint.config.mjs.
 import { encryptionService } from "../infrastructure/security/encryption.service";
 import { kodiakIntegrationService } from "../infrastructure/external/kodiak-integration.service";
 import { BotManagementService } from "./bots/bot-management.service";

@@ -24,6 +24,9 @@ import { redisService } from "../../infrastructure/cache/redis.service";
 import { signatureVerificationServiceAdapter } from "../../infrastructure/adapters/security/signature-verification.adapter";
 import { walletRepositoryAdapter } from "../../infrastructure/adapters/repositories/wallet-repository.adapter";
 import { query } from "../../database/pool";
+// TODO(architecture): core imports a repository adapter + PostgreSQL directly
+// — inject ports for wallet reads + the query (follow-up: remove from this
+// allowlist once ports exist). See backend/eslint.config.mjs.
 import { contextLogger as logger } from "../logging";
 
 /** Gated actions. `account:bind` is consumed optionally by the connect route. */

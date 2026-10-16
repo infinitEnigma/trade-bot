@@ -6,6 +6,8 @@
 import { Response } from "express";
 import { redisService } from "../../../infrastructure/cache/redis.service";
 import { exchangeAccountRepositoryAdapter } from "../../../infrastructure/adapters/repositories/exchange-account-repository.adapter";
+// TODO(architecture): HTTP route imports a repository adapter directly — call
+// an injected use case instead (follow-up). See backend/eslint.config.mjs.
 import { getUserCredentials } from "../../../infrastructure/external/kodiak/credentials-provider";
 import type { KodiakTradingViewHistory } from "../../../infrastructure/external/kodiak-integration.service";
 import { marketLogger } from "./market-helpers";
