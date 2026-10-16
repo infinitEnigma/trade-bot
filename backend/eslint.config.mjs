@@ -50,18 +50,9 @@ export default tseslint.config(
       ],
     },
   },
-  // Existing debt: core files still importing database/repository adapters.
-  // Rule is switched off here with a TODO + follow-up issue so the general
-  // rule above stays enforced everywhere else; shrink this list as ports land.
-  {
-    files: [
-      "src/core/service-factory.ts",
-      "src/core/wallet/wallet-proof.service.ts",
-    ],
-    rules: {
-      "no-restricted-imports": "off",
-    },
-  },
+  // (2026-10-16, review P3 Phase 1): the former core allowlist entries
+  // (service-factory.ts, wallet-proof.service.ts) were cleared — both now go
+  // through the DI container / setWalletProofDeps. Core has NO exceptions.
   {
     files: ["src/interfaces/http/**/*.ts"],
     rules: {
@@ -100,4 +91,3 @@ export default tseslint.config(
     },
   }
 );
-

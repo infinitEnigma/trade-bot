@@ -63,6 +63,12 @@ describe("Service Factory Interface", () => {
       // L4: the factory passes loggerService into ExchangeAccountService.
       loggerService: { info: jest.fn(), warn: jest.fn(), error: jest.fn() },
       auditLogRepository: {} as any,
+      // Review P3: the factory reads repositories from the container
+      // (wallet/exchange-account) and passes the bot-instance adapter as
+      // boundBots (countBoundBots/clearTerminalBots).
+      walletRepository: {} as any,
+      exchangeAccountRepository: {} as any,
+      botInstanceRepository: {} as any,
     };
 
     // Mock the diContainer import

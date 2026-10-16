@@ -482,4 +482,27 @@ describe("ExchangeAccountRepositoryAdapter", () => {
       ).resolves.toBeNull();
     });
   });
+
+  describe("getAccountMeta (wallet-proof binding read)", () => {
+    it("returns the account's raw meta scoped to the owner", async () => {
+      mockQuery.mockResolvedValue({
+        rows: [{ meta: { walletBinding: { address: "0xabc" } } }],
+      });
+
+      const meta = await adapter.getAccountMeta("account-1", "test-user-id");
+
+      expect(meta).toEqual({ walletBinding: { address: "0xabc" } });
+      const [sql, params] = mockQuery.mock.calls[0];
+      expect(sql).toContain("SELECT meta FROM exchange_accounts");
+      expect(params).toEqual(["account-1", "test-user-id"]);
+    });
+
+    it("returns null when the account row is missing", async () => {
+      mockQuery.mockResolvedValue({ rows: [] });
+
+      await expect(
+        adapter.getAccountMeta("account-1", "test-user-id")
+      ).resolves.toBeNull();
+    });
+  });
 });

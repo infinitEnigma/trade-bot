@@ -62,6 +62,8 @@ import { lifecycleReconciliationService } from "./core/bots/lifecycle-reconcilia
 import { setStrategyBadgeWriter } from "./core/bots/lifecycle/strategy-active-sync";
 import { BotLifecycleRepositoryAdapter } from "./infrastructure/adapters/repositories/bot-lifecycle-repository.adapter";
 import { exchangeAccountRepositoryAdapter } from "./infrastructure/adapters/repositories/exchange-account-repository.adapter";
+import { walletRepositoryAdapter } from "./infrastructure/adapters/repositories/wallet-repository.adapter";
+import { setWalletProofDeps } from "./core/wallet/wallet-proof.service";
 import { strategyRepositoryAdapter } from "./infrastructure/adapters/repositories/strategy-repository.adapter";
 import { TradeLedgerRepositoryAdapter } from "./infrastructure/adapters/repositories/trade-ledger-repository.adapter";
 import { EngineRegistryRepositoryAdapter } from "./infrastructure/adapters/repositories/engine-registry-repository.adapter";
@@ -443,6 +445,18 @@ const PORT = process.env.PORT || 3000;
  * @returns A promise that resolves when the server is ready
  */
 export const startServer = (): Promise<typeof httpServer> => {
+  // X4 wallet-proof gate (review P3, allowlist shrink): core consumes ports;
+  // the adapters are wired here, BEFORE the server listens, so a request can
+  // never observe an unwired proof gate (fail-fast throw).
+  setWalletProofDeps({
+    listWallets: userId => walletRepositoryAdapter.listWallets(userId),
+    getAccountMeta: (exchangeAccountId, userId) =>
+      exchangeAccountRepositoryAdapter.getAccountMeta(
+        exchangeAccountId,
+        userId
+      ),
+  });
+
   return new Promise(resolve => {
     httpServer.listen(PORT, () => {
       logger.info(`🚀 Server running on port ${PORT}`);

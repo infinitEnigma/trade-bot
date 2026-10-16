@@ -19,11 +19,11 @@ import {
   checkWalletBindingAgainstMeta,
   consumeProof,
   issueChallenge,
+  setWalletProofDeps,
   walletProofEnabled,
   CHALLENGE_TTL_SECONDS,
 } from "../../src/core/wallet/wallet-proof.service";
 import { redisService } from "../../src/infrastructure/cache/redis.service";
-import { walletRepositoryAdapter } from "../../src/infrastructure/adapters/repositories/wallet-repository.adapter";
 
 jest.mock("../../src/infrastructure/cache/redis.service", () => ({
   redisService: {
@@ -34,12 +34,12 @@ jest.mock("../../src/infrastructure/cache/redis.service", () => ({
   },
 }));
 
-jest.mock("../../src/infrastructure/adapters/repositories/wallet-repository.adapter", () => ({
-  walletRepositoryAdapter: { listWallets: jest.fn() },
-}));
-
 const USER_ID = "user-123";
 const wallet = ethers.Wallet.createRandom();
+
+/** Injected persistence port double (review P3 — no adapter module mock). */
+const listWallets = jest.fn();
+const getAccountMeta = jest.fn();
 
 /** Simple in-memory Redis honouring get/setex/del/getDel. */
 function makeRedis(): Map<string, string> {
@@ -71,13 +71,19 @@ async function sign(message: string, signer: Signer = wallet): Promise<string> {
   return signer.signMessage(message);
 }
 
-
 describe("WalletProofService", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     delete process.env.WALLET_PROOF_REQUIRED;
-    (walletRepositoryAdapter.listWallets as jest.Mock).mockResolvedValue([
-      { id: "w1", userId: USER_ID, chain: "evm", address: wallet.address, isPrimary: true },
+    setWalletProofDeps({ listWallets, getAccountMeta });
+    listWallets.mockResolvedValue([
+      {
+        id: "w1",
+        userId: USER_ID,
+        chain: "evm",
+        address: wallet.address,
+        isPrimary: true,
+      },
     ]);
   });
 
@@ -86,11 +92,27 @@ describe("WalletProofService", () => {
       expect(walletProofEnabled({} as NodeJS.ProcessEnv)).toBe(true);
     });
     it("treats only an explicit false/0/no as OFF", () => {
-      expect(walletProofEnabled({ WALLET_PROOF_REQUIRED: "false" } as NodeJS.ProcessEnv)).toBe(false);
-      expect(walletProofEnabled({ WALLET_PROOF_REQUIRED: "0" } as NodeJS.ProcessEnv)).toBe(false);
-      expect(walletProofEnabled({ WALLET_PROOF_REQUIRED: "no" } as NodeJS.ProcessEnv)).toBe(false);
-      expect(walletProofEnabled({ WALLET_PROOF_REQUIRED: "true" } as NodeJS.ProcessEnv)).toBe(true);
-      expect(walletProofEnabled({ WALLET_PROOF_REQUIRED: "  False " } as NodeJS.ProcessEnv)).toBe(false);
+      expect(
+        walletProofEnabled({
+          WALLET_PROOF_REQUIRED: "false",
+        } as NodeJS.ProcessEnv)
+      ).toBe(false);
+      expect(
+        walletProofEnabled({ WALLET_PROOF_REQUIRED: "0" } as NodeJS.ProcessEnv)
+      ).toBe(false);
+      expect(
+        walletProofEnabled({ WALLET_PROOF_REQUIRED: "no" } as NodeJS.ProcessEnv)
+      ).toBe(false);
+      expect(
+        walletProofEnabled({
+          WALLET_PROOF_REQUIRED: "true",
+        } as NodeJS.ProcessEnv)
+      ).toBe(true);
+      expect(
+        walletProofEnabled({
+          WALLET_PROOF_REQUIRED: "  False ",
+        } as NodeJS.ProcessEnv)
+      ).toBe(false);
     });
   });
 
@@ -103,7 +125,9 @@ describe("WalletProofService", () => {
       expect(challenge.message).toContain(`Nonce: ${challenge.nonce}`);
       expect(challenge.message).toContain("not a transaction");
       const setexCall = (redisService.setex as jest.Mock).mock.calls[0];
-      expect(setexCall[0]).toBe(`wallet:challenge:${USER_ID}:${challenge.nonce}`);
+      expect(setexCall[0]).toBe(
+        `wallet:challenge:${USER_ID}:${challenge.nonce}`
+      );
       expect(setexCall[1]).toBe(CHALLENGE_TTL_SECONDS);
     });
 
@@ -240,12 +264,15 @@ describe("WalletProofService", () => {
       const rejected = results.filter(r => r.status === "rejected");
       expect(fulfilled).toHaveLength(1);
       expect(rejected).toHaveLength(1);
-      expect(
-        (rejected[0] as PromiseRejectedResult).reason
-      ).toMatchObject({ code: "CHALLENGE_NOT_FOUND", statusCode: 403 });
+      expect((rejected[0] as PromiseRejectedResult).reason).toMatchObject({
+        code: "CHALLENGE_NOT_FOUND",
+        statusCode: 403,
+      });
       // The single winner returned the verified linked address.
-      expect((fulfilled[0] as PromiseFulfilledResult<{ address: string }>).value
-        .address).toBe(wallet.address);
+      expect(
+        (fulfilled[0] as PromiseFulfilledResult<{ address: string }>).value
+          .address
+      ).toBe(wallet.address);
     });
   });
 
@@ -274,7 +301,9 @@ describe("WalletProofService", () => {
     });
     it("fails closed when the binding is absent", () => {
       expect(checkWalletBindingAgainstMeta({}, wallet.address).ok).toBe(false);
-      expect(checkWalletBindingAgainstMeta(null, wallet.address).ok).toBe(false);
+      expect(checkWalletBindingAgainstMeta(null, wallet.address).ok).toBe(
+        false
+      );
     });
     it("fails on a mismatch", () => {
       const other = ethers.Wallet.createRandom();
@@ -288,10 +317,13 @@ describe("WalletProofService", () => {
 
   describe("WalletProofError", () => {
     it("maps REDIS_UNAVAILABLE to 503, everything else to 403", () => {
-      expect(new WalletProofError("x", "REDIS_UNAVAILABLE").statusCode).toBe(503);
-      expect(new WalletProofError("x", "INVALID_SIGNATURE").statusCode).toBe(403);
+      expect(new WalletProofError("x", "REDIS_UNAVAILABLE").statusCode).toBe(
+        503
+      );
+      expect(new WalletProofError("x", "INVALID_SIGNATURE").statusCode).toBe(
+        403
+      );
       expect(new WalletProofError("x", "PROOF_REQUIRED").statusCode).toBe(403);
     });
   });
 });
-

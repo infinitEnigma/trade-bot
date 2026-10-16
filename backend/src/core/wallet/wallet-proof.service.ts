@@ -20,14 +20,43 @@
  */
 
 import { randomUUID } from "crypto";
+import type { Wallet } from "@trade-bot/shared";
 import { redisService } from "../../infrastructure/cache/redis.service";
 import { signatureVerificationServiceAdapter } from "../../infrastructure/adapters/security/signature-verification.adapter";
-import { walletRepositoryAdapter } from "../../infrastructure/adapters/repositories/wallet-repository.adapter";
-import { query } from "../../database/pool";
-// TODO(architecture): core imports a repository adapter + PostgreSQL directly
-// — inject ports for wallet reads + the query (follow-up: remove from this
-// allowlist once ports exist). See backend/eslint.config.mjs.
 import { contextLogger as logger } from "../logging";
+
+/**
+ * Persistence ports (review P3): core must not import repository adapters or
+ * PostgreSQL. Wired at startup (index.ts `setWalletProofDeps`); tests inject
+ * mocks the same way. Fail-fast: an unwired gate must never silently pass a
+ * proof.
+ */
+export interface WalletProofDeps {
+  /** The user's linked wallets (consumeProof membership check). */
+  listWallets(userId: string): Promise<Wallet[]>;
+  /** One account's raw `meta` (wallet-binding check). */
+  getAccountMeta(
+    exchangeAccountId: string,
+    userId: string
+  ): Promise<Record<string, unknown> | string | null>;
+}
+
+let depsImpl: WalletProofDeps | undefined;
+
+/** Startup wiring (index.ts, BEFORE the server listens). */
+export function setWalletProofDeps(deps: WalletProofDeps): void {
+  depsImpl = deps;
+}
+
+/** Fail-fast accessor — an unwired port must never silently pass proof. */
+function deps(): WalletProofDeps {
+  if (!depsImpl) {
+    throw new Error(
+      "Wallet proof deps not wired — call setWalletProofDeps() at startup"
+    );
+  }
+  return depsImpl;
+}
 
 /** Gated actions. `account:bind` is consumed optionally by the connect route. */
 export type WalletProofAction =
@@ -222,7 +251,7 @@ export async function consumeProof(
     );
   }
 
-  const wallets = await walletRepositoryAdapter.listWallets(userId);
+  const wallets = await deps().listWallets(userId);
   const linked = wallets.find(
     wallet =>
       wallet.chain === "evm" &&
@@ -280,11 +309,7 @@ export async function checkAccountWalletBinding(
   proofAddress: string,
   exchangeAccountId: string
 ): Promise<{ ok: true } | { ok: false; error: string }> {
-  const result = await query<{ meta: Record<string, unknown> | string | null }>(
-    `SELECT meta FROM exchange_accounts WHERE id = $1 AND user_id = $2`,
-    [exchangeAccountId, userId]
-  );
-  const raw = result.rows[0]?.meta ?? null;
+  const raw = await deps().getAccountMeta(exchangeAccountId, userId);
   let meta: Record<string, unknown> | null = null;
   if (typeof raw === "string") {
     try {

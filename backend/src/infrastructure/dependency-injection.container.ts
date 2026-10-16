@@ -431,22 +431,9 @@ export class DependencyInjectionContainer {
       // C3a: revoke is blocked while *live* bots bind to the account (FK
       // RESTRICT). Terminal history (STOPPED/ERROR/UNKNOWN) never blocks —
       // it is cleared as part of the revoke (see ExchangeAccountService).
-      boundBots: {
-        countBoundBots: async (userId: string, accountId: string) => {
-          const result = await poolQuery<{ count: string }>(
-            `SELECT COUNT(*) AS count FROM bot_instances WHERE user_id = $1 AND exchange_account_id = $2 AND actual_state IN ('STARTING', 'RUNNING', 'STOPPING')`,
-            [userId, accountId]
-          );
-          return parseInt(result.rows[0]?.count ?? "0", 10);
-        },
-        clearTerminalBots: async (userId: string, accountId: string) => {
-          const result = await poolQuery<{ id: string }>(
-            `DELETE FROM bot_instances WHERE user_id = $1 AND exchange_account_id = $2 AND actual_state IN ('STOPPED', 'ERROR', 'UNKNOWN') RETURNING id`,
-            [userId, accountId]
-          );
-          return result.rows.length;
-        },
-      },
+      // countBoundBots/clearTerminalBots live on the bot-instance adapter
+      // (previously duplicated inline SQL here and in core/service-factory).
+      boundBots: botInstanceRepositoryAdapter,
     });
   }
 

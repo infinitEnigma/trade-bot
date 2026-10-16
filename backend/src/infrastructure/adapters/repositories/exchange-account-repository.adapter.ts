@@ -154,6 +154,24 @@ export class ExchangeAccountRepositoryAdapter implements IExchangeAccountReposit
     };
   }
 
+  /**
+   * One account's `meta` JSON, scoped to the owner. Absorbed from
+   * wallet-proof.service.ts (review P3, allowlist shrink) — the wallet-binding
+   * check must not query PostgreSQL from core.
+   */
+  async getAccountMeta(
+    exchangeAccountId: string,
+    userId: string
+  ): Promise<Record<string, unknown> | string | null> {
+    const result = await query<{
+      meta: Record<string, unknown> | string | null;
+    }>(`SELECT meta FROM exchange_accounts WHERE id = $1 AND user_id = $2`, [
+      exchangeAccountId,
+      userId,
+    ]);
+    return result.rows[0]?.meta ?? null;
+  }
+
   async createPending(input: {
     userId: string;
     request: ConnectExchangeAccountRequest;

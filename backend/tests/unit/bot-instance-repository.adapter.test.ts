@@ -337,4 +337,47 @@ describe("BotInstanceRepositoryAdapter", () => {
       ).rejects.toThrow("Failed to get bot instances for strategy");
     });
   });
+
+  describe("countBoundBots (C3a revoke guard)", () => {
+    it("counts LIVE bots bound to the account", async () => {
+      (query as jest.Mock).mockResolvedValue({ rows: [{ count: "3" }] });
+      const adapter = new BotInstanceRepositoryAdapter();
+
+      const count = await adapter.countBoundBots("user-1", "account-1");
+
+      expect(count).toBe(3);
+      const [sql, params] = (query as jest.Mock).mock.calls[0];
+      expect(sql).toContain(
+        "actual_state IN ('STARTING', 'RUNNING', 'STOPPING')"
+      );
+      expect(params).toEqual(["user-1", "account-1"]);
+    });
+
+    it("returns 0 when the COUNT row is missing", async () => {
+      (query as jest.Mock).mockResolvedValue({ rows: [] });
+      const adapter = new BotInstanceRepositoryAdapter();
+
+      await expect(adapter.countBoundBots("user-1", "account-1")).resolves.toBe(
+        0
+      );
+    });
+  });
+
+  describe("clearTerminalBots (C3a revoke cleanup)", () => {
+    it("deletes only terminal rows and returns the number cleared", async () => {
+      (query as jest.Mock).mockResolvedValue({
+        rows: [{ id: "bot-1" }, { id: "bot-2" }],
+      });
+      const adapter = new BotInstanceRepositoryAdapter();
+
+      const cleared = await adapter.clearTerminalBots("user-1", "account-1");
+
+      expect(cleared).toBe(2);
+      const [sql, params] = (query as jest.Mock).mock.calls[0];
+      expect(sql).toContain("DELETE FROM bot_instances");
+      expect(sql).toContain("actual_state IN ('STOPPED', 'ERROR', 'UNKNOWN')");
+      expect(sql).toContain("RETURNING id");
+      expect(params).toEqual(["user-1", "account-1"]);
+    });
+  });
 });

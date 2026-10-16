@@ -284,6 +284,37 @@ export class BotInstanceRepositoryAdapter implements IBotInstanceRepository {
       );
     }
   }
+
+  /**
+   * C3a: how many LIVE bots (STARTING/RUNNING/STOPPING) are bound to an
+   * exchange account — the revoke guard. Previously duplicated verbatim in
+   * core/service-factory.ts and the DI container (review P3, allowlist shrink).
+   */
+  async countBoundBots(userId: string, accountId: string): Promise<number> {
+    const result = await query<{ count: string }>(
+      `SELECT COUNT(*) AS count FROM bot_instances
+       WHERE user_id = $1 AND exchange_account_id = $2
+         AND actual_state IN ('STARTING', 'RUNNING', 'STOPPING')`,
+      [userId, accountId]
+    );
+    return parseInt(result.rows[0]?.count ?? "0", 10);
+  }
+
+  /**
+   * C3a: delete the account's TERMINAL history rows (STOPPED/ERROR/UNKNOWN)
+   * during revoke — FK RESTRICT never blocks on these. Returns the number of
+   * rows cleared.
+   */
+  async clearTerminalBots(userId: string, accountId: string): Promise<number> {
+    const result = await query<{ id: string }>(
+      `DELETE FROM bot_instances
+       WHERE user_id = $1 AND exchange_account_id = $2
+         AND actual_state IN ('STOPPED', 'ERROR', 'UNKNOWN')
+       RETURNING id`,
+      [userId, accountId]
+    );
+    return result.rows.length;
+  }
 }
 
 // Export singleton instance

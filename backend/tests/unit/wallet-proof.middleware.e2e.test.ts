@@ -65,7 +65,10 @@ import {
   requireWalletProof,
   botBoundAccountId,
 } from "../../src/interfaces/middleware/wallet-proof.middleware";
-import { issueChallenge } from "../../src/core/wallet/wallet-proof.service";
+import {
+  issueChallenge,
+  setWalletProofDeps,
+} from "../../src/core/wallet/wallet-proof.service";
 import { walletRepositoryAdapter } from "../../src/infrastructure/adapters/repositories/wallet-repository.adapter";
 import { query } from "../../src/database/pool";
 
@@ -137,6 +140,20 @@ describe("X4 wallet-proof gate — end-to-end (real crypto + real middleware)", 
   beforeEach(() => {
     jest.clearAllMocks();
     delete process.env.WALLET_PROOF_REQUIRED; // gate defaults ON
+    // Review P3: core consumes ports — inject the deps, keeping the same
+    // infrastructure doubles (mocked adapter + SQL-text-routed pool query).
+    setWalletProofDeps({
+      listWallets: userId => walletRepositoryAdapter.listWallets(userId),
+      getAccountMeta: async (accountId, userId) => {
+        const r = await query<{
+          meta: Record<string, unknown> | string | null;
+        }>(
+          `SELECT meta FROM exchange_accounts WHERE id = $1 AND user_id = $2`,
+          [accountId, userId]
+        );
+        return r.rows[0]?.meta ?? null;
+      },
+    });
     (walletRepositoryAdapter.listWallets as jest.Mock).mockResolvedValue([
       { id: "w1", userId: USER_ID, chain: "evm", address: wallet.address },
     ]);
@@ -270,4 +287,3 @@ describe("X4 wallet-proof gate — end-to-end (real crypto + real middleware)", 
     expect(res.body.code).toBe("WALLET_BINDING_MISSING");
   });
 });
-
