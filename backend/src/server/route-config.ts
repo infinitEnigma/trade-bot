@@ -16,8 +16,12 @@ import {
 import {
   marketRoutes,
   strategyRoutes,
-  tradesRoutes,
+  createTradesRoutes,
 } from "../interfaces/http/trading";
+import { GetTradesUseCase } from "../core/trades/get-trades.use-case";
+import { tradeRepositoryAdapter } from "../infrastructure/adapters/repositories/trade-repository.adapter";
+import { strategyRepositoryAdapter } from "../infrastructure/adapters/repositories/strategy-repository.adapter";
+import { exchangeAccountRepositoryAdapter } from "../infrastructure/adapters/repositories/exchange-account-repository.adapter";
 import { botRoutes } from "../interfaces/http/bots";
 import { walletRoutes, walletBalanceRoutes } from "../interfaces/http/wallet";
 import { securityRoutes } from "../interfaces/http/system/security";
@@ -270,7 +274,30 @@ export class RouteConfig {
       app.use("/api/strategies", strategyRoutes);
       // Batch-1 trades read model: the local ledger rows (strategy + account
       // attributed), distinct from the venue proxy at /api/market/trades.
-      app.use("/api/trades", tradesRoutes);
+      // HTTP composition root (review P1): the route receives the use case,
+      // which owns ownership validation + the repository fan-out.
+      app.use(
+        "/api/trades",
+        createTradesRoutes(
+          new GetTradesUseCase({
+            trades: tradeRepositoryAdapter,
+            checkers: {
+              strategyExistsForUser: (strategyId, userId) =>
+                strategyRepositoryAdapter.strategyExistsForUser(
+                  strategyId,
+                  userId
+                ),
+              // Same ownership answer as the former route (the adapter never
+              // decrypts; a foreign id is indistinguishable from a missing one).
+              accountExistsForUser: async (userId, accountId) =>
+                (await exchangeAccountRepositoryAdapter.getAccountWithSecret(
+                  userId,
+                  accountId
+                )) !== null,
+            },
+          })
+        )
+      );
       marketTimer.success();
       this.routeLogger.debug("Market and trading routes registered", {
         routes: ["/api/market", "/api/strategies", "/api/trades"],

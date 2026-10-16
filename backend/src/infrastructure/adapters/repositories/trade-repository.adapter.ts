@@ -16,29 +16,13 @@ import {
 } from "@trade-bot/shared";
 import { query } from "../../../database/pool";
 import { databaseLogger as logger } from "../../../core/logging/context-aware-logger.service";
+import { FilteredTrade } from "../../../core/types/filtered-trade";
 
 /**
- * DTO returned by `getTradesFiltered` — the unified row shape behind the
- * Dashboard's "all recent trades" table and the strategy-card fills list.
- * `fee`/`pnl` are NULL when the engine could not source them (F2: unknown ≠
- * zero); attribution fields are NULL when the row has no strategy/bot link.
+ * Re-export (review P1): the DTO moved to core so the trades use case and
+ * route can speak the row shape without importing this adapter.
  */
-export interface FilteredTrade {
-  id: string;
-  strategyId: string | null;
-  strategyName: string | null;
-  botId: string | null;
-  exchangeAccountId: string | null;
-  orderId: string;
-  symbol: string;
-  side: "BUY" | "SELL";
-  quantity: number;
-  price: number;
-  fee: number | null;
-  pnl: number | null;
-  status: string;
-  executedAt: Date;
-}
+export type { FilteredTrade };
 
 /** Raw joined row from the `trades ⋈ strategies ⋈ bot_instances` query. */
 interface FilteredTradeRow {

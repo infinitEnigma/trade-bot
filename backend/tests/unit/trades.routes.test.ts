@@ -52,7 +52,8 @@ jest.mock(
   })
 );
 
-import { tradesRoutes } from "../../src/interfaces/http/trading/trades.routes";
+import { createTradesRoutes } from "../../src/interfaces/http/trading/trades.routes";
+import { GetTradesUseCase } from "../../src/core/trades/get-trades.use-case";
 import { tradeRepositoryAdapter } from "../../src/infrastructure/adapters/repositories/trade-repository.adapter";
 import { strategyRepositoryAdapter } from "../../src/infrastructure/adapters/repositories/strategy-repository.adapter";
 import { exchangeAccountRepositoryAdapter } from "../../src/infrastructure/adapters/repositories/exchange-account-repository.adapter";
@@ -60,13 +61,39 @@ import { exchangeAccountRepositoryAdapter } from "../../src/infrastructure/adapt
 const getTradesFiltered = tradeRepositoryAdapter.getTradesFiltered as jest.Mock;
 const strategyExistsForUser =
   strategyRepositoryAdapter.strategyExistsForUser as jest.Mock;
-const getAccountWithSecret =
-  exchangeAccountRepositoryAdapter.getAccountWithSecret as jest.Mock;
+const getAccountWithSecret = (
+  exchangeAccountRepositoryAdapter as unknown as {
+    getAccountWithSecret: jest.Mock;
+  }
+).getAccountWithSecret;
 
+/**
+ * The route no longer orchestrates adapters (review P1); the test wires the
+ * use case exactly like `server/route-config.ts` does in production.
+ */
 function createApp(): Express {
   const app = express();
   app.use(express.json());
-  app.use("/api/trades", tradesRoutes);
+  app.use(
+    "/api/trades",
+    createTradesRoutes(
+      new GetTradesUseCase({
+        trades: tradeRepositoryAdapter,
+        checkers: {
+          strategyExistsForUser: (strategyId, userId) =>
+            strategyRepositoryAdapter.strategyExistsForUser(
+              strategyId,
+              userId
+            ),
+          accountExistsForUser: async (userId, accountId) =>
+            (await exchangeAccountRepositoryAdapter.getAccountWithSecret(
+              userId,
+              accountId
+            )) !== null,
+        },
+      })
+    )
+  );
   return app;
 }
 
