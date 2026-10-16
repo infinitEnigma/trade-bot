@@ -78,6 +78,11 @@ const mockBlockchainService =
   require("../../../src/infrastructure/external/blockchain.service").createBlockchainService();
 const mockWalletRepository =
   require("../../../src/infrastructure/adapters/repositories/wallet-repository.adapter").walletRepositoryAdapter;
+// Review P3: wallet resolution (balance.ts) consumes an injected port; wire
+// the same mocked adapter methods through the setter.
+const {
+  setBalanceWalletLookup,
+} = require("../../../src/interfaces/http/wallet/balance");
 
 const mockEvmWallet = {
   id: "wallet-1",
@@ -166,6 +171,12 @@ describe("Balance Controller Tests", () => {
   beforeEach(() => {
     // Reset all mocks
     jest.clearAllMocks();
+
+    // Review P3: inject the wallet lookup port backed by the mocked repo.
+    setBalanceWalletLookup({
+      getOwnedWallet: mockWalletRepository.getOwnedWallet,
+      listWallets: mockWalletRepository.listWallets,
+    });
 
     // Restore original auth middleware
     jest

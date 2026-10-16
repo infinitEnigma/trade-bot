@@ -22,6 +22,17 @@ import { GetTradesUseCase } from "../core/trades/get-trades.use-case";
 import { tradeRepositoryAdapter } from "../infrastructure/adapters/repositories/trade-repository.adapter";
 import { strategyRepositoryAdapter } from "../infrastructure/adapters/repositories/strategy-repository.adapter";
 import { exchangeAccountRepositoryAdapter } from "../infrastructure/adapters/repositories/exchange-account-repository.adapter";
+import { walletRepositoryAdapter } from "../infrastructure/adapters/repositories/wallet-repository.adapter";
+// Review P3 Phase 2: route modules take their persistence through injected
+// ports (module-level setter + fail-fast accessor). This file is the HTTP
+// composition root — it imports adapters legitimately (it is NOT under
+// `interfaces/http/**`), and the wiring below runs inside register(), i.e.
+// before listen(), so no request can observe an unwired port.
+import { setCredentialGateDeps } from "../interfaces/http/trading/market-cache";
+import { setPortfolioScopeDeps } from "../interfaces/http/trading/market-portfolio.routes";
+import { setBalanceWalletLookup } from "../interfaces/http/wallet/balance";
+import { setHealthDb } from "../interfaces/http/system/health";
+import { databaseHealth } from "../database/health-probe";
 import { botRoutes } from "../interfaces/http/bots";
 import { walletRoutes, walletBalanceRoutes } from "../interfaces/http/wallet";
 import { securityRoutes } from "../interfaces/http/system/security";
@@ -104,6 +115,10 @@ export class RouteConfig {
   static register(app: Express, options: RouteConfigOptions = {}): void {
     const config = { ...this.DEFAULT_OPTIONS, ...options };
 
+    // Review P3 Phase 2: wire the injected route ports before any router
+    // mounts (synchronous, so still before listen()).
+    this.wireRouteDeps();
+
     // Make io available to routes
     if (config.io) {
       app.set("io", config.io);
@@ -145,6 +160,31 @@ export class RouteConfig {
       });
       throw error;
     }
+  }
+
+  /**
+   * Wire the injected route ports (review P3 Phase 2). The setters are
+   * module-level on purpose: consumer route helpers keep stable signatures,
+   * so market.ts / ws-url / kline-history needed no changes.
+   */
+  private static wireRouteDeps(): void {
+    setCredentialGateDeps({
+      listAccounts: userId =>
+        exchangeAccountRepositoryAdapter.listAccounts(userId),
+    });
+    setPortfolioScopeDeps({
+      getAccountWithSecret: (userId, accountId) =>
+        exchangeAccountRepositoryAdapter.getAccountWithSecret(
+          userId,
+          accountId
+        ),
+    });
+    setBalanceWalletLookup({
+      getOwnedWallet: (userId, walletId) =>
+        walletRepositoryAdapter.getOwnedWallet(userId, walletId),
+      listWallets: userId => walletRepositoryAdapter.listWallets(userId),
+    });
+    setHealthDb(databaseHealth);
   }
 
   /**

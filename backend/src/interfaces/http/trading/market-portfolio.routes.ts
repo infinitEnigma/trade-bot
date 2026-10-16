@@ -7,9 +7,7 @@ import {
   getLighterPositions,
   getLighterTrades,
 } from "../../../infrastructure/external/lighter/portfolio";
-import { exchangeAccountRepositoryAdapter } from "../../../infrastructure/adapters/repositories/exchange-account-repository.adapter";
-// TODO(architecture): HTTP route imports a repository adapter directly — call
-// an injected use case instead (follow-up). See backend/eslint.config.mjs.
+import type { ExchangeAccountWithSecret } from "@trade-bot/shared";
 import {
   authMiddleware,
   AuthenticatedRequest,
@@ -17,6 +15,36 @@ import {
 import { errMessage, fail, ok } from "./market-helpers";
 
 export const portfolioRoutes = Router();
+
+/**
+ * Persistence port (review P3): routes must not import repository adapters.
+ * `getAccountWithSecret` is wired in `server/route-config.ts`; tests inject a
+ * double the same way. Fail-fast: an unwired resolver must never silently
+ * answer "not found".
+ */
+export interface PortfolioScopeDeps {
+  getAccountWithSecret(
+    userId: string,
+    accountId: string
+  ): Promise<ExchangeAccountWithSecret | null>;
+}
+
+let depsImpl: PortfolioScopeDeps | undefined;
+
+/** Route wiring (server/route-config.ts). Tests inject a double the same way. */
+export function setPortfolioScopeDeps(deps: PortfolioScopeDeps): void {
+  depsImpl = deps;
+}
+
+/** Fail-fast accessor — an unwired resolver must never fabricate a 404. */
+function deps(): PortfolioScopeDeps {
+  if (!depsImpl) {
+    throw new Error(
+      "Portfolio scope deps not wired — call setPortfolioScopeDeps() in route-config"
+    );
+  }
+  return depsImpl;
+}
 
 /** Loose v4 shape — rows are written by gen_random_uuid(). */
 const UUID_PATTERN =
@@ -60,10 +88,7 @@ export async function resolveAccountScope(
       error: "Invalid exchangeAccountId format",
     };
   }
-  const account = await exchangeAccountRepositoryAdapter.getAccountWithSecret(
-    userId,
-    raw
-  );
+  const account = await deps().getAccountWithSecret(userId, raw);
   if (!account) {
     return { ok: false, status: 404, error: "Exchange account not found" };
   }

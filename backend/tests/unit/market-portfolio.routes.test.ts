@@ -56,6 +56,7 @@ jest.mock(
 import {
   portfolioRoutes,
   resolveAccountScope,
+  setPortfolioScopeDeps,
 } from "../../src/interfaces/http/trading/market-portfolio.routes";
 import { kodiakIntegrationService } from "../../src/infrastructure/external/kodiak-integration.service";
 import {
@@ -86,6 +87,9 @@ function createApp(): Express {
 describe("market portfolio routes", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    // Review P3: routes consume the injected port — wire the same mocked
+    // adapter method through the setter.
+    setPortfolioScopeDeps({ getAccountWithSecret });
     getAccountWithSecret.mockImplementation((_userId: string, id: string) => {
       if (id === LIGHTER_ID) {
         return Promise.resolve({

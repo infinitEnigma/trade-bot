@@ -57,6 +57,7 @@ jest.mock(
 );
 
 import { ordersRoutes } from "../../src/interfaces/http/trading/market-orders.routes";
+import { setPortfolioScopeDeps } from "../../src/interfaces/http/trading/market-portfolio.routes";
 import { kodiakIntegrationService } from "../../src/infrastructure/external/kodiak-integration.service";
 import { getLighterOrders } from "../../src/infrastructure/external/lighter/portfolio";
 import { exchangeAccountRepositoryAdapter } from "../../src/infrastructure/adapters/repositories/exchange-account-repository.adapter";
@@ -76,6 +77,9 @@ function createApp(): Express {
 describe("market orders route", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    // Review P3: ordersRoutes shares resolveAccountScope with the portfolio
+    // routes, which now consume the injected port.
+    setPortfolioScopeDeps({ getAccountWithSecret });
     getAccountWithSecret.mockImplementation((_userId: string, id: string) => {
       if (id === LIGHTER_ID) {
         return Promise.resolve({

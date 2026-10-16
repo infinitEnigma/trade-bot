@@ -109,6 +109,15 @@ const mockAccountRepo =
 const mockGetUserCredentials =
   require("../../../src/infrastructure/external/kodiak/credentials-provider").getUserCredentials;
 const mockLighterPortfolio = require("../../../src/infrastructure/external/lighter/portfolio");
+// Review P3: the credential gate (market-cache.ts) consumes an injected port;
+// wire the same mocked adapter method through the setter. marketRoutes also
+// mounts portfolioRoutes, whose scope resolver takes the same treatment.
+const {
+  setCredentialGateDeps,
+} = require("../../../src/interfaces/http/trading/market-cache");
+const {
+  setPortfolioScopeDeps,
+} = require("../../../src/interfaces/http/trading/market-portfolio.routes");
 
 /**
  * C2 credential gate: an ACTIVE account row plus a decryptable envelope.
@@ -160,6 +169,13 @@ describe("Market Controller", () => {
   beforeEach(() => {
     // Reset all mocks
     jest.clearAllMocks();
+
+    // Review P3: inject the credential-gate port backed by the mocked repo.
+    setCredentialGateDeps({ listAccounts: mockAccountRepo.listAccounts });
+    // marketRoutes also mounts portfolioRoutes (C3b scoping) — same wiring.
+    setPortfolioScopeDeps({
+      getAccountWithSecret: mockAccountRepo.getAccountWithSecret,
+    });
 
     // Create fresh app instance
     app = createTestApp();

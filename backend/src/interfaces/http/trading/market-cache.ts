@@ -5,12 +5,36 @@
 
 import { Response } from "express";
 import { redisService } from "../../../infrastructure/cache/redis.service";
-import { exchangeAccountRepositoryAdapter } from "../../../infrastructure/adapters/repositories/exchange-account-repository.adapter";
-// TODO(architecture): HTTP route imports a repository adapter directly — call
-// an injected use case instead (follow-up). See backend/eslint.config.mjs.
+import type { ExchangeAccount } from "@trade-bot/shared";
 import { getUserCredentials } from "../../../infrastructure/external/kodiak/credentials-provider";
 import type { KodiakTradingViewHistory } from "../../../infrastructure/external/kodiak-integration.service";
 import { marketLogger } from "./market-helpers";
+
+/**
+ * Persistence port (review P3): routes must not import repository adapters.
+ * `listAccounts` is wired in `server/route-config.ts`; tests inject a double
+ * the same way. Fail-fast: an unwired gate must never silently pass.
+ */
+export interface CredentialGateDeps {
+  listAccounts(userId: string): Promise<ExchangeAccount[]>;
+}
+
+let depsImpl: CredentialGateDeps | undefined;
+
+/** Route wiring (server/route-config.ts). Tests inject a double the same way. */
+export function setCredentialGateDeps(deps: CredentialGateDeps): void {
+  depsImpl = deps;
+}
+
+/** Fail-fast accessor — an unwired gate must never silently pass. */
+function deps(): CredentialGateDeps {
+  if (!depsImpl) {
+    throw new Error(
+      "Credential gate deps not wired — call setCredentialGateDeps() in route-config"
+    );
+  }
+  return depsImpl;
+}
 
 /**
  * Redis get → JSON.parse helper. Returns the parsed payload on hit, `null` on
@@ -61,7 +85,7 @@ export const requireVerifiedCredentials = async (
     res.status(401).json({ success: false, error: "Authentication required" });
     return null;
   }
-  const accounts = await exchangeAccountRepositoryAdapter.listAccounts(userId);
+  const accounts = await deps().listAccounts(userId);
   const active = accounts.find(a => a.status === "ACTIVE");
   if (!active) {
     res.status(403).json({

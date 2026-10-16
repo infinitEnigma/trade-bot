@@ -2,7 +2,6 @@
 
 import { Router, Request, Response } from "express";
 import { getHealthService } from "../../../core/service-provider";
-import { getPool, getPoolMetrics } from "../../../database/pool";
 import { redisService } from "../../../infrastructure/cache/redis.service";
 import { keyManagementService } from "../../../infrastructure/security/key-management.service";
 import { externalTrafficObserver } from "../../../infrastructure/external/external-traffic-observer";
@@ -12,6 +11,47 @@ const router = Router();
 
 // Health check start time for uptime calculation
 const START_TIME = Date.now();
+
+/**
+ * DB health port (review P3): routes must not import the pool directly.
+ * The implementation (`databaseHealth`) lives in `database/health-probe.ts`
+ * and is wired in `server/route-config.ts`; tests inject a double the same
+ * way. Fail-fast: an unwired probe must never silently report healthy.
+ */
+export interface HealthDbPort {
+  /** SELECT 1 connectivity probe (readiness + database health). */
+  ping(): Promise<void>;
+  /** pg_stat_activity connection counts for /health/database. */
+  connectionStats(): Promise<{
+    total_connections: string;
+    active_connections: string;
+    idle_connections: string;
+  }>;
+  /** Pool metrics snapshot for /metrics/database (same shape as getPoolMetrics). */
+  metrics(): {
+    pool: unknown;
+    performance: unknown;
+    config: unknown;
+    health: unknown;
+  };
+}
+
+let dbImpl: HealthDbPort | undefined;
+
+/** Route wiring (server/route-config.ts). Tests inject a double the same way. */
+export function setHealthDb(port: HealthDbPort): void {
+  dbImpl = port;
+}
+
+/** Fail-fast accessor — an unwired probe must never report healthy by accident. */
+function db(): HealthDbPort {
+  if (!dbImpl) {
+    throw new Error(
+      "Health DB port not wired — call setHealthDb() in route-config"
+    );
+  }
+  return dbImpl;
+}
 
 // Basic health check endpoint
 router.get("/health", (req: Request, res: Response) => {
@@ -87,23 +127,13 @@ router.get("/health/detailed", async (req: Request, res: Response) => {
 router.get("/health/database", async (req: Request, res: Response) => {
   try {
     const startTime = Date.now();
-    const pool = getPool();
 
-    // Test basic connectivity
-    await pool.query("SELECT 1 as test");
-
-    // Test connection count
-    const connectionResult = await pool.query(`
-      SELECT
-        count(*) as total_connections,
-        count(*) filter (where state = 'active') as active_connections,
-        count(*) filter (where state = 'idle') as idle_connections
-      FROM pg_stat_activity
-      WHERE datname = current_database()
-    `);
+    // Test basic connectivity + connection count through the injected probe
+    // (the pg_stat_activity SQL lives in database/health-probe.ts).
+    await db().ping();
+    const connections = await db().connectionStats();
 
     const responseTime = Date.now() - startTime;
-    const connections = connectionResult.rows[0];
 
     res.json({
       status: "healthy",
@@ -140,7 +170,7 @@ router.get("/health/database", async (req: Request, res: Response) => {
 // Database pool metrics endpoint
 router.get("/metrics/database", (req: Request, res: Response) => {
   try {
-    const metrics = getPoolMetrics();
+    const metrics = db().metrics();
 
     res.json({
       timestamp: new Date().toISOString(),
@@ -336,8 +366,7 @@ router.get("/metrics", async (req: Request, res: Response) => {
 router.get("/ready", async (req: Request, res: Response) => {
   try {
     // Check critical dependencies
-    const pool = getPool();
-    await pool.query("SELECT 1");
+    await db().ping();
 
     const redisClient = redisService.getClient();
     await redisClient.ping();

@@ -9,7 +9,6 @@ import {
   createBlockchainService,
   BlockchainBalance,
 } from "../../../infrastructure/external/blockchain.service";
-import { walletRepositoryAdapter } from "../../../infrastructure/adapters/repositories/wallet-repository.adapter";
 
 // Create blockchain service instance on demand
 const getBlockchainService = () => createBlockchainService();
@@ -24,6 +23,33 @@ import {
 } from "@trade-bot/shared";
 
 const router = Router();
+
+/**
+ * Persistence port (review P3): routes must not import repository adapters.
+ * Both lookups are wired in `server/route-config.ts`; tests inject a double
+ * the same way. Fail-fast: an unwired lookup must never fabricate a wallet.
+ */
+export interface BalanceWalletLookup {
+  getOwnedWallet(userId: string, walletId: string): Promise<Wallet | null>;
+  listWallets(userId: string): Promise<Wallet[]>;
+}
+
+let lookupImpl: BalanceWalletLookup | undefined;
+
+/** Route wiring (server/route-config.ts). Tests inject a double the same way. */
+export function setBalanceWalletLookup(lookup: BalanceWalletLookup): void {
+  lookupImpl = lookup;
+}
+
+/** Fail-fast accessor — an unwired lookup must never fabricate a wallet. */
+function lookup(): BalanceWalletLookup {
+  if (!lookupImpl) {
+    throw new Error(
+      "Balance wallet lookup not wired — call setBalanceWalletLookup() in route-config"
+    );
+  }
+  return lookupImpl;
+}
 
 /**
  * Resolve the EVM wallet whose on-chain balance a user may read.
@@ -43,10 +69,7 @@ async function resolveEvmWallet(
   walletId?: string
 ): Promise<Wallet> {
   if (walletId) {
-    const wallet = await walletRepositoryAdapter.getOwnedWallet(
-      userId,
-      walletId
-    );
+    const wallet = await lookup().getOwnedWallet(userId, walletId);
     if (!wallet) {
       throw new NotFoundError("Wallet", {
         userId,
@@ -63,7 +86,7 @@ async function resolveEvmWallet(
     return wallet;
   }
 
-  const wallets = await walletRepositoryAdapter.listWallets(userId);
+  const wallets = await lookup().listWallets(userId);
   const evmWallets = wallets.filter(wallet => wallet.chain === "evm");
   const wallet =
     evmWallets.find(candidate => candidate.isPrimary) ?? evmWallets[0];

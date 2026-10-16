@@ -50,6 +50,12 @@ const mockRedisService =
   require("../../../src/infrastructure/cache/redis.service").redisService;
 const mockKeyManagementService =
   require("../../../src/infrastructure/security/key-management.service").keyManagementService;
+// Review P3: the health routes consume the injected DB port. `databaseHealth`
+// is the real probe from database/health-probe.ts, but its getPool()/
+// getPoolMetrics() calls resolve to the mocked module above — so the existing
+// pool fixtures keep backing every DB check unchanged.
+const { setHealthDb } = require("../../../src/interfaces/http/system/health");
+const { databaseHealth } = require("../../../src/database/health-probe");
 
 // Create a test app
 function createTestApp(): Express {
@@ -83,6 +89,9 @@ describe("Health Controller", () => {
   beforeEach(() => {
     // Reset all mocks
     jest.clearAllMocks();
+
+    // Review P3: inject the DB health port (real probe, mocked pool beneath).
+    setHealthDb(databaseHealth);
 
     // Create fresh app instance
     app = createTestApp();

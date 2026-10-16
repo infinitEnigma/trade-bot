@@ -76,14 +76,14 @@ export default tseslint.config(
     },
   },
   // Existing debt: HTTP routes still importing repository adapters / pool.
+  // (2026-10-16, review P3 Phase 2): market-cache.ts, market-portfolio.routes.ts,
+  // wallet/balance.ts and system/health.ts were cleared — all four now go
+  // through injected ports wired in server/route-config.ts (setCredentialGateDeps /
+  // setPortfolioScopeDeps / setBalanceWalletLookup / setHealthDb).
   {
     files: [
       "src/interfaces/http/bots/engine.ts",
       "src/interfaces/http/bots/management.ts",
-      "src/interfaces/http/wallet/balance.ts",
-      "src/interfaces/http/trading/market-portfolio.routes.ts",
-      "src/interfaces/http/trading/market-cache.ts",
-      "src/interfaces/http/system/health.ts",
       "src/interfaces/http/auth/index.ts",
     ],
     rules: {
