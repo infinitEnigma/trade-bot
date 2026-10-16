@@ -63,6 +63,7 @@ import { setStrategyBadgeWriter } from "./core/bots/lifecycle/strategy-active-sy
 import { BotLifecycleRepositoryAdapter } from "./infrastructure/adapters/repositories/bot-lifecycle-repository.adapter";
 import { exchangeAccountRepositoryAdapter } from "./infrastructure/adapters/repositories/exchange-account-repository.adapter";
 import { strategyRepositoryAdapter } from "./infrastructure/adapters/repositories/strategy-repository.adapter";
+import { TradeLedgerRepositoryAdapter } from "./infrastructure/adapters/repositories/trade-ledger-repository.adapter";
 import { venueSymbolCatalog } from "./infrastructure/external/venue-symbols";
 import { createSessionCapProvider } from "./infrastructure/external/exchange-accounts/session-cap.provider";
 import { commandTimeoutSweeper } from "./core/bots/command-timeout.sweeper";
@@ -492,6 +493,9 @@ export const startServer = (): Promise<typeof httpServer> => {
       // Durable financial-state ingest (Phase 4): ORDER_INTENT /
       // TRADE_EXECUTED / POSITION_UPDATED / PERFORMANCE_SNAPSHOT →
       // idempotent ledger writes (trade-ledger.service).
+      tradeLedgerService.setTradeLedgerRepository(
+        new TradeLedgerRepositoryAdapter()
+      );
       botLifecycleService.setTradeLedgerHandler(event =>
         tradeLedgerService.handle(event)
       );

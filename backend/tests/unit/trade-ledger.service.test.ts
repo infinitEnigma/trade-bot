@@ -18,9 +18,6 @@ jest.mock("../../src/core/logging", () => ({
     debug: jest.fn(),
   },
 }));
-jest.mock("../../src/core/strategies/trade-ledger.repository", () => ({
-  TradeLedgerRepository: jest.fn(),
-}));
 
 import { TradeLedgerService } from "../../src/core/strategies/trade-ledger.service";
 import {
@@ -28,7 +25,7 @@ import {
   LedgerIntent,
   LedgerPerformance,
   LedgerPosition,
-} from "../../src/core/strategies/trade-ledger.repository";
+} from "../../src/core/strategies/trade-ledger.repository.port";
 
 type MockRepo = {
   recordFill: jest.Mock;
@@ -83,8 +80,9 @@ describe("TradeLedgerService", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     repo = makeRepo();
-    service = new TradeLedgerService(
-      repo as unknown as jest.Mocked<MockRepo> as never
+    service = new TradeLedgerService();
+    service.setTradeLedgerRepository(
+      repo as unknown as jest.Mocked<MockRepo>
     );
   });
 

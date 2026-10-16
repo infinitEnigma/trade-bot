@@ -23,10 +23,8 @@ jest.mock("../../src/core/logging/context-aware-logger.service", () => ({
 }));
 
 import { query, transaction } from "../../src/database/pool";
-import {
-  LedgerFill,
-  TradeLedgerRepository,
-} from "../../src/core/strategies/trade-ledger.repository";
+import { TradeLedgerRepositoryAdapter } from "../../src/infrastructure/adapters/repositories/trade-ledger-repository.adapter";
+import { LedgerFill } from "../../src/core/strategies/trade-ledger.repository.port";
 
 const mockQuery = query as jest.Mock;
 const mockTransaction = transaction as jest.Mock;
@@ -49,7 +47,7 @@ const FILL: LedgerFill = {
 };
 
 describe("TradeLedgerRepository", () => {
-  let repo: TradeLedgerRepository;
+  let repo: TradeLedgerRepositoryAdapter;
   let clientQuery: jest.Mock;
 
   beforeEach(() => {
@@ -59,7 +57,7 @@ describe("TradeLedgerRepository", () => {
       async (cb: (c: { query: jest.Mock }) => Promise<unknown>) =>
         cb({ query: clientQuery })
     );
-    repo = new TradeLedgerRepository();
+    repo = new TradeLedgerRepositoryAdapter();
   });
 
   describe("recordFill", () => {

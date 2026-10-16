@@ -27,7 +27,10 @@ import {
   LedgerFillStatus,
 } from "@trade-bot/shared";
 import { contextLogger as logger } from "../logging";
-import { LedgerStatus, TradeLedgerRepository } from "./trade-ledger.repository";
+import {
+  LedgerStatus,
+  ITradeLedgerRepository,
+} from "./trade-ledger.repository.port";
 
 const ORDER_SIDES = new Set(["BUY", "SELL"]);
 const POSITION_SIDES = new Set(["LONG", "SHORT", "FLAT"]);
@@ -66,9 +69,31 @@ function narrowFillStatus(status: LedgerFillStatus): LedgerStatus {
 }
 
 export class TradeLedgerService {
-  constructor(
-    private readonly repository: TradeLedgerRepository = new TradeLedgerRepository()
-  ) {}
+  private repositoryImpl?: ITradeLedgerRepository;
+
+  constructor() {}
+
+  /**
+   * Fail-fast accessor — an unwired repository must never swallow a fill.
+   * Wired in index.ts (`setTradeLedgerRepository`), beside
+   * `setTradeLedgerHandler`.
+   */
+  private get repository(): ITradeLedgerRepository {
+    if (!this.repositoryImpl) {
+      throw new Error(
+        "Trade ledger repository not wired — call setTradeLedgerRepository() at startup"
+      );
+    }
+    return this.repositoryImpl;
+  }
+
+  /**
+   * Composition-root wiring (index.ts, beside setTradeLedgerHandler): the
+   * PostgreSQL ledger adapter. Tests inject a mock the same way.
+   */
+  setTradeLedgerRepository(repository: ITradeLedgerRepository): void {
+    this.repositoryImpl = repository;
+  }
 
   /** Dispatch one ledger event. Wired as the processor's ledger handler. */
   async handle(event: BotEvent): Promise<void> {
