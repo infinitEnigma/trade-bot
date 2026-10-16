@@ -319,4 +319,4 @@ Notable backend behaviours worth knowing before changing lifecycle code:
 
 ---
 
-**Backend Status**: Functional | **Architecture**: Chain & Exchange Agnostic | **Version**: 1.0.0 | **Updated**: October 4, 2026
+**Backend Status**: Functional | **Architecture**: Chain & Exchange Agnostic | **Version**: 1.0.0 | **Updated**: October 16, 2026

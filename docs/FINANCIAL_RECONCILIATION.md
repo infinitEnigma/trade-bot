@@ -115,3 +115,28 @@ the live gates:
   the adapter layer (documented in `PROJECT_REVIEW_GAP_ANALYSIS` L-series).
   The balance channel throws (L15); positions/trades channels are the
   remaining soft-failure surface.
+
+## Interaction notes
+
+### Poison cap vs ledger redelivery
+
+The session `remaining > 0` abort rule (invariant 2, line 33-34) is the
+poison-cap guard: a session never trades behind undelivered fills even when the
+backend's 10-delivery ACK-drop logic drops a `TRADE_EXECUTED` event. The rule
+exempts ledger events (`TRADE_EXECUTED` published after the fill journal
+`pending-fills.json` write) from the ACK-drop path: the journal is authoritative,
+and the 10-attempt ACK-drop only applies to transient transport failures, never
+to a booked fill. When a journal redo runs at startup and `pending_fills > 0`,
+the backend rejects any new fill until the journal drains. This pair
+(poison-cap + ledger-redelivery rule) keeps the `remaining > 0` abort live under
+the ACK-drop scenario.
+
+### `exitOnly` terminology
+
+The engine trading path uses `exitOnly` (not `snapFullyLong`) for the
+below-minimum-remainder exit. `exitOnly` means: when the remaining order
+quantity is below the venue floor, the engine places a reduce-only exit order
+and records the residual as `remaining > 0` for the poison-cap guard; the grid
+does not attempt to place a new resting order at a sub-floor level. See
+`docs/PROJECT_REVIEW_GAP_ANALYSIS.md` §6 row 5 for the remaining `exitOnly`
+trigger position.

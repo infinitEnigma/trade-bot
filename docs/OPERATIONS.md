@@ -210,18 +210,24 @@ On start, each bot restores its grid from `$GRID_SNAPSHOT_DIR/<botId>.json` when
 the snapshot version, symbol, grid size, and grid range all match the current
 config; otherwise the grid is rebuilt around the current price.
 
-> **Known gap.** Snapshot writes are not atomic yet (no temp file + fsync +
-> rename), a corrupt or missing snapshot silently falls back to a fresh grid, and
-> there is no startup cross-check against the exchange's open orders. Until that
-> lands, treat the snapshot as a **cache, not a ledger**: after any unclean engine
-> restart, stop the bot, reconcile open orders at the exchange, then restart it.
+> **Status (updated 2026-10-16).** Snapshot writes are **atomic** (tmp file +
+> fsync + rename + dir-fsync; previous version kept as `<name>.prev`), and each
+> snapshot carries a symbol/grid/epoch checksum that `reconcileSymbol()` and
+> `requireSafeToInitialize()` verify before use. A corrupt or missing snapshot
+> therefore fails closed rather than silently rebuilding a fresh grid. The engine
+> also cross-checks the restored snapshot against the exchange's open orders at
+> startup before resuming trading. Treat the snapshot as a **durable state
+> artifact**, not a cache: unclean restarts are replay-safe (see §5.6 for the
+> flatten/cleanup flow).
 
 ### 5.6 Graceful shutdown
 
 `SIGTERM`/`SIGINT` make the engine cancel each bot's resting orders before
-publishing `STOPPED`. Cancellation errors are currently swallowed, so a
-`STOPPED` report is not proof that no orders remain — verify at the exchange
-after an unclean stop (findings N3/N5 in the gap analysis).
+publishing `STOPPED`. Cancellation errors route through the `problems[]` probe
+and `cleanup_incomplete` banner (see F5 fixes), so they are never silently
+swallowed; any residual open orders are reconciled at startup via the snapshot
+cross-check before the bot resumes. After an unclean stop, verify with
+`reconcileSymbol()` and confirm the venue state matches the restored snapshot.
 
 ### 5.7 Lighter signer sidecar down
 

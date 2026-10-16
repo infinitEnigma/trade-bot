@@ -1,6 +1,7 @@
 # Data Model: Identity, Wallets & Exchange Accounts
 
-**Status:** C1 (identity core — migration `011_identity_core.sql`), C2 (wallets & exchange accounts — migration `012_wallets_exchange_accounts.sql`), C3a (bot → account binding — migration `013_bot_account_binding.sql`) and C3b (per-account data tables — migration `014_drop_legacy_kodiak.sql`) implemented — all staged PRs of the execution plan have landed. Everything below that did not land remains the target model.
+**Status:** C1 (identity core — migration `011_identity_core.sql`), C2 (wallets & exchange accounts — migration `012_wallets_exchange_accounts.sql`), C3a (bot → account binding — migration `013_bot_account_binding.sql`) and C3b (per-account data tables — migration `014_drop_legacy_kodiak.sql`) implemented — all staged PRs of the execution plan have landed. The **D1–D4** account-session model (migration `019_bot_account_sessions.sql`) landed 2026-10-06; the `022` strategy_id shim-drop, `025` engine journal-integrity, and `026` venue-bound admission all landed 2026-10-08. This document is the **current** data model; nothing below is target.
+
 **Execution plan:** [EXCHANGE_INTEGRATION_PLAN.md](EXCHANGE_INTEGRATION_PLAN.md)
 (defines the staged PRs C1-C3 that implement this document).
 

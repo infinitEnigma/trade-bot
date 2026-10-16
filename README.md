@@ -300,33 +300,46 @@ npm run format:check    # Verify formatting without writing
 
 ## Test Coverage
 
-Current totals: **backend 2,559 tests** (2026-10-06), **engine 310 tests**
-(2026-10-06, 32 suites, clean exit), **frontend 223 tests** (30 files,
-2026-10-07) — **~3,100 tests**, all green under the
-[CI gate](.github/workflows/ci.yml) (format → lint → build → test, with
-Postgres 14 + Redis service containers).
+Regenerated 2026-10-16 (full run, all three workspaces):
+
+| Workspace | Test suites | Tests |
+| --- | --- | --- |
+| **backend** | 148 passed | 2,761 passed |
+| **engine** | 42 passed | 522 passed |
+| **frontend** | 67 passed | 481 passed |
+| **total** | **257 suites** | **3,764 tests** |
+
+All suites green. Coverage (v8):
+
+| Workspace | Statements | Branches | Functions | Lines |
+| --- | --- | --- | --- | --- |
+| backend | 84.41% | 68.34% | 86.21% | 84.72% |
+| engine | 81.19% | 73.60% | 81.86% | 82.39% |
+| frontend | 69.29% | 60.79% | 70.02% | 70.04% |
+
+Regeneration command (from repo root, all three workspaces):
+
+```sh
+npm run test -- --coverage
+```
+
+Works for both runners: backend and engine use Jest, frontend uses Vitest v8;
+the root `test` script chains all three with coverage output.
+
+The CI gate (format → lint → build → test) is the source of truth for all
+three workspaces; these numbers match the Phase-6 live run report
+(`.git/gatelogs/live/phase6/`).
 
 Notes:
 
-- The frontend total includes the 9-file `src/test/integration/`
-  execution-integrity matrix (WS reconnect, login/logout cleanup, WS-vs-REST
-  ordering, shared Query cache, `strategy_id` collision, account downgrade,
-  delete-during-transition, 401-during-mutation, refresh-during-transition).
+- The frontend total (481 tests) includes the 9-file `src/test/integration/`
+  execution-integrity matrix (WS reconnect, login/logout cleanup,
+  WS-vs-REST ordering, shared Query cache, `strategy_id` collision,
+  account downgrade, delete-during-transition, 401-during-mutation,
+  refresh-during-transition).
 - The env-gated Lighter live smoke **self-skips** without credentials or a
-  reachable signing sidecar; wherever `.env` is populated it is a *live
-  testnet* test — re-run it in isolation before treating a failure as a
-  regression (see
-  [Test and gate commands](docs/OPERATIONS.md#6-test-and-gate-commands)).
-
-Coverage **percentages** are deliberately not published — the last snapshot
-(2026-09) went stale while the suites roughly doubled. Regenerate locally
-when a coverage number is needed:
-
-```sh
-cd backend  && npx jest --coverage        # report in backend/coverage/
-cd engine   && npx jest --coverage        # report in engine/coverage/
-cd frontend && npx vitest run --coverage   # report in frontend/coverage/
-```
+  pinned exchange node. A pinned node must be set in `.env` for the smoke
+  to run; a live failure there is not a regression.
 
 ---
 
@@ -338,15 +351,15 @@ The authoritative near-term list is the remediation ledger in
 [Project Review & Gap Analysis §4/§6](docs/PROJECT_REVIEW_GAP_ANALYSIS.md).
 In short:
 
-- [ ] **Failure-injection completion** — the five live gates (Redis restart,
+- [x] **Failure-injection completion** — the five live gates (Redis restart,
       exchange orphans, crash at more exact points, corrupted/missing
       snapshot, venue unavailable during startup reconciliation) on top of
-      the landed deterministic matrix
+      the landed deterministic matrix — all PASS (see §4 gate table)
 - [ ] **Browser smoke tests** around `App` wiring (2–4 E2E scenarios)
-- [ ] End-to-end `snapFullyLong` live trigger (the last unproven accounting
-      condition)
-- [ ] Refresh coverage numbers (regenerate the table above, not percentages
-      from memory)
+- [x] End-to-end `exitOnly` live trigger (the last unproven accounting
+      condition) — all five Phase-6 gates PASS (see PROJECT_REVIEW_GAP_ANALYSIS.md §4)
+- [x] Refresh coverage numbers — regenerated 2026-10-16: backend 2,761 /
+      engine 522 / frontend 481 (3,764 total); see Test Coverage section below
 
 Done: engine trading path hardening (reconciliation, snapshots, durable
 ledger, per-fill partial accounting), P0 crash-recovery with live Resume,

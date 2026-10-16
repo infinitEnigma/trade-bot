@@ -33,31 +33,31 @@ remain open for their phases.
 
 | ID | Sev | Finding | Evidence |
 | -- | --- | ------- | -------- |
-| A1 | 🟠 | Only Dashboard scopes data to an exchange account; Strategies, Analytics, Settings show default/mixed views. `exchangeAccountId` appears in zero feature pages outside Dashboard | `Dashboard.tsx:293-323`; repo grep |
-| A2 | 🟡 | The account selector is buried in the "Open Positions" card header yet silently retitles balance cards, portfolio chart and trades elsewhere on the page | `Dashboard.tsx:665-681` + pin effect `319-323` |
-| A3 | 🟡 | Selection is local `useState` — refresh/share resets to newest ACTIVE account; not URL-persisted (D2 decides URL) | `Dashboard.tsx:297` |
-| A4 | 🟠 | Bot/strategy cards are never filtered by the selected account — two accounts ⇒ all sessions shown beside account-scoped balances | `useBotsList` → `getBotInstances()` (no param) |
-| A5 | 🟠 | Balance scope is a **module singleton** mutated only by Dashboard's effect — on any other page the "same" balance means whatever Dashboard last set, else the backend legacy default (first ACTIVE Kodiak account). Account meaning is navigation-history-dependent | `balance-manager.ts:120`, `Dashboard.tsx:319-323` |
+| A1 | ✅ | Dashboard redesign (10-12, `d8f7a0c`) scopes all feature pages to `?exchangeAccountId=` from a composition shell; Strategies/Analytics/Settings respect the URL scope | `d8f7a0c`; dashboard refactor `stages 1-4` |
+| A2 | ✅ | Account selector repositioned in dashboard composition shell (stages 1-4); balance cards, portfolio chart and trades retitle consistently with account selection | `d8f7a0c`; `f069534` |
+| A3 | ✅ | Account selection is now URL-persisted via `?exchangeAccountId=` (D2 decision implemented in `d8f7a0c`); refresh/share preserves the selection | `d8f7a0c`; `f069534` |
+| A4 | ✅ | Bot/strategy cards now filtered by `?exchangeAccountId=`; master-detail workspace (`a37c74`) renders account-scoped sessions and strategies | `d8f7a0c`; `a37c74`; `16b21ff` |
+| A5 | ✅ | Balance scope now composed from URL `?exchangeAccountId=` in the composition shell; module singleton replaced with scoped composition. Navigation-history dependency removed. | `d8f7a0c`; `f069534`; `dc8f7a5` |
 
 ## B. Balance semantics → Phase 4 (4a backend, 4b frontend)
 
 | ID | Sev | Finding | Evidence |
 | -- | --- | ------- | -------- |
-| B1 | 🔴 | Four Dashboard cards (Wallet / Account / Available / Total Assets) are **up to four renderings of one number**: `walletBalance = accountBalance = totalAssets = total` by construction; the manager layer maps venue total → wallet/account/available all equal. Same four cards on Strategies | `useBalance.ts:20-28`, `balance-manager.ts:153-156`, `Dashboard.tsx:506-537`, `Strategies.tsx:301-353` |
-| B2 | 🔴 | Strategies labels the wallet number "**Available funds**" (`Wallet` card) while a separate `Available / For trading` card shows a different field — two contradictory "available" concepts | `Strategies.tsx:307-312` vs `333-338` |
-| B3 | 🟠 | No `source` / `observedAt` freshness anywhere; the legacy `timestamp` exists but is never displayed (research-balance Q5) | `useBalance.ts:14,27` |
+| B1 | ✅ | Four Dashboard cards split into distinct objects: `walletBalance` (chain), `accountBalance` (venue total), `availableForTrading` (hangar), `totalAssets` (realised+unrealised) — no more 1:1 number mapping | `dc8f7a5` (Phase 4a); `f069534` |
+| B2 | ✅ | Both cards now draw from the same account model; "Available / For trading" uses `availableForTrading` (hangar), `Wallet` uses `accountBalance` — no more contradictory numbers | `dc8f7a5` (Phase 4a) |
+| B3 | ✅ | All balance cards now carry `observedAt` freshness and `source` tag; `timestamp` no longer displayed (research-balance Q5 resolution) | `dc8f7a5` (Phase 4a) |
 | B4 | 🔴 ✅ | Balance fetch is VERIFIED-only, yet Strategies gates its four cards open for REGISTERED ⇒ a REGISTERED user sees **four `$0.00` cards** (Wallet/Account/Available/Total) implying zero funds instead of "not connected" | `useBalance.ts:52`, `Strategies.tsx:298-300` (`\|\| 0` at 310/323/336/349) · closed by Phase 0.5 task 2.4 (REGISTERED gets an honest note; card semantics stay Phase 4) |
 
 | B5 | 🟠 ✅ | REGISTERED dashboard falls into "No Portfolio Data Available — …contact support" — an error-flavoured dead-end for the normal pre-verification state (BASIC gets a proper Connect card; REGISTERED does not) | `Dashboard.tsx:561-570` · closed by Phase 0.5 task 2.5 (proper CTA card; balance-card semantics stay Phase 4) |
-| B6 | 🟠 | The card labelled "Wallet" shows the **exchange** total; on-chain wallet balance (backend `GET /api/balance/current`) is presented nowhere distinct — the research's wallet-vs-account distinction does not exist in the UI at all | `research-balance-management.md §1A/§1C`; Dashboard card set |
+| B6 | ✅ | Wallet card now shows chain `walletBalance` from `GET /api/balance/current`; account card shows venue `accountBalance`. The wallet-vs-account distinction is now explicit in the UI | `dc8f7a5` (Phase 4a); `b393dc1` |
 
 ## C. Lifecycle & action-required states → Phases 1 (proof), 3 (design)
 
 | ID | Sev | Finding | Evidence |
 | -- | --- | ------- | -------- |
-| C1 | 🟠 | **Dashboard shows no bot lifecycle at all** — research §1's "bot overview" is wrong; there is none. A bot parked `UNKNOWN` / needs-action is invisible unless the user visits `/strategies`. Dashboard's only engine signal is the static "Bot Engine: Idle" (F3) | repo grep: no bot state in `Dashboard.tsx`; `Dashboard.tsx:641-645` |
-| C2 | 🟡 | UNKNOWN base copy is "Connection Lost" via `STATE_DISPLAY_INFO`; the plain-language *reason* renders only when `needs_user_action` is true — a transitioning UNKNOWN without the flag reads as mere connectivity trouble | `bot-lifecycle.types.ts:54+`, `BotControls.tsx:631-634` |
-| C3 | 🟠 | Comprehension mid-transition (refresh during STARTING/STOPPING, or between heartbeat-loss and the reconciler's park) is **unproven** — mechanics have tests (`ws-refresh-remount`), visible state does not | research §2.2; plan Phase 1 scenario 3 |
+| C1 | ✅ | Dashboard redesign (stages 1-4) now shows bot lifecycle at a glance: `Bot Engine: <status>` badge with account-scoped run state + `needs-user-action` flag; /strategies still provides the master-detail bot list | `d8f7a0c` (stages 1-4); `c4b8ac2` |
+| C2 | ✅ | UNKNOWN base copy now shows the plain-language reason in all cases; `needs_user_action` only escalates the action-required banner | `c4b8ac2` (Phase 1); `16b21ff` |
+| C3 | ✅ | Master-detail workspace (`a37c74`) renders all lifecycle states on refresh: STARTING/STOPPING mid-transition, UNKNOWN→RUNNING converge, action-required banner drive the Resume flow | `a37c74` (Phase 3); `e1c667f` (F4, no-chart-dispose-on-error); `3e1bf3a` (F5, cleanup-incomplete banner) |
 | C4 | ⚪ | The Resume flow itself (banner → `needs_user_action_reason` → Resume, same botId, no duplicate) is implemented, tested (`BotControls.test.tsx:232,250`) and Gate-5 proven — this plan changes presentation only | plan §11 non-goals |
 
 ## D. PnL & portfolio presentation → Phase 5

@@ -305,9 +305,10 @@ To add a new exchange:
 
 ---
 
-**Engine Status**: Functional¹ | **Architecture**: Exchange-Agnostic | **Version**: 1.0.0 | **Updated**: October 4, 2026
+**Engine Status**: Functional¹ | **Architecture**: Exchange-Agnostic | **Version**: 1.0.0 | **Updated**: October 16, 2026
 
 ¹ The trading path runs Kodiak/Orderly and Lighter through the full
 reconciliation → booking → ledger pipeline, including partial fills. The one
-remaining gate is the live Gate-4 run-2 venue proof (engine-path partials on
-testnet), which requires the Lighter signing sidecar.
+remaining gate is the live Gate-4 run-3 venue proof (engine-path partials on
+testnet), which requires the Lighter signing sidecar and a pinned market-rules
+snapshot match.

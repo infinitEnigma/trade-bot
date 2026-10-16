@@ -239,11 +239,14 @@ the new Phase-6 fault-injection harness
 > crashed bot is deliberately **not** auto-resumed (the lifecycle reconciler is
 > "audit-only"); resume it by botId via the Gate-1 restart harness.
 
-Model note: order identity, slot state and the snapshot are **bot-scoped** today
-(`<botId>.json`, one `GridTradingStrategy` per `BotRuntime`). Under the planned
-account-session model (plan §D) they become **run-scoped** — one runner and one
-`<botId>/<runId>.json` per strategy inside a session — which is also the granularity
-the durable ledger and the reconciliation work need.
+Model note: order identity, slot state and the snapshot are **run-scoped** — one
+`<botId>/<runId>.json` per strategy inside an account session. The `019`–`026`
+migrations implemented the D1–D4 sessions, the `022` strategy_id shim-drop, the
+`023`/`024` ledger fixes, the `025` journal-integrity `problems[]` + `cleanup_incomplete`
+flags, and the `026` venue-bound admission. The account-session model is now
+production (not just planned): `SESSION_CAP_LEVERAGE` and
+`PENDING_FILL_RETRY_INTERVAL_MS` roll out per account session, with
+`reconcileSymbol()` + `requireSafeToInitialize()` as the restore guards.
 
 ---
 
@@ -309,8 +312,14 @@ debt, deliberately deferred (P2).
 | `016_durable_trading_ledger.sql`    | The durable order/fill ledger behind the engine credential envelope; supersedes the spoofable `POST /report-trade` path (N7, ledger Phase 4)                                                                                                                       |
 | `017_accounting_pnl_split.sql`      | Accounting correctness: executed-price PnL, fee booking, exit pricing (N6, ledger Phase 5)                                                                                                                                                                        |
 | `018_bot_one_live_per_strategy.sql` | DB-level create guard: one live bot per (user, strategy) — the crash-recovery P0                                                                                                                                                                                   |
-| `019_bot_account_sessions.sql`      | D1 sessions: `strategy_runs`, one live session per account (`bot_instances_one_live_per_account`), run backfill; `strategy_id` kept for the single-run shim until a later grep-gated drop                                                                            |
-| `020_rename_engine_identity.sql`    | Exchange-agnostic rebrand: renames `kodiak-engine-*` → `trading-engine-*` in `engine_registry` + `bot_instances.engine_id` and resets the registry epoch (pairs with the engine identity loader's in-place state-file migration)                                      |
+| `019_bot_account_sessions.sql`      | D1 sessions: `strategy_runs`, one live session per account (`bot_instances_one_live_per_account`), run backfill; `strategy_id` kept for the single-run shim until a later grep-gated drop                                                          |
+| `020_rename_engine_identity.sql`    | Exchange-agnostic rebrand: renames `kodiak-engine-*` → `trading-engine-*` in `engine_registry` + `bot_instances.engine_id` and resets the registry epoch (pairs with the engine identity loader's in-place state-file migration)                                          |
+| `021_drop_kodiak_status.sql`        | Drops the unconsumed `kodiak_status` column from the `user_trading_summary` view (kept `002`/`012` as history)                                                                                                                         |
+| `022_drop_bot_strategy_id_shim.sql` | Drops the `bot_instances.strategy_id` shim column + `002` indexes; pre-D guard counted 0 offending rows; fixture cleanup (single-run model)                                                                                  |
+| `023_ledger_unknown_fee_pnl.sql`    | Ledger fix: unresolved venue fee → PnL booking path clarified; per-fill `fee_rate` and `fee_paid` columns explicitly derived from venue-tied `ExchangeClient.getFeeRates?()` | 
+| `024_ledger_incomplete_pnl_docs.sql`| Ledger fix: `remaining_pnl` / `fee_paid` nullability and docs aligned with the D3 run-scoped snapshot model (026 venue admission below)        |
+| `025_engine_journal_integrity.sql`  | Engine-side pending-fills journal + checksum; `problems[]` probe + `cleanup_incomplete` flag; journal redo at startup and on heartbeat loss; `reconcileSymbol()` guard on restore |
+| `026_strategy_venue.sql`            | Venue-bound strategy admission (026 Phase A/B): engine routes strategies to their bound exchange account; `strategy_id` shim fully dropped; `SESSION_CAP_LEVAGE` and `PENDING_FILL_RETRY_INTERVAL_MS` configs live |
 
 Planned (designed, not implemented): `agent_participation.sql` (plan §E) —
 agents, grants, proposals and the action audit trail.

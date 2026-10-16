@@ -1,6 +1,6 @@
 # Exchange Integration & Data Model — Execution Plan
 
-**Status:** A, B and C executed — **C1 (identity), C2 (wallets + exchange accounts) and C3 (bot→account binding + per-account data tables) landed**; **D (bot account sessions) landed D1–D4 (`6ce8c02`, `47f4cc6`, `6b91a63`; accepted 2026-10-06 after suite repair `9d0d26c` — the `strategy_id` shim-drop migration remains)**; **E (agent participation) is designed and not implemented** (§D, §E).
+**Status:** A, B and C executed — **C1 (identity), C2 (wallets + exchange accounts) and C3 (bot→account binding + per-account data tables) landed**; **D (bot account sessions) landed D1–D4 (`6ce8c02`, `47f4cc6`, `6b91a63`; accepted 2026-10-06 after suite repair `9d0d26c` — `022` strategy_id shim-drop applied)**; **E (agent participation) is designed and not implemented** (§D, §E). **026 venue-bound admission (Phase A/B)** landed 2026-10-08: `strategy_venue.sql` implements venue-bound strategy routing and the `strategy_id` shim is fully dropped. `SESSION_CAP_LEVAGE`/`PENDING_FILL_RETRY_INTERVAL_MS` configs live.
 **Companion docs:** [DATA_MODEL.md](DATA_MODEL.md) (target schema + why),
 [PROJECT_REVIEW_GAP_ANALYSIS.md](PROJECT_REVIEW_GAP_ANALYSIS.md) (ledger),
 [ARCHITECTURE.md](ARCHITECTURE.md) (current design),
