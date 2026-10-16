@@ -2222,4 +2222,126 @@ describe("BotLifecycleService F1 notional admission", () => {
         })
     );
   });
+  it("closes the concurrent-attach race across sessions on the same account (account-level cap)", async () => {
+    // Two different sessions (bot-1, bot-2) bound to the same account acc-1
+    // fire attaches together against a $1,000 cap. Each run is $600, so both
+    // together ($1,200) exceed the cap — exactly one must be admitted.
+    // The account-level exchange_accounts FOR UPDATE lock serializes them and
+    // the account-scoped pending sum makes the second see the first's run.
+    service.setSessionCapProvider({
+      getAdmissionSnapshot: async () => ({ cap: 1000, existingExposure: 0 }),
+    });
+    let attachedTotal = 0;
+    let lockChain: Promise<unknown> = Promise.resolve();
+    mockTransaction.mockImplementation(
+      (
+        cb: (client: {
+          query: (t: string, p?: unknown[]) => unknown;
+        }) => unknown
+      ) => {
+        const run = lockChain.then(async () => {
+          const client = {
+            query: (text: string, params: unknown[] = []) => {
+              const t = String(text);
+              if (t.includes("SELECT id FROM exchange_accounts")) {
+                return Promise.resolve({ rows: [{ id: "acc-1" }] });
+              }
+              if (t.includes("SELECT id FROM bot_instances WHERE id")) {
+                return Promise.resolve({ rows: [{ id: "bot-x" }] });
+              }
+              if (t.includes("FROM strategies WHERE id")) {
+                return Promise.resolve({
+                  rows: [{ exchange: null, environment: null, config: {} }],
+                });
+              }
+              if (t.includes("SUM(notional_amount)")) {
+                return Promise.resolve({ rows: [{ total: String(attachedTotal) }] });
+              }
+              if (t.includes("FROM strategy_runs")) {
+                return Promise.resolve({ rows: [] });
+              }
+              if (t.startsWith("INSERT INTO strategy_runs")) {
+                attachedTotal += Number(params[3]);
+                return Promise.resolve({
+                  rows: [{ id: "run-x" }],
+                  rowCount: 1,
+                });
+              }
+              return Promise.resolve({ rows: [], rowCount: 1 });
+            },
+          };
+          return cb(client);
+        });
+        lockChain = run.catch(() => undefined);
+        return run;
+      }
+    );
+
+    mockAccountAdapter.getAccountWithSecret.mockResolvedValue(
+      {
+        id: "acc-1",
+        exchange: "kodiak",
+        environment: "mainnet",
+        status: "ACTIVE",
+      } as never
+    );
+
+    mockQuery.mockImplementation((sql: string, params?: unknown[]) => {
+      const text = String(sql);
+      if (text.startsWith("SELECT id, user_id")) {
+        const botId = params?.[0];
+        return Promise.resolve({
+          rows: [
+            {
+              id: botId,
+              user_id: "user-1",
+              status: "RUNNING",
+              desired_state: "RUNNING",
+              actual_state: "RUNNING",
+              engine_id: `engine-${botId}`,
+              exchange_account_id: "acc-1",
+            },
+          ],
+        });
+      }
+      if (text.startsWith("SELECT id FROM strategies")) {
+        return Promise.resolve({ rows: [{ id: "strat-2" }] });
+      }
+      if (
+        text.startsWith("SELECT exchange, environment, config FROM strategies")
+      ) {
+        return Promise.resolve({
+          rows: [{ exchange: null, environment: null, config: {} }],
+        });
+      }
+      if (text.includes("FROM strategy_runs")) {
+        return Promise.resolve({ rows: [] });
+      }
+      return Promise.resolve({ rows: [], rowCount: 1 });
+    });
+
+    const results = await Promise.allSettled([
+      service.attachStrategyRun("bot-1", "user-1", "strat-2", 600),
+      service.attachStrategyRun("bot-2", "user-1", "strat-2", 600),
+    ]);
+
+    const fulfilled = results.filter(r => r.status === "fulfilled");
+    const rejected = results.filter(r => r.status === "rejected");
+    expect(fulfilled).toHaveLength(1);
+    expect(rejected).toHaveLength(1);
+    expect((rejected[0] as PromiseRejectedResult).reason).toMatchObject({
+      statusCode: 409,
+    });
+    // Only one $600 run landed against the $1,000 cap.
+    expect(attachedTotal).toBe(600);
+
+    // Restore the default routing transaction mock for any later test.
+    mockTransaction.mockImplementation(
+      async (cb: (client: { query: unknown }) => unknown) =>
+        cb({
+          query: (text: string, params?: unknown[]) => mockQuery(text, params),
+        })
+    );
+  });
 });
+

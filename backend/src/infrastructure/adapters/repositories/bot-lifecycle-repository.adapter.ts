@@ -773,19 +773,27 @@ export class BotLifecycleRepositoryAdapter implements ILifecycleRepository {
     config: Record<string, unknown>,
     notionalAmount: number,
     cap: number,
-    existingExposure: number
+    existingExposure: number,
+    exchangeAccountId: string
   ): Promise<string> {
     return transaction(async client => {
+      // Serialize ALL attaches on this account (not just this session) so two
+      // bots bound to the same account cannot both pass on a stale pending sum.
+      await client.query(
+        `SELECT id FROM exchange_accounts WHERE id = $1 FOR UPDATE`,
+        [exchangeAccountId]
+      );
       await client.query(
         `SELECT id FROM bot_instances WHERE id = $1 FOR UPDATE`,
         [botId]
       );
       const sumResult = await client.query<{ total: string | null }>(
         `SELECT COALESCE(SUM(notional_amount), 0) AS total
-           FROM strategy_runs
-          WHERE bot_id = $1
-            AND state IN ('STOPPED', 'STARTING')`,
-        [botId]
+               FROM strategy_runs r
+               JOIN bot_instances b ON r.bot_id = b.id
+              WHERE b.exchange_account_id = $1
+                AND r.state IN ('STOPPED', 'STARTING')`,
+        [exchangeAccountId]
       );
       const pendingSum = Number(sumResult.rows[0]?.total ?? 0);
       if (existingExposure + pendingSum + notionalAmount > cap) {
@@ -820,19 +828,27 @@ export class BotLifecycleRepositoryAdapter implements ILifecycleRepository {
     config: Record<string, unknown>,
     notionalAmount: number,
     cap: number,
-    existingExposure: number
+    existingExposure: number,
+    exchangeAccountId: string
   ): Promise<string> {
     const client = clientOf(tx);
+    // Serialize ALL attaches on this account (not just this session) so two
+    // bots bound to the same account cannot both pass on a stale pending sum.
+    await client.query(
+      `SELECT id FROM exchange_accounts WHERE id = $1 FOR UPDATE`,
+      [exchangeAccountId]
+    );
     await client.query(
       `SELECT id FROM bot_instances WHERE id = $1 FOR UPDATE`,
       [botId]
     );
     const sumResult = await client.query<{ total: string | null }>(
       `SELECT COALESCE(SUM(notional_amount), 0) AS total
-            FROM strategy_runs
-          WHERE bot_id = $1
-            AND state IN ('STOPPED', 'STARTING')`,
-      [botId]
+             FROM strategy_runs r
+             JOIN bot_instances b ON r.bot_id = b.id
+            WHERE b.exchange_account_id = $1
+              AND r.state IN ('STOPPED', 'STARTING')`,
+      [exchangeAccountId]
     );
     const pendingSum = Number(sumResult.rows[0]?.total ?? 0);
     if (existingExposure + pendingSum + notionalAmount > cap) {

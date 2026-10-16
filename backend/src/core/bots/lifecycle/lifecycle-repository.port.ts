@@ -132,7 +132,6 @@ export interface ILifecycleRepository {
   findStrategyVenue(strategyId: string): Promise<StrategyVenueRow>;
   strategyExistsForUser(strategyId: string, userId: string): Promise<boolean>;
   findActiveBotForStrategy(strategyId: string): Promise<{ id: string } | null>;
-
   // --- transactional composition (create / attach / guarded edit) ---
   inTransaction<T>(fn: (tx: LifecycleTx) => Promise<T>): Promise<T>;
   lockStrategyRow(
@@ -156,6 +155,7 @@ export interface ILifecycleRepository {
     userId: string,
     exchangeAccountId: string
   ): Promise<string>;
+
   attachRunTx(
     tx: LifecycleTx,
     botId: string,
@@ -163,6 +163,21 @@ export interface ILifecycleRepository {
     config: Record<string, unknown>,
     notionalAmount: number
   ): Promise<string>;
+  /**
+   * Cap-guarded attach with ACCOUNT-level serialization (F1).
+   *
+   * Locks the exchange_accounts row (FOR UPDATE) so concurrent attaches on
+   * different sessions bound to the same account serialize here, then
+   * recalculates the pending run sum SCOPED TO THE ACCOUNT (all bots on the
+   * account, not just this bot) before enforcing
+   * `existingExposure + pendingSum + notionalAmount <= cap`.
+   *
+   * `cap` and `existingExposure` are resolved by the caller OUTSIDE this
+   * transaction (venue balance + positions must not hold a DB lock across
+   * network I/O); only the pending sum is re-read authoritatively under the
+   * lock. Live RUNNING runs are excluded — their filled notional is already
+   * inside `existingExposure`.
+   */
   attachRunWithCapGuardTx(
     tx: LifecycleTx,
     botId: string,
@@ -170,7 +185,8 @@ export interface ILifecycleRepository {
     config: Record<string, unknown>,
     notionalAmount: number,
     cap: number,
-    existingExposure: number
+    existingExposure: number,
+    exchangeAccountId: string
   ): Promise<string>;
 
   // --- runs ---
@@ -192,7 +208,8 @@ export interface ILifecycleRepository {
     config: Record<string, unknown>,
     notionalAmount: number,
     cap: number,
-    existingExposure: number
+    existingExposure: number,
+    exchangeAccountId: string
   ): Promise<string>;
   setRunState(
     runId: string,

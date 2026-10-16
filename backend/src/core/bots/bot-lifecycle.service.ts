@@ -624,14 +624,15 @@ export class BotLifecycleService {
     // 026 Phase A (no tx, network allowed): the session's bound account must
     // load — a missing account fails CLOSED, never skips venue validation.
     // Then venue equality + catalog snapshot (bound rows fail closed).
-    if (!bot.exchange_account_id) {
+    const exchangeAccountId = bot.exchange_account_id;
+    if (!exchangeAccountId) {
       const error = new Error("Session has no verifiable bound account");
       (error as Error & { statusCode?: number }).statusCode = 400;
       throw error;
     }
     const botAccount = await this.accountLookup.getAccountWithSecret(
       userId,
-      bot.exchange_account_id
+      exchangeAccountId
     );
     if (!botAccount) {
       const error = new Error("Session has no verifiable bound account");
@@ -673,7 +674,7 @@ export class BotLifecycleService {
     // the session. Invariant: existingExposure + pending + incoming <= cap.
     const { cap, existingExposure } = await this.computeAdmission(
       userId,
-      bot.exchange_account_id
+      exchangeAccountId
     );
     // 026: venue equality + symbol check were resolved in Phase A (above);
     // revalidate the locked strategy row against that snapshot inside the tx.
@@ -722,7 +723,8 @@ export class BotLifecycleService {
             cur.config,
             notionalAmount,
             cap,
-            existingExposure
+            existingExposure,
+            exchangeAccountId
           );
         } catch (err) {
           if (err instanceof RunNotionalCapExceededError) {
