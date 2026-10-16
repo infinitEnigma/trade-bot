@@ -151,6 +151,13 @@ export interface IEngineRegistryRepository {
     olderThanSeconds: number
   ): Promise<EngineRegistryRow[]>;
 
+  /**
+   * Engines already OFFLINE that still hold RUNNING bots — the stranded set
+   * left behind when an UNKNOWN transition failed after the OFFLINE claim
+   * (supervision repair pass).
+   */
+  selectOfflineEngineIdsWithRunningBots(): Promise<string[]>;
+
   /** Mark one engine OFFLINE (claim, so concurrent sweeps don't double-process). */
   markEngineOffline(engineId: string): Promise<boolean>;
 

@@ -136,9 +136,9 @@ describe("EngineRegistryRepositoryAdapter", () => {
       release: jest.fn(),
     };
     mockGetClient.mockResolvedValue(failing);
-    await expect(
-      adapter.inTransaction(async () => "never")
-    ).rejects.toThrow("boom");
+    await expect(adapter.inTransaction(async () => "never")).rejects.toThrow(
+      "boom"
+    );
     expect(failing.query).toHaveBeenCalledWith("ROLLBACK");
     expect(failing.release).toHaveBeenCalled();
   });
@@ -162,6 +162,20 @@ describe("EngineRegistryRepositoryAdapter", () => {
     expect(sql).toContain("status = 'ONLINE'");
     expect(sql).toContain("last_seen_at < NOW()");
     expect(params).toEqual([30]);
+  });
+
+  it("selectOfflineEngineIdsWithRunningBots joins OFFLINE engines to RUNNING bots", async () => {
+    mockQuery.mockResolvedValue({
+      rows: [{ engine_id: "engine-1" }, { engine_id: "engine-2" }],
+    });
+
+    const ids = await adapter.selectOfflineEngineIdsWithRunningBots();
+
+    expect(ids).toEqual(["engine-1", "engine-2"]);
+    const [sql] = mockQuery.mock.calls[0];
+    expect(sql).toContain("JOIN bot_instances");
+    expect(sql).toContain("e.status = 'OFFLINE'");
+    expect(sql).toContain("b.actual_state = 'RUNNING'");
   });
 
   it("pruneDeadEngines deletes OFFLINE rows past retention", async () => {

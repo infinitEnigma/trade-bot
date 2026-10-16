@@ -65,6 +65,7 @@ function makeMockRepository(): MockRepository {
       .mockResolvedValue({ recovered: false, reason: "no row" }),
     selectAllEngines: jest.fn().mockResolvedValue([]),
     selectExpiredOnlineEngines: jest.fn().mockResolvedValue([]),
+    selectOfflineEngineIdsWithRunningBots: jest.fn().mockResolvedValue([]),
     markEngineOffline: jest.fn().mockResolvedValue(false),
     pruneDeadEngines: jest.fn().mockResolvedValue({ rowCount: 0 }),
     hasLiveEngines: jest.fn().mockResolvedValue(false),
@@ -93,9 +94,7 @@ function wireTx(
     async (_tx: EngineRegistryTx, _engineId: string) =>
       selectRow
         ? {
-            journal_integrity_alert: Boolean(
-              selectRow.journal_integrity_alert
-            ),
+            journal_integrity_alert: Boolean(selectRow.journal_integrity_alert),
             last_hb_epoch: selectRow.last_hb_epoch as number | string,
             last_hb_seq: selectRow.last_hb_seq as number | string,
           }
@@ -147,9 +146,7 @@ describe("EngineRegistryService", () => {
     service = new EngineRegistryService();
     mockRepository = makeMockRepository();
     markBotsUnknown = jest.fn().mockResolvedValue(2);
-    reconcileInventory = jest
-      .fn()
-      .mockResolvedValue({ unlisted: 0, drift: 0 });
+    reconcileInventory = jest.fn().mockResolvedValue({ unlisted: 0, drift: 0 });
     service.setEngineRegistryRepository(mockRepository);
     service.setUnknownMarker(markBotsUnknown as unknown as UnknownMarker);
     service.setInventoryReconciler(
@@ -472,6 +469,94 @@ describe("EngineRegistryService", () => {
       expect(marked).toBe(1);
       expect(markBotsUnknown).toHaveBeenCalledWith("engine-1");
     });
+
+    it("isolates a failed UNKNOWN transition: later engines and the prune still run", async () => {
+      mockRepository.selectExpiredOnlineEngines.mockResolvedValue([
+        expiredRow({ engine_id: "engine-1" }),
+        expiredRow({ engine_id: "engine-2" }),
+      ]);
+      mockRepository.markEngineOffline.mockResolvedValue(true);
+      mockRepository.pruneDeadEngines.mockResolvedValue({ rowCount: 1 });
+      markBotsUnknown.mockImplementation((engineId: string) =>
+        engineId === "engine-1"
+          ? Promise.reject(new Error("marker boom"))
+          : Promise.resolve()
+      );
+
+      const marked = await service.sweepOfflineEngines();
+
+      // Neither engine's claim is rolled back, and the failure of the first
+      // marker must not strand the second engine or skip the prune.
+      expect(marked).toBe(2);
+      expect(markBotsUnknown).toHaveBeenCalledWith("engine-1");
+      expect(markBotsUnknown).toHaveBeenCalledWith("engine-2");
+      expect(mockRepository.pruneDeadEngines).toHaveBeenCalledWith(
+        ENGINE_DEAD_ROW_RETENTION_MS / 1000
+      );
+    });
+
+    it("keeps the marked count when the UNKNOWN transition fails on the only engine", async () => {
+      mockRepository.selectExpiredOnlineEngines.mockResolvedValue([
+        expiredRow(),
+      ]);
+      mockRepository.markEngineOffline.mockResolvedValue(true);
+      mockRepository.pruneDeadEngines.mockResolvedValue({ rowCount: 0 });
+      markBotsUnknown.mockRejectedValue(new Error("marker boom"));
+
+      const marked = await service.sweepOfflineEngines();
+
+      // The OFFLINE claim succeeded, so the engine counts; the marker
+      // failure is logged, not thrown (same contract as the prune failure).
+      expect(marked).toBe(1);
+      expect(mockRepository.pruneDeadEngines).toHaveBeenCalled();
+    });
+
+    it("repairs stranded RUNNING bots of an already-OFFLINE engine", async () => {
+      mockRepository.selectExpiredOnlineEngines.mockResolvedValue([]);
+      mockRepository.selectOfflineEngineIdsWithRunningBots.mockResolvedValue([
+        "engine-stranded",
+      ]);
+      mockRepository.pruneDeadEngines.mockResolvedValue({ rowCount: 0 });
+
+      const marked = await service.sweepOfflineEngines();
+
+      // The repair does not inflate the sweep's marked count (no new OFFLINE
+      // claim happened); it re-drives the marker for the stranded engine.
+      expect(marked).toBe(0);
+      expect(markBotsUnknown).toHaveBeenCalledWith("engine-stranded");
+    });
+
+    it("runs the repair pass even when the main loop marked nothing and isolates its failures", async () => {
+      mockRepository.selectExpiredOnlineEngines.mockResolvedValue([
+        expiredRow(),
+      ]);
+      mockRepository.markEngineOffline.mockResolvedValue(false); // lost the claim
+      mockRepository.selectOfflineEngineIdsWithRunningBots.mockResolvedValue([
+        "engine-stranded",
+      ]);
+      mockRepository.pruneDeadEngines.mockResolvedValue({ rowCount: 0 });
+      markBotsUnknown.mockRejectedValue(new Error("marker boom"));
+
+      const marked = await service.sweepOfflineEngines();
+
+      // The repair failure is logged, not thrown; the sweep completes.
+      expect(marked).toBe(0);
+      expect(markBotsUnknown).toHaveBeenCalledWith("engine-stranded");
+      expect(mockRepository.pruneDeadEngines).toHaveBeenCalled();
+    });
+
+    it("keeps sweeping when the stranded-engine repair query itself fails", async () => {
+      mockRepository.selectExpiredOnlineEngines.mockResolvedValue([]);
+      mockRepository.selectOfflineEngineIdsWithRunningBots.mockRejectedValue(
+        new Error("repair query boom")
+      );
+      mockRepository.pruneDeadEngines.mockResolvedValue({ rowCount: 1 });
+
+      const marked = await service.sweepOfflineEngines();
+
+      expect(marked).toBe(0);
+      expect(mockRepository.pruneDeadEngines).toHaveBeenCalled();
+    });
   });
 
   describe("getEngineLiveness", () => {
@@ -509,9 +594,7 @@ describe("EngineRegistryService", () => {
     it("is not running when the ONLINE engine's heartbeat is stale (sweep not yet run)", async () => {
       mockRepository.selectAllEngines.mockResolvedValue([
         engineRow({
-          last_seen_at: new Date(
-            Date.now() - ENGINE_HEARTBEAT_TIMEOUT_MS * 3
-          ),
+          last_seen_at: new Date(Date.now() - ENGINE_HEARTBEAT_TIMEOUT_MS * 3),
         }),
       ]);
 
@@ -797,7 +880,8 @@ describe("EngineRegistryService", () => {
     it("refuses recovery when the conditional update matches no row (rowCount 0)", async () => {
       mockRepository.recoverJournalIntegrity.mockResolvedValue({
         recovered: false,
-        reason: "no active alert, or journal not currently OK and fully drained",
+        reason:
+          "no active alert, or journal not currently OK and fully drained",
       });
 
       const result = await service.recoverJournalIntegrity(

@@ -233,6 +233,16 @@ export class EngineRegistryRepositoryAdapter implements IEngineRegistryRepositor
     return result.rows;
   }
 
+  async selectOfflineEngineIdsWithRunningBots(): Promise<string[]> {
+    const result = await query<{ engine_id: string }>(
+      `SELECT DISTINCT e.engine_id
+             FROM engine_registry e
+             JOIN bot_instances b ON b.engine_id = e.engine_id
+             WHERE e.status = 'OFFLINE' AND b.actual_state = 'RUNNING'`
+    );
+    return result.rows.map(row => row.engine_id);
+  }
+
   async markEngineOffline(engineId: string): Promise<boolean> {
     const result = await query(
       `UPDATE engine_registry

@@ -329,8 +329,10 @@ export class EngineRegistryService {
   /**
    * Supervision sweep: mark timed-out ONLINE engines OFFLINE (claiming so
    * concurrent sweeps cannot double-process), transition their RUNNING bots
-   * to UNKNOWN via the injected marker, then prune dead rows past retention.
-   * Prune failures are logged, never thrown — the marked count is kept.
+   * to UNKNOWN via the injected marker, re-drive the marker for any OFFLINE
+   * engine still holding RUNNING bots (repair pass), then prune dead rows
+   * past retention. Failures of the UNKNOWN transitions or of the prune are
+   * logged and never abort the sweep or the marked count.
    */
   async sweepOfflineEngines(): Promise<number> {
     const expired = await this.repository.selectExpiredOnlineEngines(
@@ -351,7 +353,53 @@ export class EngineRegistryService {
         lastSeenAt: engine.last_seen_at,
       });
 
-      await this.unknownMarker(engine.engine_id);
+      // A failed UNKNOWN transition must not abort the sweep: this engine is
+      // already claimed OFFLINE, so remaining expired engines and the prune
+      // below still need processing. Log loudly and continue.
+      try {
+        await this.unknownMarker(engine.engine_id);
+      } catch (error) {
+        logger.error(
+          "Failed to mark timed-out engine's bots UNKNOWN",
+          undefined,
+          {
+            engineId: engine.engine_id,
+            error: error instanceof Error ? error.message : String(error),
+          }
+        );
+      }
+    }
+
+    // Repair pass: an engine already OFFLINE whose UNKNOWN transition failed
+    // in an earlier sweep leaves its bots RUNNING with no retry (OFFLINE rows
+    // no longer appear in the expired set above). Re-drive the marker; it
+    // only selects RUNNING bots, so this is cheap and idempotent.
+    try {
+      const stranded =
+        await this.repository.selectOfflineEngineIdsWithRunningBots();
+      for (const engineId of stranded) {
+        try {
+          await this.unknownMarker(engineId);
+          logger.error(
+            "Repaired stranded RUNNING bots of an offline engine",
+            undefined,
+            { engineId }
+          );
+        } catch (error) {
+          logger.error(
+            "Failed to repair stranded RUNNING bots of an offline engine",
+            undefined,
+            {
+              engineId,
+              error: error instanceof Error ? error.message : String(error),
+            }
+          );
+        }
+      }
+    } catch (error) {
+      logger.error("Stranded-engine repair query failed", undefined, {
+        error: error instanceof Error ? error.message : String(error),
+      });
     }
 
     // Prune dead rows past retention (ghost cleanup). Failures here must not
