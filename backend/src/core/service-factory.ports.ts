@@ -42,3 +42,20 @@ export interface ServiceFactoryDeps {
   healthService: HealthService;
   engineManager: EngineManager;
 }
+
+/**
+ * Configure the process-wide factory with services composed by the container.
+ */
+export function setServiceFactoryDeps(deps: ServiceFactoryDeps): void {
+  // Runtime import is safe: service-factory imports this module type-only.
+  getFactory().setDeps(deps);
+}
+
+/**
+ * Clear singleton dependencies between tests.
+ */
+export function resetServiceFactoryDepsForTests(): void {
+  getFactory().resetDepsForTests();
+}
+
+import { getServiceFactory as getFactory } from "./service-factory";
