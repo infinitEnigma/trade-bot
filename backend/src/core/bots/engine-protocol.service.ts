@@ -18,14 +18,12 @@ import {
   BotCommandPayload,
   BotCommandType,
   BotEvent,
+  EngineCommand,
+  EngineEvent,
   ProtocolMessage,
   createBotCommand,
   isBotEvent,
 } from "@trade-bot/shared";
-import {
-  RedisStreamOperations,
-  RedisConnectionManager,
-} from "../../infrastructure/cache/redis";
 import { redisLogger as logger } from "../../core/logging/context-aware-logger.service";
 
 // ===========================================
@@ -64,10 +62,111 @@ export const PENDING_POISON_MAX_DELIVERIES = Number(
   process.env.PENDING_POISON_MAX_DELIVERIES ?? 10
 );
 
-export interface EngineProtocolServiceDependencies {
-  streamOperations?: RedisStreamOperations;
-  connectionManager?: RedisConnectionManager;
+/**
+ * Wire shapes rebuilt from `infrastructure/cache/redis/{streams,connection-manager}.ts`
+ * using shared protocol types, so core never imports the concrete Redis classes.
+ * The concrete adapters stay structurally assignable to these ports.
+ */
+export interface EngineProtocolStreamMessage {
+  id: string;
+  data: ProtocolMessage<unknown> | EngineCommand | EngineEvent;
+}
+
+export interface EngineProtocolReadOptions {
+  block?: number;
+  count?: number;
+  consumerGroup?: string;
   consumerName?: string;
+}
+
+export interface EngineProtocolPendingInsight {
+  pendingTotal: number;
+  stuckCount: number;
+  oldestStuckIdleMs: number;
+  maxDeliveries: number;
+  poisonIds: string[];
+}
+
+/** Port: Redis connection lifecycle. Implemented by `RedisConnectionManager`. */
+export interface IEngineProtocolRedisConnection {
+  connect(): Promise<void>;
+}
+
+/** Port: Redis stream operations. Implemented by `RedisStreamOperations`. */
+export interface IEngineProtocolRedisStreams {
+  publish(
+    stream: string,
+    message: ProtocolMessage<unknown> | EngineCommand | EngineEvent
+  ): Promise<{ success: boolean; id?: string; error?: string }>;
+  read(
+    stream: string,
+    options?: EngineProtocolReadOptions
+  ): Promise<{
+    success: boolean;
+    messages?: EngineProtocolStreamMessage[];
+    error?: string;
+  }>;
+  ack(
+    stream: string,
+    consumerGroup: string,
+    messageIds: string | string[]
+  ): Promise<{ success: boolean; count?: number; error?: string }>;
+  claimPending(
+    stream: string,
+    consumerGroup: string,
+    consumerName: string,
+    minIdleMs: number,
+    count?: number
+  ): Promise<{
+    success: boolean;
+    messages?: EngineProtocolStreamMessage[];
+    error?: string;
+  }>;
+  getPendingInsight(
+    stream: string,
+    consumerGroup: string,
+    options: {
+      stuckThresholdMs: number;
+      poisonThreshold: number;
+      maxScan?: number;
+    }
+  ): Promise<EngineProtocolPendingInsight>;
+  getPendingDeliveries(
+    stream: string,
+    consumerGroup: string,
+    messageId: string
+  ): Promise<number>;
+  isMessageProcessed(scope: string, messageId: string): Promise<boolean>;
+  markMessageProcessed(
+    scope: string,
+    messageId: string,
+    ttlSeconds?: number
+  ): Promise<boolean>;
+  createConsumerGroup(
+    stream: string,
+    consumerGroup: string,
+    startId?: string
+  ): Promise<{ success: boolean; error?: string }>;
+}
+
+export interface EngineProtocolServiceDependencies {
+  streamOperations?: IEngineProtocolRedisStreams;
+  connectionManager?: IEngineProtocolRedisConnection;
+  consumerName?: string;
+}
+
+/**
+ * Module-level Redis deps the no-arg singleton uses by default. Wired at
+ * startup (index.ts `setEngineProtocolRedisDeps`, BEFORE `start()` is called);
+ * core never constructs the concrete adapters itself.
+ */
+let defaultRedisDeps: EngineProtocolServiceDependencies = {};
+
+/** Startup wiring for the engine-protocol Redis ports. */
+export function setEngineProtocolRedisDeps(
+  deps: EngineProtocolServiceDependencies
+): void {
+  defaultRedisDeps = deps;
 }
 
 export interface SendCommandResult {
@@ -87,8 +186,7 @@ export type BotEventHandler = (event: BotEvent) => Promise<void> | void;
  * BotLifecycleService; this class knows nothing about it.
  */
 export class EngineProtocolService {
-  private streamOperations: RedisStreamOperations;
-  private connectionManager: RedisConnectionManager;
+  private readonly deps: EngineProtocolServiceDependencies;
   private consumerName: string;
   private eventHandler: BotEventHandler | null = null;
   private isListening = false;
@@ -98,12 +196,35 @@ export class EngineProtocolService {
   private readonly dedupScope = "backend-engine-events";
 
   constructor(deps: EngineProtocolServiceDependencies = {}) {
-    this.connectionManager =
-      deps.connectionManager ?? new RedisConnectionManager();
-    this.streamOperations =
-      deps.streamOperations ??
-      new RedisStreamOperations(this.connectionManager);
+    this.deps = deps;
     this.consumerName = deps.consumerName ?? "backend-consumer";
+  }
+
+  /**
+   * Fail-fast accessor for the connection port: instance deps first, then the
+   * module-level defaults wired at startup. An unwired port must never no-op.
+   */
+  private get connectionManager(): IEngineProtocolRedisConnection {
+    const impl =
+      this.deps.connectionManager ?? defaultRedisDeps.connectionManager;
+    if (!impl) {
+      throw new Error(
+        "Engine protocol Redis deps not wired — call setEngineProtocolRedisDeps() at startup"
+      );
+    }
+    return impl;
+  }
+
+  /** Fail-fast accessor for the stream port (same wiring as above). */
+  private get streamOperations(): IEngineProtocolRedisStreams {
+    const impl =
+      this.deps.streamOperations ?? defaultRedisDeps.streamOperations;
+    if (!impl) {
+      throw new Error(
+        "Engine protocol Redis deps not wired — call setEngineProtocolRedisDeps() at startup"
+      );
+    }
+    return impl;
   }
 
   // ===========================================

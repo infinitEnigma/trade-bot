@@ -56,7 +56,12 @@ import { Server } from "socket.io";
 
 // Import logger first before any other code
 import { contextLogger as logger } from "./core/logging";
-import { engineProtocolService } from "./core/bots/engine-protocol.service";
+import {
+  engineProtocolService,
+  setEngineProtocolRedisDeps,
+} from "./core/bots/engine-protocol.service";
+import { RedisConnectionManager } from "./infrastructure/cache/redis/connection-manager";
+import { RedisStreamOperations } from "./infrastructure/cache/redis/streams";
 import { botLifecycleService } from "./core/bots/bot-lifecycle.service";
 import { lifecycleReconciliationService } from "./core/bots/lifecycle-reconciliation.service";
 import { setStrategyBadgeWriter } from "./core/bots/lifecycle/strategy-active-sync";
@@ -528,6 +533,18 @@ export const startServer = (): Promise<typeof httpServer> => {
       // `existingExposure + pendingRunNotional + incoming ≤ balance × leverage`.
       // Unwired → the gate fails closed (503), never admits an unbounded notional.
       botLifecycleService.setSessionCapProvider(createSessionCapProvider());
+      // Wire the engine-protocol Redis ports (concrete adapters live in
+      // infrastructure; core only sees the ports). A dedicated connection
+      // manager + bound stream ops preserve the prior behavior. Must run
+      // BEFORE engineProtocolService.start() so the fail-fast accessors
+      // resolve (Arch-2).
+      const engineProtocolConnectionManager = new RedisConnectionManager();
+      setEngineProtocolRedisDeps({
+        connectionManager: engineProtocolConnectionManager,
+        streamOperations: new RedisStreamOperations(
+          engineProtocolConnectionManager
+        ),
+      });
       engineProtocolService
         .start(event => botLifecycleService.handleEngineEvent(event))
         .then(() => logger.info("🔌 Engine protocol listener started"))
