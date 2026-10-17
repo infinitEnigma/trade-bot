@@ -42,35 +42,3 @@ export interface ServiceFactoryDeps {
   healthService: HealthService;
   engineManager: EngineManager;
 }
-
-/**
- * Configure the process-wide ServiceFactory singleton with composed services.
- * Implemented in service-factory.ts to avoid introducing a second singleton.
- */
-export function setServiceFactoryDeps(deps: ServiceFactoryDeps): void {
-  // Lazy require is intentionally avoided; the factory module owns this forwarder.
-  setDepsForwarder(deps);
-}
-
-/**
- * Test-only reset for deterministic singleton isolation.
- */
-export function resetServiceFactoryDepsForTests(): void {
-  resetDepsForwarder();
-}
-
-// The factory module registers the forwarders once during module initialization.
-let setDepsForwarder: (deps: ServiceFactoryDeps) => void = () => {
-  throw new Error("ServiceFactory dependency forwarder has not been registered");
-};
-let resetDepsForwarder: () => void = () => {
-  throw new Error("ServiceFactory dependency reset forwarder has not been registered");
-};
-
-export function registerServiceFactoryDepsForwarders(
-  setDeps: (deps: ServiceFactoryDeps) => void,
-  resetDeps: () => void
-): void {
-  setDepsForwarder = setDeps;
-  resetDepsForwarder = resetDeps;
-}
