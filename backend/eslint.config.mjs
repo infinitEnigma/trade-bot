@@ -17,9 +17,10 @@ export default tseslint.config(
   // =========================================================================
   // Architecture boundary enforcement (external review P2, 2026-10-15)
   //
-  // Core (application domain) must never import concrete PostgreSQL or
-  // repository adapters — it depends only on ports. Infrastructure implements
-  // core ports; the dependency arrow never points inward.
+  // Core (application domain) must never import concrete infrastructure — it
+  // depends only on ports. Infrastructure implements core ports; the dependency
+  // arrow never points inward. This covers PostgreSQL, repository adapters, and
+  // every other infrastructure module (cache, security, external clients, etc.).
   //
   // HTTP routes must never orchestrate repository/pool calls directly — that
   // belongs in application use cases wired in server/route-config.ts.
@@ -45,14 +46,37 @@ export default tseslint.config(
               message:
                 "Core must not import repository adapters. Inject a port; implement it in infrastructure/adapters/repositories (review P1).",
             },
+            {
+              group: ["**/infrastructure/**"],
+              message:
+                "Core must not import infrastructure. Depend on a port defined in core/; the concrete implementation lives in infrastructure/ and is wired at startup.",
+            },
           ],
         },
       ],
     },
   },
-  // (2026-10-16, review P3 Phase 1): the former core allowlist entries
-  // (service-factory.ts, wallet-proof.service.ts) were cleared — both now go
-  // through the DI container / setWalletProofDeps. Core has NO exceptions.
+  // (2026-10-17, review Arch-2): existing debt — core files still importing
+  // infrastructure concretely. Temporary exceptions; remove each entry as the
+  // file is ported to ports (see docs/instructions/current_issues.md item 8).
+  // Remaining debt: engine-protocol, engine-manager, exchange-account,
+  // wallet-proof, service-factory (service-factory deferred to a later phase).
+  {
+    files: [
+      "src/core/bots/engine-protocol.service.ts",
+      "src/core/strategies/engine-manager.service.pure.ts",
+      "src/core/user/exchange-account.service.ts",
+      "src/core/wallet/wallet-proof.service.ts",
+      "src/core/service-factory.ts",
+    ],
+    rules: {
+      "no-restricted-imports": "off",
+    },
+  },
+  // (2026-10-16, review P3 Phase 1): service-factory.ts and
+  // wallet-proof.service.ts were previously cleared of their P3 core
+  // allowlist entries; they are now re-listed above as temporary Arch-2
+  // exceptions pending the broader infra porting.
   {
     files: ["src/interfaces/http/**/*.ts"],
     rules: {
@@ -74,7 +98,7 @@ export default tseslint.config(
         },
       ],
     },
-  },
+  }
   // Existing debt: HTTP routes still importing repository adapters / pool.
   // (2026-10-16, review P3 Phase 2): market-cache.ts, market-portfolio.routes.ts,
   // wallet/balance.ts and system/health.ts were cleared — all four now go

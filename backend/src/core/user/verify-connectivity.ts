@@ -12,7 +12,18 @@
  */
 
 import type { ConnectExchangeAccountRequest } from "@trade-bot/shared";
-import type { LighterAccountVerifier } from "../../infrastructure/external/exchange-accounts/lighter-verifier";
+
+/** Port: Lighter account verification. Implemented by `LighterAccountVerifier`
+ * in `infrastructure/external/exchange-accounts/lighter-verifier`; core never
+ * imports that concrete class. */
+export interface ILighterAccountVerifier {
+  verify(credentials: {
+    accountIndex: number;
+    apiKeyIndex: number;
+    privateKey: string;
+    environment: string;
+  }): Promise<{ verified: boolean; error?: string }>;
+}
 
 export interface KodiakConnectivityProbe {
   testConnectivity(input: {
@@ -24,7 +35,7 @@ export interface KodiakConnectivityProbe {
 
 export interface VerifyConnectivityDeps {
   kodiakIntegrationService: KodiakConnectivityProbe;
-  lighterVerifier: Pick<LighterAccountVerifier, "verify">;
+  lighterVerifier: ILighterAccountVerifier;
 }
 
 export type VerifyConnectivity = (
