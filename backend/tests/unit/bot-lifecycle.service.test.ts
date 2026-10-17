@@ -1470,13 +1470,18 @@ describe("createAndStart venue symbol gate (L20)", () => {
   };
 
   /** Route each query by prefix: strategy/insert lookups + the start() flow. */
-  const mockFlow = (symbol: string | null, venue?: { exchange: string | null; environment: string | null }) =>
+  const mockFlow = (
+    symbol: string | null,
+    venue?: { exchange: string | null; environment: string | null }
+  ) =>
     mockQuery.mockImplementation((sql: string) => {
       const text = String(sql);
       if (text.startsWith("SELECT id FROM strategies")) {
         return Promise.resolve({ rows: [{ id: "strat-1" }] });
       }
-      if (text.startsWith("SELECT exchange, environment, config FROM strategies")) {
+      if (
+        text.startsWith("SELECT exchange, environment, config FROM strategies")
+      ) {
         return Promise.resolve({
           rows: [
             {
@@ -1850,7 +1855,9 @@ describe("BotLifecycleService F1 notional admission", () => {
       if (text.startsWith("SELECT id FROM strategies")) {
         return Promise.resolve({ rows: [{ id: "strat-2" }] });
       }
-      if (text.startsWith("SELECT exchange, environment, config FROM strategies")) {
+      if (
+        text.startsWith("SELECT exchange, environment, config FROM strategies")
+      ) {
         return Promise.resolve({
           rows: [{ exchange: null, environment: null, config: {} }],
         });
@@ -1891,7 +1898,9 @@ describe("BotLifecycleService F1 notional admission", () => {
       if (text.startsWith("SELECT config FROM strategies")) {
         return Promise.resolve({ rows: [{ config: {} }] });
       }
-      if (text.startsWith("SELECT exchange, environment, config FROM strategies")) {
+      if (
+        text.startsWith("SELECT exchange, environment, config FROM strategies")
+      ) {
         return Promise.resolve({
           rows: [{ exchange: null, environment: null, config: {} }],
         });
@@ -1993,7 +2002,9 @@ describe("BotLifecycleService F1 notional admission", () => {
       if (text.startsWith("SELECT id FROM strategies")) {
         return Promise.resolve({ rows: [{ id: "strat-2" }] });
       }
-      if (text.startsWith("SELECT exchange, environment, config FROM strategies")) {
+      if (
+        text.startsWith("SELECT exchange, environment, config FROM strategies")
+      ) {
         return Promise.resolve({
           rows: [
             {
@@ -2063,7 +2074,9 @@ describe("BotLifecycleService F1 notional admission", () => {
       if (text.startsWith("SELECT id FROM strategies")) {
         return Promise.resolve({ rows: [{ id: "strat-2" }] });
       }
-      if (text.startsWith("SELECT exchange, environment, config FROM strategies")) {
+      if (
+        text.startsWith("SELECT exchange, environment, config FROM strategies")
+      ) {
         return Promise.resolve({
           rows: [{ exchange: null, environment: null, config: {} }],
         });
@@ -2103,7 +2116,9 @@ describe("BotLifecycleService F1 notional admission", () => {
       if (text.startsWith("SELECT config FROM strategies")) {
         return Promise.resolve({ rows: [{ config: {} }] });
       }
-      if (text.startsWith("SELECT exchange, environment, config FROM strategies")) {
+      if (
+        text.startsWith("SELECT exchange, environment, config FROM strategies")
+      ) {
         return Promise.resolve({
           rows: [{ exchange: null, environment: null, config: {} }],
         });
@@ -2191,7 +2206,9 @@ describe("BotLifecycleService F1 notional admission", () => {
       if (text.startsWith("SELECT id FROM strategies")) {
         return Promise.resolve({ rows: [{ id: "strat-2" }] });
       }
-      if (text.startsWith("SELECT exchange, environment, config FROM strategies")) {
+      if (
+        text.startsWith("SELECT exchange, environment, config FROM strategies")
+      ) {
         return Promise.resolve({
           rows: [{ exchange: null, environment: null, config: {} }],
         });
@@ -2255,7 +2272,9 @@ describe("BotLifecycleService F1 notional admission", () => {
                 });
               }
               if (t.includes("SUM(notional_amount)")) {
-                return Promise.resolve({ rows: [{ total: String(attachedTotal) }] });
+                return Promise.resolve({
+                  rows: [{ total: String(attachedTotal) }],
+                });
               }
               if (t.includes("FROM strategy_runs")) {
                 return Promise.resolve({ rows: [] });
@@ -2277,14 +2296,12 @@ describe("BotLifecycleService F1 notional admission", () => {
       }
     );
 
-    mockAccountAdapter.getAccountWithSecret.mockResolvedValue(
-      {
-        id: "acc-1",
-        exchange: "kodiak",
-        environment: "mainnet",
-        status: "ACTIVE",
-      } as never
-    );
+    mockAccountAdapter.getAccountWithSecret.mockResolvedValue({
+      id: "acc-1",
+      exchange: "kodiak",
+      environment: "mainnet",
+      status: "ACTIVE",
+    } as never);
 
     mockQuery.mockImplementation((sql: string, params?: unknown[]) => {
       const text = String(sql);
@@ -2343,5 +2360,443 @@ describe("BotLifecycleService F1 notional admission", () => {
         })
     );
   });
-});
 
+  // ===========================================
+  // ACCOUNT-CAP CONCURRENCY AUDIT (Arch-3, review 2026-10-17)
+  // ===========================================
+
+  describe("account-cap concurrency audit (Arch-3)", () => {
+    let service: BotLifecycleService;
+
+    const kodiakAccount = {
+      id: "acc-1",
+      userId: "user-1",
+      exchange: "kodiak",
+      environment: "testnet",
+      accountRef: "kodiak-account-id",
+      status: "ACTIVE",
+      verifiedAt: null,
+      lastVerifiedAt: null,
+      meta: {},
+      createdAt: new Date("2026-01-01T00:00:00.000Z"),
+      updatedAt: new Date("2026-01-02T00:00:00.000Z"),
+      credentialsEncrypted: "sealed",
+      encryptionVersion: 3,
+    };
+
+    /** Restore the module-level routing transaction mock (see jest.mock above). */
+    const restoreDefaultTransaction = () =>
+      mockTransaction.mockImplementation(
+        async (cb: (client: { query: unknown }) => unknown) =>
+          cb({
+            query: (text: string, params?: unknown[]) =>
+              mockQuery(text, params),
+          })
+      );
+
+    beforeEach(() => {
+      jest.clearAllMocks();
+      service = createWiredService({
+        sendCommand: jest.fn().mockResolvedValue({
+          success: true,
+          messageId: "m1",
+          correlationId: "c1",
+        }),
+      } as unknown as EngineProtocolService);
+      service.setAuthorityChecker(async () => true);
+      mockAccountAdapter.getAccountWithSecret.mockResolvedValue(kodiakAccount);
+    });
+
+    afterEach(() => {
+      restoreDefaultTransaction();
+      jest.restoreAllMocks();
+    });
+
+    it("closes the concurrent createAndStart race: only one of two simultaneous session creates is admitted", async () => {
+      // Two POST /start calls fire together on the SAME account with DIFFERENT
+      // strategies — the one interleaving the one-live-session-per-account
+      // guard cannot catch, because neither tx has committed its STOPPED
+      // session row when the other reads. Cap $1,000, venue exposure $0, each
+      // boot run $600: both admitted = $1,200 of requested notional against a
+      // $1,000 cap. The account-level `exchange_accounts FOR UPDATE` lock plus
+      // the account-scoped pending re-read under it — the attach-path protocol
+      // proven by the two concurrent-attach tests above (40e86fa) — must admit
+      // exactly one and roll the loser back whole (no orphan session either).
+      //
+      // Arch-3 audit finding: before this test, createAndStart pre-checked the
+      // cap OUTSIDE the tx and attached via attachRunTx, which locks only the
+      // session row it just inserted — a no-op for cross-session concurrency.
+      service.setSessionCapProvider({
+        getAdmissionSnapshot: async () => ({ cap: 1000, existingExposure: 0 }),
+      });
+
+      // Commit-visible state: reads (pool AND in-tx) see only rows merged at
+      // COMMIT; an uncommitted concurrent tx is invisible — READ COMMITTED.
+      const committed = {
+        accountPending: 0, // Σ notional over ALL the account's pending runs
+        pendingByBot: new Map<string, number>(), // per-session view (legacy grain)
+        createdSessions: 0,
+      };
+      let botSeq = 0;
+      let runSeq = 0;
+
+      interface TxState {
+        accountDelta: number;
+        botDelta: Map<string, number>;
+        sessions: number;
+      }
+
+      // route(): one honest visibility model for BOTH channels — pool reads
+      // (tx = null) see committed state only; in-tx reads additionally see the
+      // tx's own buffered writes.
+      const route = (
+        text: string,
+        params: unknown[],
+        tx: TxState | null
+      ): { rows: Record<string, unknown>[]; rowCount?: number } => {
+        if (text.startsWith("SELECT id FROM strategies")) {
+          return { rows: [{ id: params[0] }] };
+        }
+        if (
+          text.startsWith(
+            "SELECT exchange, environment, config FROM strategies"
+          )
+        ) {
+          // Unbound legacy row: no venue gate, no symbol catalog fetch.
+          return {
+            rows: [{ exchange: null, environment: null, config: {} }],
+          };
+        }
+        if (text.startsWith("SELECT config FROM strategies")) {
+          return { rows: [{ config: {} }] };
+        }
+        if (text.startsWith("SELECT id FROM bot_instances WHERE id")) {
+          // FOR UPDATE row lock — the row exists (own uncommitted insert).
+          return { rows: [{ id: params[0] }], rowCount: 1 };
+        }
+        if (
+          text.startsWith(
+            "SELECT id FROM bot_instances WHERE exchange_account_id"
+          )
+        ) {
+          // Live-or-parked session guard (findLiveSessionForAccount[Tx]). A
+          // freshly inserted STOPPED session is not live, so an uncommitted
+          // peer insert is BOTH invisible and predicate-exempt — this guard
+          // alone never closed the create race.
+          return { rows: [] };
+        }
+        if (text.startsWith("INSERT INTO bot_instances")) {
+          if (tx) tx.sessions += 1;
+          return { rows: [{ id: `bot-${++botSeq}` }], rowCount: 1 };
+        }
+        if (text.includes("SUM(notional_amount)")) {
+          if (text.includes("exchange_account_id")) {
+            // Account-grain sum (attach guard / fixed start gate): committed
+            // total plus the calling tx's own uncommitted delta.
+            return {
+              rows: [
+                {
+                  total: String(
+                    committed.accountPending + (tx?.accountDelta ?? 0)
+                  ),
+                },
+              ],
+            };
+          }
+          // Legacy bot-grain sum (params[0] = botId).
+          return {
+            rows: [
+              {
+                total: String(
+                  committed.pendingByBot.get(String(params[0])) ?? 0
+                ),
+              },
+            ],
+          };
+        }
+        if (text.startsWith("INSERT INTO strategy_runs")) {
+          const notional = Number(params[3]);
+          if (tx) {
+            tx.accountDelta += notional;
+            const botId = String(params[0]);
+            tx.botDelta.set(botId, (tx.botDelta.get(botId) ?? 0) + notional);
+          }
+          return { rows: [{ id: `run-${++runSeq}` }], rowCount: 1 };
+        }
+        if (text.includes("FROM strategy_runs")) {
+          // Live-run guard + getRunsForBot fan-out: nothing live yet.
+          return { rows: [] };
+        }
+        if (text.startsWith("SELECT id, user_id")) {
+          // getOwnedBot on the delegated start() leg.
+          return {
+            rows: [
+              {
+                id: params[0],
+                user_id: "user-1",
+                status: "STOPPED",
+                desired_state: "STOPPED",
+                actual_state: "STOPPED",
+                exchange_account_id: "acc-1",
+              },
+            ],
+          };
+        }
+        return { rows: [], rowCount: 1 };
+      };
+
+      mockQuery.mockImplementation((sql: string, params: unknown[] = []) =>
+        Promise.resolve(route(String(sql), params, null))
+      );
+
+      // Account-row lock chain: a tx that issues `exchange_accounts FOR UPDATE`
+      // waits for the current holder's tx to end before proceeding. With no
+      // such lock (the bug) both txs run fully concurrently — exactly the race.
+      let accountLock: Promise<unknown> = Promise.resolve();
+      mockTransaction.mockImplementation(
+        async (cb: (client: { query: unknown }) => unknown) => {
+          const tx: TxState = {
+            accountDelta: 0,
+            botDelta: new Map(),
+            sessions: 0,
+          };
+          let holdsAccountLock = false;
+          let releaseLock: () => void = () => {};
+          const client = {
+            query: (text: string, params: unknown[] = []) => {
+              const t = String(text);
+              if (
+                t.startsWith("SELECT id FROM exchange_accounts") &&
+                t.includes("FOR UPDATE")
+              ) {
+                // Postgres semantics: re-locking a row your own tx already
+                // locks is a no-op — model it, or the guard's second issuance
+                // of the lock would self-deadlock.
+                if (holdsAccountLock) {
+                  return Promise.resolve({
+                    rows: [{ id: params[0] }],
+                    rowCount: 1,
+                  });
+                }
+                holdsAccountLock = true;
+                const myTurn = accountLock;
+                accountLock = new Promise<void>(res => {
+                  releaseLock = res;
+                });
+                return myTurn.then(() => ({
+                  rows: [{ id: params[0] }],
+                  rowCount: 1,
+                }));
+              }
+              return Promise.resolve(route(t, params, tx));
+            },
+          };
+          try {
+            const result = await cb(client);
+            // COMMIT: merge the tx's buffered writes into visible state.
+            committed.accountPending += tx.accountDelta;
+            for (const [botId, n] of tx.botDelta) {
+              committed.pendingByBot.set(
+                botId,
+                (committed.pendingByBot.get(botId) ?? 0) + n
+              );
+            }
+            committed.createdSessions += tx.sessions;
+            return result;
+          } finally {
+            releaseLock();
+          }
+        }
+      );
+
+      const results = await Promise.allSettled([
+        service.createAndStart("user-1", "strat-1", 600, "acc-1"),
+        service.createAndStart("user-1", "strat-2", 600, "acc-1"),
+      ]);
+
+      const fulfilled = results.filter(r => r.status === "fulfilled");
+      const rejected = results.filter(
+        r => r.status === "rejected"
+      ) as PromiseRejectedResult[];
+      expect(fulfilled).toHaveLength(1);
+      expect(rejected).toHaveLength(1);
+      expect(rejected[0].reason).toMatchObject({ statusCode: 409 });
+      // Only one $600 boot run landed against the $1,000 cap…
+      expect(committed.accountPending).toBe(600);
+      // …and the loser rolled back whole: no orphan session row either.
+      expect(committed.createdSessions).toBe(1);
+    });
+
+    it("re-checks the live session inside the tx, not only on the pool (Arch-3)", async () => {
+      // The in-tx duplicate-session guard must read on the caller's tx client:
+      // a pool read runs on a different connection, cannot see a concurrent
+      // tx's uncommitted session row, and holds no lock. Phase A's pre-tx
+      // early-out legitimately stays on the pool (it is only an optimization),
+      // so the pool sees exactly ONE guard read and the tx exactly ONE — the
+      // authoritative one. Red (guard on the pool twice): tx reads 0, pool 2.
+      service.setSessionCapProvider({
+        getAdmissionSnapshot: async () => ({
+          cap: Number.MAX_SAFE_INTEGER,
+          existingExposure: 0,
+        }),
+      });
+      jest
+        .spyOn(strategyRepositoryAdapter, "toggleStrategy")
+        .mockResolvedValue(undefined);
+
+      const isSessionGuard = (t: string) =>
+        t.includes("FROM bot_instances") &&
+        t.includes("WHERE exchange_account_id");
+      // Pool guard reads are counted via mockQuery.mock.calls below; the tx
+      // channel is captured here directly by the transaction client mock.
+      const txQueries: string[] = [];
+      mockQuery.mockImplementation((sql: string, params: unknown[] = []) =>
+        Promise.resolve(routeGuardProbe(String(sql), params, () => undefined))
+      );
+      mockTransaction.mockImplementation(
+        async (cb: (client: { query: unknown }) => unknown) => {
+          const client = {
+            query: (text: string, params: unknown[] = []) => {
+              txQueries.push(String(text));
+              return Promise.resolve(
+                routeGuardProbe(String(text), params, () => undefined)
+              );
+            },
+          };
+          return cb(client);
+        }
+      );
+
+      /** Minimal routing for a single, race-free createAndStart call. */
+      function routeGuardProbe(
+        text: string,
+        params: unknown[],
+        record: (sql: string) => void
+      ): { rows: Record<string, unknown>[]; rowCount?: number } {
+        if (isSessionGuard(text)) record(text);
+        if (text.startsWith("SELECT id FROM strategies")) {
+          return { rows: [{ id: params[0] }] };
+        }
+        if (
+          text.startsWith(
+            "SELECT exchange, environment, config FROM strategies"
+          )
+        ) {
+          return { rows: [{ exchange: null, environment: null, config: {} }] };
+        }
+        if (text.startsWith("SELECT config FROM strategies")) {
+          return { rows: [{ config: {} }] };
+        }
+        if (text.startsWith("INSERT INTO bot_instances")) {
+          return { rows: [{ id: "bot-1" }], rowCount: 1 };
+        }
+        if (text.startsWith("SELECT id FROM bot_instances WHERE id")) {
+          return { rows: [{ id: params[0] }], rowCount: 1 };
+        }
+        if (text.startsWith("SELECT id, user_id")) {
+          return {
+            rows: [
+              {
+                id: params[0],
+                user_id: "user-1",
+                status: "STOPPED",
+                desired_state: "STOPPED",
+                actual_state: "STOPPED",
+                exchange_account_id: "acc-1",
+              },
+            ],
+          };
+        }
+        if (isSessionGuard(text)) {
+          return { rows: [] };
+        }
+        if (text.includes("SUM(notional_amount)")) {
+          return { rows: [{ total: "0" }] };
+        }
+        if (text.startsWith("INSERT INTO strategy_runs")) {
+          return { rows: [{ id: "run-1" }], rowCount: 1 };
+        }
+        if (text.includes("FROM strategy_runs")) {
+          return { rows: [] };
+        }
+        if (text.startsWith("SELECT id, user_id")) {
+          return {
+            rows: [
+              {
+                id: params[0],
+                user_id: "user-1",
+                status: "STOPPED",
+                desired_state: "STOPPED",
+                actual_state: "STOPPED",
+                exchange_account_id: "acc-1",
+              },
+            ],
+          };
+        }
+        return { rows: [], rowCount: 1 };
+      }
+
+      await service.createAndStart("user-1", "strat-1", 600, "acc-1");
+
+      const poolGuardReads = mockQuery.mock.calls.filter(([sql]) =>
+        isSessionGuard(String(sql))
+      );
+      const txGuardReads = txQueries.filter(sql => isSessionGuard(sql));
+      expect(txGuardReads).toHaveLength(1);
+      expect(poolGuardReads).toHaveLength(1);
+    });
+
+    it("start() re-checks pending run notional at ACCOUNT grain (Arch-3)", async () => {
+      // The start/resume gate re-checks `exposure + pending + incoming <= cap`
+      // — the invariant is ACCOUNT-scoped, so the pending sum must be too.
+      // A bot-grain sum here (the pre-audit shape) silently drops the pending
+      // runs of every OTHER session bound to the same account, which is
+      // exactly the sum the attach guard enforces.
+      service.setSessionCapProvider({
+        getAdmissionSnapshot: async () => ({ cap: 5000, existingExposure: 0 }),
+      });
+      const toggle = jest
+        .spyOn(strategyRepositoryAdapter, "toggleStrategy")
+        .mockResolvedValue(undefined);
+      mockQuery.mockImplementation((sql: string) => {
+        const text = String(sql);
+        if (text.startsWith("SELECT id, user_id")) {
+          // UNKNOWN (parked) so start() runs the admission gate rather than
+          // the already-RUNNING short-circuit — the resume path.
+          return Promise.resolve({
+            rows: [
+              {
+                id: "bot-1",
+                user_id: "user-1",
+                status: "RUNNING",
+                desired_state: "RUNNING",
+                actual_state: "UNKNOWN",
+                exchange_account_id: "acc-1",
+              },
+            ],
+          });
+        }
+        if (text.includes("SUM(notional_amount)")) {
+          return Promise.resolve({ rows: [{ total: "1000" }] });
+        }
+        if (text.includes("FROM strategy_runs")) {
+          return Promise.resolve({ rows: [] });
+        }
+        return okResult();
+      });
+
+      await service.start("bot-1", "user-1");
+
+      const sums = mockQuery.mock.calls.filter(([sql]) =>
+        String(sql).includes("SUM(notional_amount)")
+      );
+      expect(sums).toHaveLength(1);
+      const [sumSql, sumParams] = sums[0] as [string, unknown[]];
+      // Account grain: join the session rows and filter by the bound account.
+      expect(String(sumSql)).toContain("JOIN bot_instances");
+      expect(String(sumSql)).toContain("exchange_account_id");
+      expect(sumParams).toEqual(["acc-1"]);
+      toggle.mockRestore();
+    });
+  });
+});

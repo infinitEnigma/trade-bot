@@ -138,6 +138,16 @@ export interface ILifecycleRepository {
     tx: LifecycleTx,
     strategyId: string
   ): Promise<StrategyVenueRow | null>;
+  /**
+   * Lock the exchange_accounts row (FOR UPDATE) inside the caller's tx.
+   *
+   * The account is the cap grain, so every path that admits a run must
+   * serialize here BEFORE it reads the live-session guard or the pending
+   * sum. Lock order everywhere: strategies → exchange_accounts →
+   * bot_instances (the session row). Re-issuing this lock later in the
+   * same tx (e.g. attachRunWithCapGuardTx) is an idempotent no-op.
+   */
+  lockAccountRowTx(tx: LifecycleTx, exchangeAccountId: string): Promise<void>;
   findLiveRunForStrategyTx(
     tx: LifecycleTx,
     strategyId: string
@@ -156,17 +166,14 @@ export interface ILifecycleRepository {
     exchangeAccountId: string
   ): Promise<string>;
 
-  attachRunTx(
-    tx: LifecycleTx,
-    botId: string,
-    strategyId: string,
-    config: Record<string, unknown>,
-    notionalAmount: number
-  ): Promise<string>;
   /**
-   * Cap-guarded attach with ACCOUNT-level serialization (F1).
+   * THE single run-insert path (Arch-3): cap-guarded attach with
+   * ACCOUNT-level serialization (F1). Both createAndStart (boot run) and
+   * attachStrategyRun funnel here — the unguarded attach twins
+   * (attachRun/attachRunTx/attachRunWithCapGuard) are removed so no path
+   * can insert a run outside the locking protocol.
    *
-   * Locks the exchange_accounts row (FOR UPDATE) so concurrent attaches on
+   * Locks the exchange_accounts row (FOR UPDATE) so concurrent admits on
    * different sessions bound to the same account serialize here, then
    * recalculates the pending run sum SCOPED TO THE ACCOUNT (all bots on the
    * account, not just this bot) before enforcing
@@ -196,27 +203,18 @@ export interface ILifecycleRepository {
   findLiveSessionForAccount(
     exchangeAccountId: string
   ): Promise<{ id: string } | null>;
-  attachRun(
-    botId: string,
-    strategyId: string,
-    config: Record<string, unknown>,
-    notionalAmount: number
-  ): Promise<string>;
-  attachRunWithCapGuard(
-    botId: string,
-    strategyId: string,
-    config: Record<string, unknown>,
-    notionalAmount: number,
-    cap: number,
-    existingExposure: number,
-    exchangeAccountId: string
-  ): Promise<string>;
   setRunState(
     runId: string,
     to: string,
     expectedFrom?: string,
     errorCode?: string | null
   ): Promise<boolean>;
-  sumPendingRunNotional(botId: string): Promise<number>;
+  /**
+   * Σ notional over the ACCOUNT's pending runs (STOPPED + STARTING) — the
+   * grain the cap invariant is stated at. Session-grain sums (the pre-Arch-3
+   * `sumPendingRunNotional(botId)`) drop the pending runs of every OTHER
+   * session on the account and are therefore not admission-safe.
+   */
+  sumPendingRunNotionalForAccount(exchangeAccountId: string): Promise<number>;
   detachRun(runId: string): Promise<boolean>;
 }

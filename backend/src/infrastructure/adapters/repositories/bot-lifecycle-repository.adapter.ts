@@ -497,11 +497,31 @@ export class BotLifecycleRepositoryAdapter implements ILifecycleRepository {
     const result = await client.query<{ id: string }>(
       `SELECT id FROM bot_instances
         WHERE exchange_account_id = $1
-          AND actual_state IN ('STARTING', 'RUNNING')
+          AND (
+            actual_state IN ('STARTING', 'RUNNING')
+            OR (desired_state = 'RUNNING' AND actual_state IN ('UNKNOWN', 'ERROR'))
+          )
         LIMIT 1`,
       [exchangeAccountId]
     );
     return result.rows[0] ?? null;
+  }
+
+  /**
+   * Lock the account row (FOR UPDATE) in the caller's tx — the serialization
+   * point for every run admit on this account (Arch-3). Idempotent within a
+   * tx: attachRunWithCapGuardTx re-issues it as a no-op after the caller has
+   * already taken it.
+   */
+  async lockAccountRowTx(
+    tx: LifecycleTx,
+    exchangeAccountId: string
+  ): Promise<void> {
+    const client = clientOf(tx);
+    await client.query(
+      `SELECT id FROM exchange_accounts WHERE id = $1 FOR UPDATE`,
+      [exchangeAccountId]
+    );
   }
 
   /**
@@ -689,137 +709,32 @@ export class BotLifecycleRepositoryAdapter implements ILifecycleRepository {
   }
 
   /**
-   * Attach a strategy to a session: snapshot its live config, size the run.
-   * The partial unique index refuses a strategy that is live elsewhere (409
-   * at the service layer maps the 23505).
-   *
-   * F1 (notional admission): the insert runs inside a transaction that first
-   * locks the session's `bot_instances` row (`FOR UPDATE`). Two concurrent
-   * `POST /runs` for the same session therefore serialize on that lock, so the
-   * service's aggregate-cap check (read just before this call) cannot be raced
-   * by a second attach that reads the same pre-insert sum. The boot attach in
-   * `createAndStart` predates the row, so the lock is a harmless no-op there.
-   */
-  async attachRun(
-    botId: string,
-    strategyId: string,
-    config: Record<string, unknown>,
-    notionalAmount: number
-  ): Promise<string> {
-    return transaction(async client => {
-      await client.query(
-        `SELECT id FROM bot_instances WHERE id = $1 FOR UPDATE`,
-        [botId]
-      );
-      const insertResult = await client.query<{ id: string }>(
-        `INSERT INTO strategy_runs
-                (bot_id, strategy_id, config_version, config, notional_amount, state)
-             VALUES ($1, $2, 1, $3, $4, 'STOPPED')
-             RETURNING id`,
-        [botId, strategyId, JSON.stringify(config), notionalAmount]
-      );
-      return insertResult.rows[0].id;
-    });
-  }
-
-  /**
-   * Boot attach via the caller's tx — locks the session row but never opens
-   * a nested transaction. The caller holds the strategy lock already.
-   */
-  async attachRunTx(
-    tx: LifecycleTx,
-    botId: string,
-    strategyId: string,
-    config: Record<string, unknown>,
-    notionalAmount: number
-  ): Promise<string> {
-    const client = clientOf(tx);
-    await client.query(
-      `SELECT id FROM bot_instances WHERE id = $1 FOR UPDATE`,
-      [botId]
-    );
-    const txInsert = await client.query<{ id: string }>(
-      `INSERT INTO strategy_runs
-                (bot_id, strategy_id, config_version, config, notional_amount, state)
-              VALUES ($1, $2, 1, $3, $4, 'STOPPED')
-              RETURNING id`,
-      [botId, strategyId, JSON.stringify(config), notionalAmount]
-    );
-    return txInsert.rows[0].id;
-  }
-
-  /**
-   * F1 notional admission — concurrency-safe attach (POST /runs), residual
-   * capacity (Model A).
+   * THE single run-insert path (Arch-3): F1 notional admission — cap-guarded
+   * attach with ACCOUNT-level serialization, residual capacity (Model A).
    *
    * The whole admission is one transaction so the check cannot be raced:
-   *   1. lock the session's `bot_instances` row (`FOR UPDATE`) — concurrent
-   *      attaches to the same session serialize here;
-   *   2. RECALCULATE the PENDING run sum (STOPPED + STARTING) while holding
-   *      that lock (a sum read before the lock can be stale by insert time);
-   *   3. enforce `existingExposure + pendingSum + notionalAmount <= cap`, else
+   *   1. lock the account's `exchange_accounts` row (`FOR UPDATE`) — ALL
+   *      admits bound to this account serialize here, across sessions;
+   *   2. lock the session's `bot_instances` row (`FOR UPDATE`) — belt and
+   *      braces for same-session races (redundant under 1, kept because the
+   *      session row is the bot's identity row in the tx);
+   *   3. RECALCULATE the PENDING run sum (STOPPED + STARTING) ACCOUNT-grain
+   *      while holding those locks (a sum read before the lock can be stale
+   *      by insert time);
+   *   4. enforce `existingExposure + pendingSum + notionalAmount <= cap`, else
    *      throw {@link RunNotionalCapExceededError} (rolls back — no run row);
-   *   4. insert the STOPPED run.
+   *   5. insert the STOPPED run.
    *
    * Live RUNNING runs are NOT in the pending sum — their filled notional is
    * already inside `existingExposure` (venue positions). `cap` and
    * `existingExposure` are resolved by the caller OUTSIDE this transaction (the
    * venue balance + positions calls must not hold a DB lock across network
    * I/O); only the pending sum is re-read authoritatively under the lock.
-   */
-  async attachRunWithCapGuard(
-    botId: string,
-    strategyId: string,
-    config: Record<string, unknown>,
-    notionalAmount: number,
-    cap: number,
-    existingExposure: number,
-    exchangeAccountId: string
-  ): Promise<string> {
-    return transaction(async client => {
-      // Serialize ALL attaches on this account (not just this session) so two
-      // bots bound to the same account cannot both pass on a stale pending sum.
-      await client.query(
-        `SELECT id FROM exchange_accounts WHERE id = $1 FOR UPDATE`,
-        [exchangeAccountId]
-      );
-      await client.query(
-        `SELECT id FROM bot_instances WHERE id = $1 FOR UPDATE`,
-        [botId]
-      );
-      const sumResult = await client.query<{ total: string | null }>(
-        `SELECT COALESCE(SUM(notional_amount), 0) AS total
-               FROM strategy_runs r
-               JOIN bot_instances b ON r.bot_id = b.id
-              WHERE b.exchange_account_id = $1
-                AND r.state IN ('STOPPED', 'STARTING')`,
-        [exchangeAccountId]
-      );
-      const pendingSum = Number(sumResult.rows[0]?.total ?? 0);
-      if (existingExposure + pendingSum + notionalAmount > cap) {
-        throw new RunNotionalCapExceededError(
-          existingExposure,
-          pendingSum,
-          notionalAmount,
-          cap
-        );
-      }
-      const insertResult = await client.query<{ id: string }>(
-        `INSERT INTO strategy_runs
-                (bot_id, strategy_id, config_version, config, notional_amount, state)
-             VALUES ($1, $2, 1, $3, $4, 'STOPPED')
-             RETURNING id`,
-        [botId, strategyId, JSON.stringify(config), notionalAmount]
-      );
-      return insertResult.rows[0].id;
-    });
-  }
-
-  /**
-   * Cap-guarded attach via the caller's tx — same checks as
-   * attachRunWithCapGuard but on the caller's client (026 locking protocol:
-   * strategy lock already held, no nested transaction). Pending sum is
-   * re-read under the session lock so concurrent attaches serialize.
+   *
+   * Via the caller's client (026 locking protocol: strategy lock already
+   * held, no nested transaction). The caller may already hold the account
+   * lock (createAndStart via lockAccountRowTx) — re-issuing it here is an
+   * idempotent no-op in the same tx.
    */
   async attachRunWithCapGuardTx(
     tx: LifecycleTx,
@@ -832,7 +747,7 @@ export class BotLifecycleRepositoryAdapter implements ILifecycleRepository {
     exchangeAccountId: string
   ): Promise<string> {
     const client = clientOf(tx);
-    // Serialize ALL attaches on this account (not just this session) so two
+    // Serialize ALL admits on this account (not just this session) so two
     // bots bound to the same account cannot both pass on a stale pending sum.
     await client.query(
       `SELECT id FROM exchange_accounts WHERE id = $1 FOR UPDATE`,
@@ -897,23 +812,23 @@ export class BotLifecycleRepositoryAdapter implements ILifecycleRepository {
   }
 
   /**
-   * Sum of PENDING run notionals inside a session — the grain the residual
-   * notional admission gate adds on top of venue exposure. "Pending" = STOPPED
-   * + STARTING runs: requested notional not yet reflected as live venue
-   * positions. Every attach inserts as STOPPED and detachRun DELETES the row,
-   * so any surviving STOPPED/STARTING row counts. Live RUNNING runs are
-   * deliberately EXCLUDED — their filled notional is already inside the venue
-   * exposure read by the cap provider, so including them here would double
-   * count. STOPPING/ERROR runs are excluded too (their residual, if any, is
-   * venue exposure).
+   * Σ notional of PENDING runs (STOPPED + STARTING) bound to an ACCOUNT —
+   * the grain the cap invariant is stated at. Runs are joined through
+   * bot_instances.exchange_account_id so the sum captures every session's
+   * pending runs on the account, not just one bot's. Live RUNNING runs are
+   * deliberately EXCLUDED — their filled notional is already inside the
+   * venue exposure read by the cap provider.
    */
-  async sumPendingRunNotional(botId: string): Promise<number> {
+  async sumPendingRunNotionalForAccount(
+    exchangeAccountId: string
+  ): Promise<number> {
     const result = await query<{ total: string | null }>(
       `SELECT COALESCE(SUM(notional_amount), 0) AS total
-         FROM strategy_runs
-        WHERE bot_id = $1
-          AND state IN ('STOPPED', 'STARTING')`,
-      [botId]
+         FROM strategy_runs r
+         JOIN bot_instances b ON r.bot_id = b.id
+        WHERE b.exchange_account_id = $1
+          AND r.state IN ('STOPPED', 'STARTING')`,
+      [exchangeAccountId]
     );
     return Number(result.rows[0]?.total ?? 0);
   }

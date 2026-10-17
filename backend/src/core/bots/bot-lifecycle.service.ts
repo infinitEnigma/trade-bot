@@ -263,13 +263,12 @@ export class BotLifecycleService {
     // F1 residual notional admission (start-time gate): before we flip state
     // or fan the session's runs out to the engine, residual capacity must still
     // hold — venue exposure + pending (STOPPED/STARTING) run notionals <= cap.
-    // This is the single gate resume / restart / createAndStart all funnel
-    // through, so a balance that dropped, an open position that ate headroom, or
-    // STOPPED runs that stacked up cannot slip into a live dispatch. Rejects with
-    // 409 (over cap) / 503 (snapshot unavailable) BEFORE any state change or
-    // audit write. incoming = 0: start adds no new notional, it re-checks the
-    // existing set. Live RUNNING runs are counted via venue exposure, not here.
-    const pendingTotal = await this.repository.sumPendingRunNotional(botId);
+    // The pending sum is ACCOUNT-grain (all sessions on the account), matching
+    // the attach guard — a bot-grain sum would drop every other session's
+    // pending runs and admit over cap (Arch-3).
+    const pendingTotal = await this.repository.sumPendingRunNotionalForAccount(
+      bot.exchange_account_id ?? ""
+    );
     await this.assertSessionNotionalAllowed(
       userId,
       bot.exchange_account_id,
@@ -460,8 +459,16 @@ export class BotLifecycleService {
     }
 
     // F1 residual notional admission: the boot run's notional must fit the
-    // account's residual capacity (venue exposure + new <= cap) BEFORE any
-    // session row is created, so an over-cap request leaves no orphan bot.
+    // account's residual capacity. The snapshot is resolved OUTSIDE the tx
+    // (venue balance + positions must not hold a DB lock across network I/O);
+    // the fail-closed pre-tx reject below catches an over-cap boot run before
+    // any DB write, and attachRunWithCapGuardTx re-checks atomically under the
+    // account lock inside the tx, so concurrent creates cannot both pass on a
+    // stale sum (Arch-3).
+    const { cap, existingExposure } = await this.computeAdmission(
+      userId,
+      exchangeAccountId
+    );
     await this.assertSessionNotionalAllowed(
       userId,
       exchangeAccountId,
@@ -470,10 +477,13 @@ export class BotLifecycleService {
     );
 
     // 026 Phase B (one tx, no network): lock strategy FIRST, revalidate the
-    // locked row against the Phase A catalog snapshot, then insert. A PUT
-    // racing this start either committed first (we admit the new row) or
-    // loses (its blocker check sees our live run → 409). Rollback removes
-    // session + run + audit together — no orphans, locks released.
+    // locked row against the Phase A catalog snapshot, then insert. Lock the
+    // account row BEFORE the live-session guard so concurrent creates on the
+    // same account serialize — a racing create either committed first (its
+    // session blocks us) or loses (its attach hits the cap guard → 409).
+    // Rollback removes session + run + audit together — no orphans, locks
+    // released. Lock order everywhere: strategy → exchange_accounts →
+    // bot_instances (session row), matching attachStrategyRun.
     const botId: string = await this.repository.inTransaction(async tx => {
       const cur = await this.repository.lockStrategyRow(tx, strategyId);
       if (!cur) {
@@ -508,8 +518,11 @@ export class BotLifecycleService {
         (error as Error & { statusCode?: number }).statusCode = 409;
         throw error;
       }
-      const lockedSession =
-        await this.repository.findLiveSessionForAccount(exchangeAccountId);
+      await this.repository.lockAccountRowTx(tx, exchangeAccountId);
+      const lockedSession = await this.repository.findLiveSessionForAccountTx(
+        tx,
+        exchangeAccountId
+      );
       if (lockedSession) {
         const error = new Error(
           "A live session already exists for this exchange account. Attach the strategy to it instead."
@@ -523,14 +536,21 @@ export class BotLifecycleService {
         exchangeAccountId
       );
       try {
-        await this.repository.attachRunTx(
+        await this.repository.attachRunWithCapGuardTx(
           tx,
           txBotId,
           strategyId,
           cur.config,
-          notionalAmount
+          notionalAmount,
+          cap,
+          existingExposure,
+          exchangeAccountId
         );
       } catch (error) {
+        if (error instanceof RunNotionalCapExceededError) {
+          (error as Error & { statusCode?: number }).statusCode = 409;
+          throw error;
+        }
         const err = error as Error & { code?: string };
         if (err?.code === "23505") {
           const conflict = new Error(
