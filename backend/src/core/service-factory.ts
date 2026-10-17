@@ -173,6 +173,28 @@ export class ServiceFactory implements IServiceFactory {
   }
 
   /**
+   * Clear configured dependencies for isolated tests.
+   */
+  resetDepsForTests(): void {
+    this.deps = null;
+  }
+
+  /**
+   * Fail startup if dependencies have not all been supplied.
+   */
+  assertDepsConfigured(): void {
+    const deps = this.requireDeps();
+    const missing = (Object.keys(deps) as Array<keyof ServiceFactoryDeps>).filter(
+      key => deps[key] == null
+    );
+    if (missing.length > 0) {
+      throw new Error(
+        `Service Factory dependencies missing: ${missing.join(", ")}`
+      );
+    }
+  }
+
+  /**
    * Resolve configured dependencies or let the getter's existing error
    * handling report the service as unavailable.
    */
@@ -676,3 +698,10 @@ export function getServiceFactory(): ServiceFactory {
 
 // For backward compatibility, export the factory instance
 export const serviceFactory = getServiceFactory();
+
+/**
+ * Assert that the process-wide factory has been wired before the server listens.
+ */
+export function assertServiceFactoryWired(): void {
+  getServiceFactory().assertDepsConfigured();
+}
