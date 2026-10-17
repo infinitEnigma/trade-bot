@@ -337,25 +337,15 @@ export class ServiceFactory implements IServiceFactory {
    */
   getUserProfileService(): UserProfileService | undefined {
     try {
-      const userProfileService = new UserProfileService({
-        userRepository: diContainer.userRepository,
-        cache: diContainer.cacheService,
-        passwordService: diContainer.passwordService,
-        auditLogRepository: diContainer.auditLogRepository,
-      });
-      this.logger.debug("User Profile Service created with dependencies", {
+      const userProfileService = this.requireDeps().userProfileService;
+      this.logger.debug("User Profile Service retrieved from dependencies", {
         service: "UserProfileService",
-        dependencies: [
-          "userRepository",
-          "cache",
-          "passwordService",
-          "auditLogRepository",
-        ],
+        implementation: "injected",
       });
       return userProfileService;
     } catch (error) {
       this.logger.error(
-        "Failed to create User Profile Service",
+        "Failed to get User Profile Service",
         error instanceof Error ? error : undefined,
         {
           service: "UserProfileService",
