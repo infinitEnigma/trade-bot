@@ -59,12 +59,11 @@ export default tseslint.config(
   // (2026-10-17, review Arch-2): existing debt — core files still importing
   // infrastructure concretely. Temporary exceptions; remove each entry as the
   // file is ported to ports (see docs/instructions/current_issues.md item 8).
-  // Remaining debt: engine-protocol, engine-manager, exchange-account,
-  // wallet-proof, service-factory (service-factory deferred to a later phase).
+  // Remaining debt: engine-protocol, exchange-account, wallet-proof,
+  // service-factory (service-factory deferred to a later phase).
   {
     files: [
       "src/core/bots/engine-protocol.service.ts",
-      "src/core/strategies/engine-manager.service.pure.ts",
       "src/core/user/exchange-account.service.ts",
       "src/core/wallet/wallet-proof.service.ts",
       "src/core/service-factory.ts",

@@ -12,8 +12,11 @@
  */
 
 import {
+  EngineCommand,
+  EngineEvent,
   IBotInstanceRepository,
   ILogger,
+  ProtocolMessage,
   StartBotCommand,
 } from "@trade-bot/shared";
 import {
@@ -23,8 +26,21 @@ import {
   CircuitBreaker,
   ProcessSupervisor,
 } from "./engine";
-import { RedisStreamOperations } from "../../infrastructure/cache/redis";
 import { ENGINE_HEARTBEAT_TIMEOUT_MS } from "../bots/lifecycle/engine-registry.repository.port";
+
+/**
+ * Port: Redis stream publish (the engine-manager command path). Implemented by
+ * `RedisStreamOperations` in `infrastructure/cache/redis/streams.ts`; core never
+ * imports that concrete class. The message union mirrors that adapter's
+ * `StreamPayload`, rebuilt here from shared protocol types so the concrete
+ * adapter stays assignable to this port.
+ */
+export interface IRedisStreamOperations {
+  publish(
+    stream: string,
+    message: ProtocolMessage<unknown> | EngineCommand | EngineEvent
+  ): Promise<{ success: boolean; id?: string; error?: string }>;
+}
 
 /**
  * Registry-backed engine liveness (the `engine_registry` heartbeat table).
@@ -47,7 +63,7 @@ interface EngineStatus {
 export interface EngineManagerServiceDependencies {
   botInstanceRepository: IBotInstanceRepository;
   logger: ILogger;
-  redisStreamOperations: RedisStreamOperations;
+  redisStreamOperations: IRedisStreamOperations;
   /**
    * Registry-backed liveness probe (engine_registry heartbeats). Wired by the
    * DI container; absent in unit tests, which fall back to the child-process
@@ -71,7 +87,7 @@ export class EngineManager {
   private processSupervisor: ProcessSupervisor;
 
   // Redis stream operations
-  private streamOperations: RedisStreamOperations;
+  private streamOperations: IRedisStreamOperations;
 
   // Engine configuration
   private enginePort: number;
