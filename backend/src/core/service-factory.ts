@@ -16,6 +16,7 @@
  */
 
 import { diContainer } from "../infrastructure/dependency-injection.container";
+import type { ServiceFactoryDeps } from "./service-factory.ports";
 import { AuthService } from "./auth/auth.service.pure";
 import { BalanceService } from "./wallet/balance.service.pure";
 import { PositionService } from "./strategies/position.service.pure";
@@ -162,8 +163,10 @@ export interface IServiceFactory {
  */
 export class ServiceFactory implements IServiceFactory {
   private readonly logger = contextLogger;
+  private deps: ServiceFactoryDeps | null;
 
-  constructor() {
+  constructor(deps?: ServiceFactoryDeps) {
+    this.deps = deps ?? null;
     this.logger.info("Service Factory initialized", {
       implementation: "clean-architecture",
       pattern: "factory",
@@ -171,11 +174,29 @@ export class ServiceFactory implements IServiceFactory {
   }
 
   /**
+   * Replace the service instances used by this factory.
+   */
+  setDeps(deps: ServiceFactoryDeps): void {
+    this.deps = deps;
+  }
+
+  /**
+   * Resolve configured dependencies or let the getter's existing error
+   * handling report the service as unavailable.
+   */
+  private requireDeps(): ServiceFactoryDeps {
+    if (!this.deps) {
+      throw new Error("Service Factory dependencies have not been configured");
+    }
+    return this.deps;
+  }
+
+  /**
    * Get Auth Service instance with proper dependencies
    */
   getAuthService(): AuthService | undefined {
     try {
-      const authService = diContainer.authService;
+      const authService = this.requireDeps().authService;
       this.logger.debug("Auth Service retrieved from container", {
         service: "AuthService",
         implementation: "pure",
@@ -198,7 +219,7 @@ export class ServiceFactory implements IServiceFactory {
    */
   getBalanceService(): BalanceService | undefined {
     try {
-      const balanceService = diContainer.balanceService;
+      const balanceService = this.requireDeps().balanceService;
       this.logger.debug("Balance Service retrieved from container", {
         service: "BalanceService",
         implementation: "pure",
@@ -221,7 +242,7 @@ export class ServiceFactory implements IServiceFactory {
    */
   getPositionService(): PositionService | undefined {
     try {
-      const positionService = diContainer.positionService;
+      const positionService = this.requireDeps().positionService;
       this.logger.debug("Position Service retrieved from container", {
         service: "PositionService",
         implementation: "pure",
@@ -244,7 +265,7 @@ export class ServiceFactory implements IServiceFactory {
    */
   getRoleManagementService(): RoleManagementService | undefined {
     try {
-      const roleManagementService = diContainer.roleManagementService;
+      const roleManagementService = this.requireDeps().roleManagementService;
       this.logger.debug("Role Management Service retrieved from container", {
         service: "RoleManagementService",
         implementation: "pure",
@@ -267,7 +288,7 @@ export class ServiceFactory implements IServiceFactory {
    */
   getRoleQualificationService(): RoleQualificationService | undefined {
     try {
-      const roleQualificationService = diContainer.roleQualificationService;
+      const roleQualificationService = this.requireDeps().roleQualificationService;
       this.logger.debug("Role Qualification Service retrieved from container", {
         service: "RoleQualificationService",
         implementation: "pure",
@@ -290,7 +311,7 @@ export class ServiceFactory implements IServiceFactory {
    */
   getWalletQualificationService(): WalletQualificationService | undefined {
     try {
-      const walletQualificationService = diContainer.walletQualificationService;
+      const walletQualificationService = this.requireDeps().walletQualificationService;
       this.logger.debug(
         "Wallet Qualification Service retrieved from container",
         {
@@ -443,7 +464,7 @@ export class ServiceFactory implements IServiceFactory {
    */
   getBotManagementService(): BotManagementService | undefined {
     try {
-      const botManagementService = diContainer.botManagementService;
+      const botManagementService = this.requireDeps().botManagementService;
       this.logger.debug("Bot Management Service retrieved from container", {
         service: "BotManagementService",
         implementation: "pure",
@@ -466,7 +487,7 @@ export class ServiceFactory implements IServiceFactory {
    */
   getStrategyService(): StrategyService | undefined {
     try {
-      const strategyService = diContainer.strategyService;
+      const strategyService = this.requireDeps().strategyService;
       this.logger.debug("Strategy Service retrieved from container", {
         service: "StrategyService",
         implementation: "pure",
@@ -489,7 +510,7 @@ export class ServiceFactory implements IServiceFactory {
    */
   getMarketService(): MarketService | undefined {
     try {
-      const marketService = diContainer.marketService;
+      const marketService = this.requireDeps().marketService;
       this.logger.debug("Market Service retrieved from container", {
         service: "MarketService",
         implementation: "pure",
@@ -512,7 +533,7 @@ export class ServiceFactory implements IServiceFactory {
    */
   getPositionValidatorService(): PositionValidatorService | undefined {
     try {
-      const positionValidatorService = diContainer.positionValidatorService;
+      const positionValidatorService = this.requireDeps().positionValidatorService;
       this.logger.debug("Position Validator Service retrieved from container", {
         service: "PositionValidatorService",
         implementation: "pure",
@@ -535,7 +556,7 @@ export class ServiceFactory implements IServiceFactory {
    */
   getPositionSyncService(): PositionSyncService | undefined {
     try {
-      const positionSyncService = diContainer.positionSyncService;
+      const positionSyncService = this.requireDeps().positionSyncService;
       this.logger.debug("Position Sync Service retrieved from container", {
         service: "PositionSyncService",
         implementation: "pure",
@@ -558,7 +579,7 @@ export class ServiceFactory implements IServiceFactory {
    */
   getHealthService(): HealthService | undefined {
     try {
-      const healthService = diContainer.healthService;
+      const healthService = this.requireDeps().healthService;
       this.logger.debug("Health Service retrieved from container", {
         service: "HealthService",
         implementation: "pure",
@@ -581,7 +602,7 @@ export class ServiceFactory implements IServiceFactory {
    */
   getEngineManager(): EngineManager | undefined {
     try {
-      const engineManager = diContainer.engineManager;
+      const engineManager = this.requireDeps().engineManager;
       this.logger.debug("Engine Manager retrieved from container", {
         service: "EngineManager",
         implementation: "pure",
