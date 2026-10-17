@@ -15,7 +15,6 @@
  * @format
  */
 
-import { diContainer } from "../infrastructure/dependency-injection.container";
 import type { ServiceFactoryDeps } from "./service-factory.ports";
 import { AuthService } from "./auth/auth.service.pure";
 import { BalanceService } from "./wallet/balance.service.pure";
@@ -25,13 +24,6 @@ import { RoleQualificationService } from "./auth/role-qualification.service";
 import { WalletQualificationService } from "./wallet/wallet-qualification.service.pure";
 import { UserProfileService } from "./user/user-profile.service";
 import { ExchangeAccountService } from "./user/exchange-account.service";
-import { createVerifyConnectivity } from "./user/verify-connectivity";
-import { lighterVerifierFromEnv } from "../infrastructure/external/exchange-accounts/lighter-verifier";
-import { UserLevelService } from "./auth/user-level.service";
-import { resolveVenueOwner } from "../infrastructure/external/exchange-accounts/venue-owner";
-import { getCredentialAdapter } from "../infrastructure/external/exchange-accounts/credential-adapters";
-import { encryptionService } from "../infrastructure/security/encryption.service";
-import { kodiakIntegrationService } from "../infrastructure/external/kodiak-integration.service";
 import { BotManagementService } from "./bots/bot-management.service";
 import { StrategyService } from "./strategies/strategy.service";
 import { MarketService } from "./market/market.service";
@@ -356,90 +348,20 @@ export class ServiceFactory implements IServiceFactory {
   }
 
   /**
-   * Build the shared UserLevelService (single owner of level transitions).
-   */
-  private createUserLevelService(): UserLevelService {
-    return new UserLevelService({
-      walletRepository: diContainer.walletRepository,
-      exchangeAccountRepository: diContainer.exchangeAccountRepository,
-      userRepository: diContainer.userRepository,
-      auditLogRepository: diContainer.auditLogRepository,
-    });
-  }
-
-  /**
-   * Get Exchange Account Service instance with proper dependencies (C2).
+   * Get Exchange Account Service instance (C2 per-account connect/verify).
+   * The container owns construction; the factory delegates to its stable instance.
    */
   getExchangeAccountService(): ExchangeAccountService | undefined {
     try {
-      const service = new ExchangeAccountService({
-        credentialAdapter: getCredentialAdapter,
-        exchangeAccountRepository: diContainer.exchangeAccountRepository,
-        encryption: {
-          encryptWithVersion: (plaintext: string) =>
-            encryptionService.encryptWithVersion(plaintext),
-          decryptWithVersion: (ciphertext: string) =>
-            encryptionService.decryptWithVersion(ciphertext),
-          decryptApiKey: (ciphertext: string) =>
-            encryptionService.decryptApiKey(ciphertext),
-          decryptSecretKey: (ciphertext: string) =>
-            encryptionService.decryptSecretKey(ciphertext),
-          currentVersion: () =>
-            (encryptionService as unknown as { currentKeyVersion?: number })
-              .currentKeyVersion ?? 2,
-        },
-        verifyConnectivity: createVerifyConnectivity({
-          kodiakIntegrationService,
-          lighterVerifier: lighterVerifierFromEnv(),
-        }),
-        // X4: venue-verified wallet binding. Owner comes from the venue's
-        // public account endpoint; membership is checked against linked wallets.
-        venueOwner: async request =>
-          resolveVenueOwner({
-            exchange: request.exchange,
-            environment: request.environment,
-            ...(request.exchange === "kodiak"
-              ? { accountId: request.accountId }
-              : { accountIndex: request.accountIndex }),
-          }),
-        wallets: diContainer.walletRepository,
-        userLevel: this.createUserLevelService(),
-        auditLogRepository: diContainer.auditLogRepository,
-        // Fix B: clear the cached profile (user:profile:{userId}) on every
-        // account transition so GET /profile reflects the recomputed level
-        // instead of serving a stale REGISTERED for up to 300s.
-        onLevelChanged: async (userId: string) => {
-          await this.getUserProfileService()?.invalidateUserProfileCache(
-            userId
-          );
-        },
-        // L4: the DI container passes loggerService — the factory must too,
-        // otherwise connect/verify/revoke log via `?.` into the void.
-        logger: diContainer.loggerService,
-        // C3a: revoke is blocked while *live* bots bind to the account (FK
-        // RESTRICT). Terminal history (STOPPED/ERROR/UNKNOWN) never blocks —
-        // it is cleared as part of the revoke (see ExchangeAccountService).
-        // countBoundBots/clearTerminalBots live on the bot-instance adapter
-        // (previously duplicated inline SQL here and in the DI container).
-        boundBots: diContainer.botInstanceRepository,
-      });
-      this.logger.debug("Exchange Account Service created with dependencies", {
+      const exchangeAccountService = this.requireDeps().exchangeAccountService;
+      this.logger.debug("Exchange Account Service retrieved from dependencies", {
         service: "ExchangeAccountService",
-        dependencies: [
-          "exchangeAccountRepository",
-          "encryption",
-          "verifyConnectivity",
-          "userLevel",
-          "auditLogRepository",
-          "onLevelChanged",
-          "logger",
-          "boundBots",
-        ],
+        implementation: "injected",
       });
-      return service;
+      return exchangeAccountService;
     } catch (error) {
       this.logger.error(
-        "Failed to create Exchange Account Service",
+        "Failed to get Exchange Account Service",
         error instanceof Error ? error : undefined,
         {
           service: "ExchangeAccountService",
