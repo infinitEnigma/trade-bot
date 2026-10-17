@@ -68,6 +68,7 @@ import { setStrategyBadgeWriter } from "./core/bots/lifecycle/strategy-active-sy
 import { BotLifecycleRepositoryAdapter } from "./infrastructure/adapters/repositories/bot-lifecycle-repository.adapter";
 import { exchangeAccountRepositoryAdapter } from "./infrastructure/adapters/repositories/exchange-account-repository.adapter";
 import { walletRepositoryAdapter } from "./infrastructure/adapters/repositories/wallet-repository.adapter";
+import { signatureVerificationServiceAdapter } from "./infrastructure/adapters/security/signature-verification.adapter";
 import { setWalletProofDeps } from "./core/wallet/wallet-proof.service";
 import { strategyRepositoryAdapter } from "./infrastructure/adapters/repositories/strategy-repository.adapter";
 import { TradeLedgerRepositoryAdapter } from "./infrastructure/adapters/repositories/trade-ledger-repository.adapter";
@@ -450,9 +451,9 @@ const PORT = process.env.PORT || 3000;
  * @returns A promise that resolves when the server is ready
  */
 export const startServer = (): Promise<typeof httpServer> => {
-  // X4 wallet-proof gate (review P3, allowlist shrink): core consumes ports;
-  // the adapters are wired here, BEFORE the server listens, so a request can
-  // never observe an unwired proof gate (fail-fast throw).
+  // X4 wallet-proof gate (review P3 persistence + Arch-2 infra): core consumes
+  // ports; the adapters are wired here, BEFORE the server listens, so a
+  // request can never observe an unwired proof gate (fail-fast throw).
   setWalletProofDeps({
     listWallets: userId => walletRepositoryAdapter.listWallets(userId),
     getAccountMeta: (exchangeAccountId, userId) =>
@@ -460,6 +461,8 @@ export const startServer = (): Promise<typeof httpServer> => {
         exchangeAccountId,
         userId
       ),
+    challengeStore: redisService,
+    signatureVerifier: signatureVerificationServiceAdapter,
   });
 
   return new Promise(resolve => {

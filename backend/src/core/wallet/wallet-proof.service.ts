@@ -21,15 +21,48 @@
 
 import { randomUUID } from "crypto";
 import type { Wallet } from "@trade-bot/shared";
-import { redisService } from "../../infrastructure/cache/redis.service";
-import { signatureVerificationServiceAdapter } from "../../infrastructure/adapters/security/signature-verification.adapter";
 import { contextLogger as logger } from "../logging";
 
 /**
- * Persistence ports (review P3): core must not import repository adapters or
- * PostgreSQL. Wired at startup (index.ts `setWalletProofDeps`); tests inject
- * mocks the same way. Fail-fast: an unwired gate must never silently pass a
- * proof.
+ * Challenge-store port (Arch-2): the subset of Redis the proof gate uses.
+ * Implemented by `redisService` (`infrastructure/cache/redis.service.ts`),
+ * wired at startup via `setWalletProofDeps`. `getDel` must be atomic
+ * (read + delete in one step) — the D4 single-use guarantee rests on the
+ * loser of a concurrent consume observing `null`.
+ */
+export interface IWalletChallengeStore {
+  setex(
+    key: string,
+    ttlSeconds: number,
+    value: string
+  ): Promise<{ success: boolean; error?: string }>;
+  getDel(
+    key: string
+  ): Promise<{ success: boolean; data: string | null; error?: string }>;
+}
+
+/**
+ * Signature-verification port (Arch-2): proves an EVM signature over the
+ * server-built challenge message. Implemented by
+ * `SignatureVerificationServiceAdapter`
+ * (`infrastructure/adapters/security/signature-verification.adapter.ts`,
+ * itself implementing shared `ISignatureVerificationService`), wired at
+ * startup via `setWalletProofDeps`.
+ */
+export interface IWalletSignatureVerifier {
+  verifySignature(
+    walletAddress: string,
+    signature: string,
+    message: string
+  ): Promise<boolean>;
+}
+
+/**
+ * Wallet-proof ports (review P3 persistence + Arch-2 infra): core must not
+ * import repository adapters, PostgreSQL, Redis, or concrete security
+ * adapters. Wired at startup (index.ts `setWalletProofDeps`); tests inject
+ * doubles the same way. Fail-fast: an unwired gate must never silently pass
+ * a proof.
  */
 export interface WalletProofDeps {
   /** The user's linked wallets (consumeProof membership check). */
@@ -39,6 +72,10 @@ export interface WalletProofDeps {
     exchangeAccountId: string,
     userId: string
   ): Promise<Record<string, unknown> | string | null>;
+  /** Challenge store (Redis) — issue + atomic single-use consume. */
+  challengeStore: IWalletChallengeStore;
+  /** EVM signature verifier over the server-built challenge message. */
+  signatureVerifier: IWalletSignatureVerifier;
 }
 
 let depsImpl: WalletProofDeps | undefined;
@@ -168,7 +205,7 @@ export async function issueChallenge(
   const expiresAt = new Date(issuedAt.getTime() + CHALLENGE_TTL_SECONDS * 1000);
   const message = buildChallengeMessage({ action, nonce, issuedAt, expiresAt });
 
-  const stored = await redisService.setex(
+  const stored = await deps().challengeStore.setex(
     challengeKey(userId, nonce),
     CHALLENGE_TTL_SECONDS,
     JSON.stringify({ action, message, issuedAt: issuedAt.toISOString() })
@@ -207,7 +244,7 @@ export async function consumeProof(
   // Atomic single-use (D4): GET+DEL in one Redis step. The first caller gets
   // the stored value; every later/concurrent caller gets null (already used),
   // so there is no check-then-delete window for a replay to exploit.
-  const record = await redisService.getDel(key);
+  const record = await deps().challengeStore.getDel(key);
   if (!record.success) {
     throw new WalletProofError(
       "Wallet proof is temporarily unavailable. Please try again.",
@@ -238,12 +275,11 @@ export async function consumeProof(
     );
   }
 
-  const signatureValid =
-    await signatureVerificationServiceAdapter.verifySignature(
-      proof.address,
-      proof.signature,
-      stored.message
-    );
+  const signatureValid = await deps().signatureVerifier.verifySignature(
+    proof.address,
+    proof.signature,
+    stored.message
+  );
   if (!signatureValid) {
     throw new WalletProofError(
       "The wallet signature is invalid. Sign the challenge message exactly as issued.",

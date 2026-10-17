@@ -54,13 +54,10 @@ export default tseslint.config(
   // (2026-10-17, review Arch-2): existing debt — core files still importing
   // infrastructure concretely. Temporary exceptions; remove each entry as the
   // file is ported to ports (see docs/instructions/current_issues.md item 8).
-  // Remaining debt: wallet-proof, service-factory (service-factory deferred to
-  // a later phase).
+  // Remaining debt: service-factory (deferred to a later phase; wallet-proof
+  // cleared in Phase 5).
   {
-    files: [
-      "src/core/wallet/wallet-proof.service.ts",
-      "src/core/service-factory.ts",
-    ],
+    files: ["src/core/service-factory.ts"],
     rules: {
       "no-restricted-imports": "off",
     },
@@ -82,7 +79,7 @@ export default tseslint.config(
                 "Routes must not call PostgreSQL directly. Move data access into a use case; wire it in server/route-config.ts (review P1).",
             },
             {
-              group: ["**/infrastructure/adapters/repositories/**"],
+              group: ["**/infrastructure/adapters/**"],
               message:
                 "Routes must not import repository adapters. Call an injected use case; wire repositories in server/route-config.ts (review P1).",
             },

@@ -5,9 +5,10 @@
  *
  * Exercises the REAL HTTP chain — `requireWalletProof` middleware → real
  * `consumeProof` (real `ethers` signature verification over the server-built
- * challenge) → real `checkAccountWalletBinding` → handler — with ONLY the
- * infrastructure boundaries stubbed:
- *   - Redis (`redisService.setex` / `getDel`) — an in-memory map,
+ * challenge, injected as the `signatureVerifier` port) → real
+ * `checkAccountWalletBinding` → handler — with ONLY the
+ * infrastructure boundaries doubled via ports:
+ *   - the challenge store (an in-memory map),
  *   - the wallet repository (`listWallets`),
  *   - the database `query` (bot lookup + account `meta` read).
  *
@@ -19,35 +20,6 @@
 import request from "supertest";
 import express from "express";
 import { ethers } from "ethers";
-
-// In-memory Redis: only setex (issue) + getDel (atomic consume) are used by
-// the real service on this path.
-jest.mock("../../src/infrastructure/cache/redis.service", () => {
-  const store = new Map<string, string>();
-  return {
-    redisService: {
-      setex: jest.fn(async (key: string, _ttl: number, value: string) => {
-        store.set(key, value);
-        return { success: true };
-      }),
-      // Atomic get-and-delete, synchronously (models real Redis GETDEL).
-      getDel: jest.fn(async (key: string) => {
-        const value = store.get(key) ?? null;
-        if (value !== null) store.delete(key);
-        return { success: true, data: value };
-      }),
-      get: jest.fn(async (key: string) => ({
-        success: true,
-        data: store.get(key) ?? null,
-      })),
-      del: jest.fn(async (key: string) => ({
-        success: true,
-        data: store.delete(key) ? 1 : 0,
-      })),
-      getClient: jest.fn(),
-    },
-  };
-});
 
 // Wallet repo: the linked-wallet membership check reads this.
 jest.mock(
@@ -69,6 +41,7 @@ import {
   issueChallenge,
   setWalletProofDeps,
 } from "../../src/core/wallet/wallet-proof.service";
+import { signatureVerificationServiceAdapter } from "../../src/infrastructure/adapters/security/signature-verification.adapter";
 import { walletRepositoryAdapter } from "../../src/infrastructure/adapters/repositories/wallet-repository.adapter";
 import { query } from "../../src/database/pool";
 
@@ -140,8 +113,10 @@ describe("X4 wallet-proof gate — end-to-end (real crypto + real middleware)", 
   beforeEach(() => {
     jest.clearAllMocks();
     delete process.env.WALLET_PROOF_REQUIRED; // gate defaults ON
-    // Review P3: core consumes ports — inject the deps, keeping the same
-    // infrastructure doubles (mocked adapter + SQL-text-routed pool query).
+    // Arch-2: core consumes ports — inject the deps, keeping the same
+    // infrastructure doubles (mocked adapter + SQL-text-routed pool query)
+    // plus an in-memory challenge store (atomic getDel models Redis GETDEL).
+    const challengeStore = new Map<string, string>();
     setWalletProofDeps({
       listWallets: userId => walletRepositoryAdapter.listWallets(userId),
       getAccountMeta: async (accountId, userId) => {
@@ -153,6 +128,18 @@ describe("X4 wallet-proof gate — end-to-end (real crypto + real middleware)", 
         );
         return r.rows[0]?.meta ?? null;
       },
+      challengeStore: {
+        setex: async (key: string, _ttl: number, value: string) => {
+          challengeStore.set(key, value);
+          return { success: true };
+        },
+        getDel: async (key: string) => {
+          const value = challengeStore.get(key) ?? null;
+          if (value !== null) challengeStore.delete(key);
+          return { success: true, data: value };
+        },
+      },
+      signatureVerifier: signatureVerificationServiceAdapter,
     });
     (walletRepositoryAdapter.listWallets as jest.Mock).mockResolvedValue([
       { id: "w1", userId: USER_ID, chain: "evm", address: wallet.address },
