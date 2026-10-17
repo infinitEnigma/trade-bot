@@ -21,8 +21,12 @@ import {
 import { GetTradesUseCase } from "../core/trades/get-trades.use-case";
 import { tradeRepositoryAdapter } from "../infrastructure/adapters/repositories/trade-repository.adapter";
 import { strategyRepositoryAdapter } from "../infrastructure/adapters/repositories/strategy-repository.adapter";
-import { exchangeAccountRepositoryAdapter } from "../infrastructure/adapters/repositories/exchange-account-repository.adapter";
+import {
+  exchangeAccountRepositoryAdapter,
+  getBotBoundAccountSecrets,
+} from "../infrastructure/adapters/repositories/exchange-account-repository.adapter";
 import { walletRepositoryAdapter } from "../infrastructure/adapters/repositories/wallet-repository.adapter";
+import { encryptionService } from "../infrastructure/security/encryption.service";
 // Review P3 Phase 2: route modules take their persistence through injected
 // ports (module-level setter + fail-fast accessor). This file is the HTTP
 // composition root — it imports adapters legitimately (it is NOT under
@@ -32,7 +36,17 @@ import { setCredentialGateDeps } from "../interfaces/http/trading/market-cache";
 import { setPortfolioScopeDeps } from "../interfaces/http/trading/market-portfolio.routes";
 import { setBalanceWalletLookup } from "../interfaces/http/wallet/balance";
 import { setHealthDb } from "../interfaces/http/system/health";
+import {
+  setEngineDbDeps,
+  setEngineAccountDeps,
+} from "../interfaces/http/bots/engine";
+import {
+  setManagementDbDeps,
+  setManagementAccountDeps,
+} from "../interfaces/http/bots/management";
+import { setAuthUserDeps } from "../interfaces/http/auth";
 import { databaseHealth } from "../database/health-probe";
+import { query } from "../database/pool";
 import { botRoutes } from "../interfaces/http/bots";
 import { walletRoutes, walletBalanceRoutes } from "../interfaces/http/wallet";
 import { securityRoutes } from "../interfaces/http/system/security";
@@ -185,6 +199,147 @@ export class RouteConfig {
       listWallets: userId => walletRepositoryAdapter.listWallets(userId),
     });
     setHealthDb(databaseHealth);
+    setEngineDbDeps({
+      selectBot: async botId => {
+        const result = await query<{
+          user_id: string;
+          desired_state: string;
+          actual_state: string;
+        }>(
+          "SELECT user_id, desired_state, actual_state FROM bot_instances WHERE id = $1",
+          [botId]
+        );
+        return result.rows[0] ?? null;
+      },
+      selectIssuedMarker: async (botId, correlationId) => {
+        const result = await query<{ id: string }>(
+          "SELECT id FROM bot_lifecycle_events WHERE bot_id = $1 AND event_type = 'CREDENTIALS_ISSUED' AND correlation_id = $2",
+          [botId, correlationId]
+        );
+        return result.rows;
+      },
+      findBot: async botId => {
+        const result = await query<{
+          user_id: string;
+          exchange_account_id: string | null;
+        }>(
+          "SELECT user_id, exchange_account_id FROM bot_instances WHERE id = $1",
+          [botId]
+        );
+        return result.rows[0] ?? null;
+      },
+      insertCredentialsIssuedMarker: async (botId, correlationId) => {
+        const result = await query(
+          `INSERT INTO bot_lifecycle_events (bot_id, event_type, correlation_id, metadata)
+               VALUES ($1, 'CREDENTIALS_ISSUED', $2, '{}')
+               ON CONFLICT (bot_id, correlation_id)
+               WHERE event_type = 'CREDENTIALS_ISSUED'
+               DO NOTHING
+               RETURNING id`,
+          [botId, correlationId]
+        );
+        return { rowCount: result.rowCount ?? 0 };
+      },
+      getBotStats: async () => {
+        const result = await query<{
+          total_bots: string;
+          running_bots: string;
+          stopped_bots: string;
+          error_bots: string;
+        }>(
+          `SELECT
+              COUNT(*) as total_bots,
+              COUNT(CASE WHEN status = 'RUNNING' THEN 1 END) as running_bots,
+              COUNT(CASE WHEN status = 'STOPPED' THEN 1 END) as stopped_bots,
+              COUNT(CASE WHEN status = 'ERROR' THEN 1 END) as error_bots
+           FROM bot_instances`
+        );
+        return result.rows[0];
+      },
+      ping: async () => {
+        await query("SELECT 1");
+      },
+    });
+    setEngineAccountDeps({
+      getBoundAccountSecrets: botId =>
+        getBotBoundAccountSecrets(botId, {
+          findBot: async id => {
+            const result = await query<{
+              user_id: string;
+              exchange_account_id: string | null;
+            }>(
+              "SELECT user_id, exchange_account_id FROM bot_instances WHERE id = $1",
+              [id]
+            );
+            return result.rows[0] ?? null;
+          },
+          getAccountWithSecret: (userId, accountId) =>
+            exchangeAccountRepositoryAdapter.getAccountWithSecret(
+              userId,
+              accountId
+            ),
+          decryptEnvelope: ciphertext =>
+            encryptionService.decryptWithVersion(ciphertext),
+          decryptFieldBlob: async blob => {
+            try {
+              return encryptionService.decryptApiKey(blob);
+            } catch {
+              // Not an api-key blob — try the other legacy helper.
+            }
+            try {
+              return encryptionService.decryptSecretKey(blob);
+            } catch {
+              // Not a secret-key blob either — try the versioned path.
+            }
+            return encryptionService.decryptWithVersion(blob);
+          },
+        }),
+    });
+    setManagementDbDeps({
+      auditCredentialAccess: async (userId, action, details) => {
+        await query(
+          "INSERT INTO audit_logs (user_id, action, details) VALUES ($1, $2, $3)",
+          [userId, action, JSON.stringify(details)]
+        );
+      },
+      selectBot: async (botId, userId) => {
+        const result = await query<{ id: string; status: string }>(
+          "SELECT id, status FROM bot_instances WHERE id = $1 AND user_id = $2",
+          [botId, userId]
+        );
+        return result.rows[0] ?? null;
+      },
+    });
+    setManagementAccountDeps({
+      getAccountWithSecret: (userId, accountId) =>
+        exchangeAccountRepositoryAdapter.getAccountWithSecret(
+          userId,
+          accountId
+        ),
+    });
+    setAuthUserDeps({
+      getUserById: async userId => {
+        const result = await query<{
+          id: string;
+          username: string;
+          email: string;
+          user_level: string;
+          created_at: Date;
+          updated_at: Date;
+        }>(
+          "SELECT id, username, email, user_level, created_at, updated_at FROM users WHERE id = $1",
+          [userId]
+        );
+        return result.rows[0] ?? null;
+      },
+      getUserRoles: async userId => {
+        const result = await query<{ role: string }>(
+          "SELECT role FROM user_roles WHERE user_id = $1",
+          [userId]
+        );
+        return result.rows.map(row => row.role);
+      },
+    });
   }
 
   /**

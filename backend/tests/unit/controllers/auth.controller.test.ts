@@ -149,6 +149,8 @@ const mockAuthService =
   require("../../../src/infrastructure/dependency-injection.container")
     .diContainer.authService;
 
+import { setAuthUserDeps, authUsers } from "../../../src/interfaces/http/auth";
+
 // Create a test app
 function createTestApp(): Express {
   const express = require("express");
@@ -178,6 +180,19 @@ describe("Auth Controller - Final Working Tests", () => {
   beforeEach(() => {
     // Reset all mocks
     jest.clearAllMocks();
+
+    // Wire auth user port with double
+    setAuthUserDeps({
+      getUserById: jest.fn().mockResolvedValue({
+        id: "test",
+        username: "testuser",
+        email: "test@example.com",
+        user_level: "VERIFIED",
+        created_at: new Date(),
+        updated_at: new Date(),
+      }),
+      getUserRoles: jest.fn().mockResolvedValue(["USER"]),
+    });
 
     // Create fresh app instance
     app = createTestApp();
@@ -525,17 +540,8 @@ describe("Auth Controller - Final Working Tests", () => {
     });
 
     it("should handle user not found", async () => {
-      // Temporarily override the database query to return no user
-      const originalQuery = require("../../../src/database/pool").query;
-      jest
-        .spyOn(require("../../../src/database/pool"), "query")
-        .mockImplementation((...args: unknown[]) => {
-          const sql = args[0] as string;
-          if (sql.includes("user_roles")) {
-            return { rows: [] };
-          }
-          return { rows: [] };
-        });
+      // Override the auth user port to return no user
+      (authUsers().getUserById as jest.Mock).mockResolvedValueOnce(null);
 
       const response = await request(app).get("/api/auth/me").expect(400);
 

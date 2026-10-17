@@ -22,20 +22,87 @@
 
 import { Router, Request, Response, NextFunction } from "express";
 import { timingSafeEqual } from "crypto";
-import { query } from "../../../database/pool";
-// TODO(architecture): HTTP route calls PostgreSQL directly — move data access
-// into a use case wired in server/route-config.ts (follow-up: remove this
-// import). See backend/eslint.config.mjs.
-// Bot services have been removed - using direct database operations instead
+import type {
+  ConnectExchangeAccountRequest,
+  ExchangeAccount,
+} from "@trade-bot/shared";
 import { engineRegistryService } from "../../../core/bots/engine-registry.service";
-import {
-  exchangeAccountRepositoryAdapter,
-  getBotBoundAccountSecrets,
-} from "../../../infrastructure/adapters/repositories/exchange-account-repository.adapter";
-// TODO(architecture): HTTP route imports a repository adapter directly — call
-// an injected use case instead (follow-up). See backend/eslint.config.mjs.
-import { encryptionService } from "../../../infrastructure/security/encryption.service";
 import { httpLogger as logger } from "../../../core/logging/context-aware-logger.service";
+
+/**
+ * Persistence port (review P3): engine routes must not import the database
+ * pool directly. Wired in `server/route-config.ts`; tests inject doubles
+ * through the setters. Fail-fast: an unwired port must never silently serve
+ * credentials or status.
+ */
+export interface EngineDbPort {
+  selectBot(botId: string): Promise<{
+    user_id: string;
+    desired_state: string;
+    actual_state: string;
+  } | null>;
+  selectIssuedMarker(
+    botId: string,
+    correlationId: string
+  ): Promise<{ id: string }[]>;
+  findBot(botId: string): Promise<{
+    user_id: string;
+    exchange_account_id: string | null;
+  } | null>;
+  insertCredentialsIssuedMarker(
+    botId: string,
+    correlationId: string
+  ): Promise<{ rowCount: number }>;
+  getBotStats(): Promise<{
+    total_bots: string;
+    running_bots: string;
+    stopped_bots: string;
+    error_bots: string;
+  }>;
+  ping(): Promise<void>;
+}
+
+/**
+ * Account lookup port (review P3): engine routes must not import repository
+ * adapters directly. Wired in `server/route-config.ts`.
+ */
+export interface EngineAccountPort {
+  getBoundAccountSecrets(botId: string): Promise<{
+    account: ExchangeAccount;
+    request: ConnectExchangeAccountRequest;
+  } | null>;
+}
+
+let dbImpl: EngineDbPort | undefined;
+/** Route wiring (server/route-config.ts). Tests inject a double the same way. */
+export function setEngineDbDeps(deps: EngineDbPort): void {
+  dbImpl = deps;
+}
+function db(): EngineDbPort {
+  if (!dbImpl) {
+    throw new Error(
+      "Engine DB port not wired — call setEngineDbDeps() in route-config"
+    );
+  }
+  return dbImpl;
+}
+
+let accountImpl: EngineAccountPort | undefined;
+/** Route wiring (server/route-config.ts). Tests inject a double the same way. */
+export function setEngineAccountDeps(deps: EngineAccountPort): void {
+  accountImpl = deps;
+}
+function account(): EngineAccountPort {
+  if (!accountImpl) {
+    throw new Error(
+      "Engine account port not wired — call setEngineAccountDeps() in route-config"
+    );
+  }
+  return accountImpl;
+}
+
+/** Test-only access to wired port implementations. */
+export { db as engineDb, account as engineAccount };
 
 /**
  * Engine health status interface
@@ -130,7 +197,7 @@ router.get(
   botEngineAuth,
   async (req: Request, res: Response) => {
     try {
-      const { botId } = req.params;
+      const { botId } = req.params as { botId: string };
       const correlationId = (req.query.correlationId as string) || "";
 
       if (!correlationId) {
@@ -139,19 +206,11 @@ router.get(
           .json({ success: false, error: "correlationId required" });
       }
 
-      const botResult = await query<{
-        user_id: string;
-        desired_state: string;
-        actual_state: string;
-      }>(
-        "SELECT user_id, desired_state, actual_state FROM bot_instances WHERE id = $1",
-        [botId]
-      );
-      if (botResult.rows.length === 0) {
+      const bot = await db().selectBot(botId);
+      if (!bot) {
         return res.status(404).json({ success: false, error: "Bot not found" });
       }
 
-      const bot = botResult.rows[0];
       if (
         bot.desired_state !== "RUNNING" ||
         !["STARTING", "RUNNING"].includes(bot.actual_state)
@@ -165,11 +224,8 @@ router.get(
       // the fast path — check-then-insert alone lets two concurrent fetches
       // both pass it; the INSERT below is arbitrated by the partial unique
       // index from migration 015.
-      const issuedMarker = await query(
-        "SELECT id FROM bot_lifecycle_events WHERE bot_id = $1 AND event_type = 'CREDENTIALS_ISSUED' AND correlation_id = $2",
-        [botId, correlationId]
-      );
-      if (issuedMarker.rows.length > 0) {
+      const issuedMarker = await db().selectIssuedMarker(botId, correlationId);
+      if (issuedMarker.length > 0) {
         return res.status(409).json({
           success: false,
           error: "Credentials already issued for this correlation",
@@ -181,38 +237,14 @@ router.get(
       // The exchange-agnostic envelope (shared EngineCredentials) is what
       // the engine's credential fetcher validates and its client factory
       // dispatches on — the engine needs no edits for this swap.
-      const bound = await getBotBoundAccountSecrets(botId as string, {
-        findBot: async id => {
-          const row = await query<{
-            user_id: string;
-            exchange_account_id: string | null;
-          }>(
-            "SELECT user_id, exchange_account_id FROM bot_instances WHERE id = $1",
-            [id]
-          );
-          return row.rows[0] ?? null;
-        },
-        getAccountWithSecret: (userId, accountId) =>
-          exchangeAccountRepositoryAdapter.getAccountWithSecret(
-            userId,
-            accountId
-          ),
-        decryptEnvelope: ciphertext =>
-          encryptionService.decryptWithVersion(ciphertext),
-        decryptFieldBlob: async blob => {
-          try {
-            return encryptionService.decryptApiKey(blob);
-          } catch {
-            // Not an api-key blob — try the other legacy helper.
-          }
-          try {
-            return encryptionService.decryptSecretKey(blob);
-          } catch {
-            // Not a secret-key blob either — try the versioned path.
-          }
-          return encryptionService.decryptWithVersion(blob);
-        },
-      });
+      const bound = await account().getBoundAccountSecrets(botId);
+      if (!bound) {
+        return res.status(409).json({
+          success: false,
+          error:
+            "Bot has no verified exchange account bound. Recreate the bot with an account.",
+        });
+      }
 
       // Legacy (pre-C3a) bots have no binding: fail loudly so the operator
       // recreates the bot with an account instead of trading the wrong one.
@@ -250,14 +282,9 @@ router.get(
       // The partial unique index (migration 015) arbitrates concurrent
       // fetches: if a competing request already inserted this marker,
       // DO NOTHING yields rowCount 0 and the envelope must not go out twice.
-      const marker = await query(
-        `INSERT INTO bot_lifecycle_events (bot_id, event_type, correlation_id, metadata)
-             VALUES ($1, 'CREDENTIALS_ISSUED', $2, '{}')
-             ON CONFLICT (bot_id, correlation_id)
-             WHERE event_type = 'CREDENTIALS_ISSUED'
-             DO NOTHING
-             RETURNING id`,
-        [botId, correlationId]
+      const marker = await db().insertCredentialsIssuedMarker(
+        botId,
+        correlationId
       );
       if (marker.rowCount === 0) {
         return res.status(409).json({
@@ -291,20 +318,7 @@ router.get(
 router.get("/status", async (req: Request, res: Response) => {
   try {
     // Bot activity below is informational — it does NOT decide liveness.
-    const botStatsResult = await query(`
-            SELECT
-                COUNT(*) as total_bots,
-                COUNT(CASE WHEN status = 'RUNNING' THEN 1 END) as running_bots,
-                COUNT(CASE WHEN status = 'STOPPED' THEN 1 END) as stopped_bots,
-                COUNT(CASE WHEN status = 'ERROR' THEN 1 END) as error_bots
-            FROM bot_instances
-        `);
-    const botStats = botStatsResult.rows[0] as {
-      total_bots: string;
-      running_bots: string;
-      stopped_bots: string;
-      error_bots: string;
-    };
+    const botStats = await db().getBotStats();
 
     const activeBots = parseInt(botStats.running_bots || "0");
 
@@ -391,18 +405,11 @@ router.get("/health", async (req: Request, res: Response) => {
     };
 
     // Get basic bot statistics from database
-    const botStatsResult = await query(`
-            SELECT
-                COUNT(*) as total_bots,
-                COUNT(CASE WHEN status = 'RUNNING' THEN 1 END) as running_bots,
-                COUNT(CASE WHEN status = 'ERROR' THEN 1 END) as error_bots
-            FROM bot_instances
-        `);
-    const botStats = botStatsResult.rows[0];
+    const botStats = await db().getBotStats();
 
     // Check database connectivity
     try {
-      await query("SELECT 1");
+      await db().ping();
       health.database = "connected";
     } catch (_error) {
       health.database = "disconnected";

@@ -80,14 +80,4 @@ export default tseslint.config(
   // wallet/balance.ts and system/health.ts were cleared — all four now go
   // through injected ports wired in server/route-config.ts (setCredentialGateDeps /
   // setPortfolioScopeDeps / setBalanceWalletLookup / setHealthDb).
-  {
-    files: [
-      "src/interfaces/http/bots/engine.ts",
-      "src/interfaces/http/bots/management.ts",
-      "src/interfaces/http/auth/index.ts",
-    ],
-    rules: {
-      "no-restricted-imports": "off",
-    },
-  }
 );

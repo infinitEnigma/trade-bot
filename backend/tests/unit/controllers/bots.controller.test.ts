@@ -96,7 +96,7 @@ jest.mock("../../../src/core/bots/engine-registry.service", () => ({
 
 // C3a: the start route validates the caller's bound ACTIVE account through the
 // adapter, and the credentials route resolves the bot's binding through
-// getBotBoundAccountSecrets. Both are mocked so the suites assert the routing,
+// getBoundAccountSecrets. Both are mocked so the suites assert the routing,
 // not the SQL (which the adapter's own suite covers).
 jest.mock(
   "../../../src/infrastructure/adapters/repositories/exchange-account-repository.adapter",
@@ -104,9 +104,12 @@ jest.mock(
     exchangeAccountRepositoryAdapter: {
       getAccountWithSecret: jest.fn(),
     },
-    getBotBoundAccountSecrets: jest.fn(),
+    getBoundAccountSecrets: jest.fn(),
   })
 );
+
+import { setEngineDbDeps, setEngineAccountDeps, engineDb, engineAccount } from "../../../src/interfaces/http/bots/engine";
+import { setManagementDbDeps, setManagementAccountDeps, managementDb, managementAccount } from "../../../src/interfaces/http/bots/management";
 
 jest.mock("../../../src/core/strategies/engine-manager.service.pure", () => ({
   EngineManager: jest.fn().mockImplementation(() => ({
@@ -267,6 +270,26 @@ describe("Bots Controller", () => {
     // Reset all mocks
     jest.clearAllMocks();
 
+    // Wire engine ports with jest.fn() doubles; tests set return values directly.
+    setEngineDbDeps({
+      selectBot: jest.fn(),
+      selectIssuedMarker: jest.fn(),
+      findBot: jest.fn(),
+      insertCredentialsIssuedMarker: jest.fn(),
+      getBotStats: jest.fn(),
+      ping: jest.fn(),
+    });
+    setEngineAccountDeps({
+      getBoundAccountSecrets: jest.fn(),
+    });
+    setManagementDbDeps({
+      auditCredentialAccess: jest.fn(),
+      selectBot: jest.fn(),
+    });
+    setManagementAccountDeps({
+      getAccountWithSecret: jest.fn(),
+    });
+
     // Create fresh app instance
     app = createTestApp();
   });
@@ -329,10 +352,7 @@ describe("Bots Controller", () => {
 
       /** C3a: the route resolves + validates the bound account before starting. */
       const mockBoundAccount = (status = "ACTIVE") => {
-        const {
-          exchangeAccountRepositoryAdapter,
-        } = require("../../../src/infrastructure/adapters/repositories/exchange-account-repository.adapter");
-        exchangeAccountRepositoryAdapter.getAccountWithSecret.mockResolvedValue(
+        (managementAccount().getAccountWithSecret as jest.Mock).mockResolvedValue(
           {
             id: testExchangeAccountId,
             userId: "user-123",
@@ -413,12 +433,7 @@ describe("Bots Controller", () => {
       });
 
       it("should 404 an account the user does not own", async () => {
-        const {
-          exchangeAccountRepositoryAdapter,
-        } = require("../../../src/infrastructure/adapters/repositories/exchange-account-repository.adapter");
-        exchangeAccountRepositoryAdapter.getAccountWithSecret.mockResolvedValue(
-          null
-        );
+        (managementAccount().getAccountWithSecret as jest.Mock).mockResolvedValue(null);
 
         const response = await request(app)
           .post("/api/bot/management/start")
@@ -533,7 +548,7 @@ describe("Bots Controller", () => {
         query().mockResolvedValue({
           rows: [{ exchange_account_id: accountId }],
         });
-        accountRepo().getAccountWithSecret.mockResolvedValue({
+        (managementAccount().getAccountWithSecret as jest.Mock).mockResolvedValue({
           id: accountId,
           userId: "user-123",
           exchange: "kodiak",
@@ -891,31 +906,25 @@ describe("Bots Controller", () => {
           rowCount: 1,
         }
       ) => {
-        const query = require("../../../src/database/pool").query;
-        const { getBotBoundAccountSecrets } = jest.requireMock(
-          "../../../src/infrastructure/adapters/repositories/exchange-account-repository.adapter"
+        const { query } = require("../../../src/database/pool");
+        const db = engineDb();
+        const account = engineAccount();
+        const { getBoundAccountSecrets } = account;
+        (db.selectBot as jest.Mock).mockResolvedValueOnce({
+          user_id: "user-123",
+          desired_state: "RUNNING",
+          actual_state: "STARTING",
+        });
+        (db.selectIssuedMarker as jest.Mock).mockResolvedValueOnce([]);
+        (db.insertCredentialsIssuedMarker as jest.Mock).mockResolvedValueOnce(
+          markerInsert
         );
-        query
-          .mockResolvedValueOnce({
-            rows: [
-              {
-                user_id: "user-123",
-                desired_state: "RUNNING",
-                actual_state: "STARTING",
-              },
-            ],
-          }) // bot lookup
-          .mockResolvedValueOnce({ rows: [] }) // no prior issuance
-          .mockResolvedValueOnce(markerInsert); // issuance marker insert (real query() always reports rowCount)
-        return { query, getBotBoundAccountSecrets };
+        return { query, getBoundAccountSecrets };
       };
 
       it("should issue the bound account's exchange-agnostic kodiak envelope", async () => {
-        const { query } = queueRouteQueries();
-        const {
-          getBotBoundAccountSecrets,
-        } = require("../../../src/infrastructure/adapters/repositories/exchange-account-repository.adapter");
-        getBotBoundAccountSecrets.mockResolvedValue({
+        const { query, getBoundAccountSecrets } = queueRouteQueries();
+        (getBoundAccountSecrets as jest.Mock).mockResolvedValue({
           account: { environment: "testnet", accountRef: "kodiak-account-id" },
           request: {
             exchange: "kodiak",
@@ -944,27 +953,21 @@ describe("Bots Controller", () => {
             secretKey: "secret-key",
           },
         });
-        expect(getBotBoundAccountSecrets).toHaveBeenCalledWith(
-          "bot-1",
-          expect.any(Object)
+        expect((getBoundAccountSecrets as jest.Mock)).toHaveBeenCalledWith(
+          "bot-1"
         );
         // The at-most-once marker is still written after a successful issue,
         // now atomically: the INSERT must carry the ON CONFLICT arbiter of
         // the partial unique index (migration 015), not a bare INSERT.
-        expect(query).toHaveBeenCalledWith(
-          expect.stringMatching(
-            /INSERT INTO bot_lifecycle_events[\s\S]*ON CONFLICT \(bot_id, correlation_id\)[\s\S]*DO NOTHING[\s\S]*RETURNING id/
-          ),
-          ["bot-1", "corr-1"]
+        expect((engineDb().insertCredentialsIssuedMarker as jest.Mock)).toHaveBeenCalledWith(
+          "bot-1",
+          "corr-1"
         );
       });
 
       it("should issue a lighter envelope from a lighter-bound bot", async () => {
-        queueRouteQueries();
-        const {
-          getBotBoundAccountSecrets,
-        } = require("../../../src/infrastructure/adapters/repositories/exchange-account-repository.adapter");
-        getBotBoundAccountSecrets.mockResolvedValue({
+        const { getBoundAccountSecrets } = queueRouteQueries();
+        (getBoundAccountSecrets as jest.Mock).mockResolvedValue({
           account: { environment: "testnet", accountRef: "7" },
           request: {
             exchange: "lighter",
@@ -993,23 +996,16 @@ describe("Bots Controller", () => {
       });
 
       it("should 409 an unbound legacy bot instead of trading the wrong account", async () => {
-        const query = require("../../../src/database/pool").query;
-        query
-          .mockResolvedValueOnce({
-            rows: [
-              {
-                user_id: "user-123",
-                desired_state: "RUNNING",
-                actual_state: "RUNNING",
-              },
-            ],
-          }) // bot lookup
-          .mockResolvedValueOnce({ rows: [] }); // no prior issuance
+        const db = engineDb();
+        (db.selectBot as jest.Mock).mockResolvedValueOnce({
+          user_id: "user-123",
+          desired_state: "RUNNING",
+          actual_state: "RUNNING",
+        });
+        (db.selectIssuedMarker as jest.Mock).mockResolvedValueOnce([]);
 
-        const {
-          getBotBoundAccountSecrets,
-        } = require("../../../src/infrastructure/adapters/repositories/exchange-account-repository.adapter");
-        getBotBoundAccountSecrets.mockResolvedValue(null);
+        const account = engineAccount();
+        (account.getBoundAccountSecrets as jest.Mock).mockResolvedValue(null);
 
         const response = await request(app)
           .get("/api/bot/engine/credentials/bot-3?correlationId=corr-3")
@@ -1023,11 +1019,11 @@ describe("Bots Controller", () => {
       it("should 409 when the marker insert loses the concurrent-fetch race", async () => {
         // The SELECT fast path passes for both fetches; only the index
         // arbitration decides, and the loser must not receive the envelope.
-        const { query, getBotBoundAccountSecrets } = queueRouteQueries({
+        const { query, getBoundAccountSecrets } = queueRouteQueries({
           rows: [],
           rowCount: 0,
         });
-        getBotBoundAccountSecrets.mockResolvedValue({
+        (getBoundAccountSecrets as jest.Mock).mockResolvedValue({
           account: { environment: "testnet", accountRef: "kodiak-account-id" },
           request: {
             exchange: "kodiak",
@@ -1048,9 +1044,10 @@ describe("Bots Controller", () => {
         // The envelope the losing fetch built must never be sent.
         expect(response.body.data).toBeUndefined();
         // The insert still went through the index-arbitrated statement.
-        expect(query).toHaveBeenCalledWith(
-          expect.stringMatching(/ON CONFLICT \(bot_id, correlation_id\)/),
-          ["bot-race", "corr-race"]
+        const db = engineDb();
+        expect((db.insertCredentialsIssuedMarker as jest.Mock)).toHaveBeenCalledWith(
+          "bot-race",
+          "corr-race"
         );
       });
     });
@@ -1062,15 +1059,12 @@ describe("Bots Controller", () => {
       const { query } = jest.requireMock("../../../src/database/pool");
 
       it("reports the engine running from the registry even with zero running bots", async () => {
-        query.mockResolvedValueOnce({
-          rows: [
-            {
-              total_bots: "5",
-              running_bots: "0",
-              stopped_bots: "5",
-              error_bots: "0",
-            },
-          ],
+        const db = engineDb();
+        (db.getBotStats as jest.Mock).mockResolvedValueOnce({
+          total_bots: "5",
+          running_bots: "0",
+          stopped_bots: "5",
+          error_bots: "0",
         });
         engineRegistryService.getEngineLiveness.mockResolvedValue({
           running: true,
@@ -1107,15 +1101,12 @@ describe("Bots Controller", () => {
       });
 
       it("reports offline when no live engine is registered, even with RUNNING bot rows", async () => {
-        query.mockResolvedValueOnce({
-          rows: [
-            {
-              total_bots: "5",
-              running_bots: "3",
-              stopped_bots: "2",
-              error_bots: "0",
-            },
-          ],
+        const db = engineDb();
+        (db.getBotStats as jest.Mock).mockResolvedValueOnce({
+          total_bots: "5",
+          running_bots: "3",
+          stopped_bots: "2",
+          error_bots: "0",
         });
         engineRegistryService.getEngineLiveness.mockResolvedValue({
           running: false,
@@ -1138,15 +1129,12 @@ describe("Bots Controller", () => {
         // Prod 2026-10-12: one live OK engine + two stale pre-025 OFFLINE
         // ghosts stuck at UNVERIFIED. The aggregate must read the live fleet
         // (OK), while `engines[]` keeps all rows for operator visibility.
-        query.mockResolvedValueOnce({
-          rows: [
-            {
-              total_bots: "2",
-              running_bots: "0",
-              stopped_bots: "2",
-              error_bots: "0",
-            },
-          ],
+        const db = engineDb();
+        (db.getBotStats as jest.Mock).mockResolvedValueOnce({
+          total_bots: "2",
+          running_bots: "0",
+          stopped_bots: "2",
+          error_bots: "0",
         });
         engineRegistryService.getEngineLiveness.mockResolvedValue({
           running: true,
@@ -1194,15 +1182,12 @@ describe("Bots Controller", () => {
       });
 
       it("reads UNVERIFIED (never fake OK) when no engine is live", async () => {
-        query.mockResolvedValueOnce({
-          rows: [
-            {
-              total_bots: "0",
-              running_bots: "0",
-              stopped_bots: "0",
-              error_bots: "0",
-            },
-          ],
+        const db = engineDb();
+        (db.getBotStats as jest.Mock).mockResolvedValueOnce({
+          total_bots: "0",
+          running_bots: "0",
+          stopped_bots: "0",
+          error_bots: "0",
         });
         engineRegistryService.getEngineLiveness.mockResolvedValue({
           running: false,
@@ -1300,12 +1285,14 @@ describe("Bots Controller", () => {
 
     describe("GET /api/bot/engine/health", () => {
       it("should return engine health", async () => {
-        const query = require("../../../src/database/pool").query;
-        query
-          .mockResolvedValueOnce({
-            rows: [{ total_bots: 5, running_bots: 2, error_bots: 0 }],
-          }) // Get bot stats
-          .mockResolvedValueOnce({}); // Check database connectivity
+        const db = engineDb();
+        (db.getBotStats as jest.Mock).mockResolvedValueOnce({
+          total_bots: "5",
+          running_bots: "2",
+          stopped_bots: "0",
+          error_bots: "0",
+        });
+        (db.ping as jest.Mock).mockResolvedValueOnce(undefined);
 
         const response = await request(app)
           .get("/api/bot/engine/health")
@@ -1316,14 +1303,16 @@ describe("Bots Controller", () => {
           expect.objectContaining({
             status: "healthy",
             botStats: {
-              total_bots: 5,
-              running_bots: 2,
-              error_bots: 0,
+              total_bots: "5",
+              running_bots: "2",
+              stopped_bots: "0",
+              error_bots: "0",
             },
             database: "connected",
           })
         );
-        expect(query).toHaveBeenCalled();
+        expect(db.getBotStats).toHaveBeenCalled();
+        expect(db.ping).toHaveBeenCalled();
       });
     });
   });

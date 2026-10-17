@@ -19,10 +19,40 @@ import { maskEmail } from "../../../shared/utils/masking";
 import { validators } from "../../middleware/validation.middleware";
 import { authLogger } from "../../../core/logging";
 import { progressiveAuthLimiter } from "../../../infrastructure/security/rate-limiter.service";
-import { query } from "../../../database/pool";
-// TODO(architecture): HTTP route calls PostgreSQL directly — move data access
-// into a use case wired in server/route-config.ts (follow-up: remove this
-// import). See backend/eslint.config.mjs.
+
+/**
+ * Persistence port (review P3): auth routes must not import the database pool
+ * directly. Wired in `server/route-config.ts`; tests inject doubles through
+ * the setter. Fail-fast: an unwired port must never silently leak user data.
+ */
+export interface AuthUserPort {
+  getUserById(userId: string): Promise<{
+    id: string;
+    username: string;
+    email: string;
+    user_level: string;
+    created_at: Date;
+    updated_at: Date;
+  } | null>;
+  getUserRoles(userId: string): Promise<string[]>;
+}
+
+let authUserImpl: AuthUserPort | undefined;
+/** Route wiring (server/route-config.ts). Tests inject a double the same way. */
+export function setAuthUserDeps(deps: AuthUserPort): void {
+  authUserImpl = deps;
+}
+function authUsers(): AuthUserPort {
+  if (!authUserImpl) {
+    throw new Error(
+      "Auth user port not wired — call setAuthUserDeps() in route-config"
+    );
+  }
+  return authUserImpl;
+}
+
+/** Test-only access to wired port implementations. */
+export { authUsers as authUsers };
 
 // Select service implementation based on feature flags
 const authService = serviceProvider.getAuthService();
@@ -487,34 +517,17 @@ router.get(
       }
 
       // Get complete user data including timestamps
-      const result = await query<{
-        id: string;
-        username: string;
-        email: string;
-        user_level: string;
-        created_at: Date;
-        updated_at: Date;
-      }>(
-        "SELECT id, username, email, user_level, created_at, updated_at FROM users WHERE id = $1",
-        [req.user.userId]
-      );
+      const userRow = await authUsers().getUserById(req.user.userId);
 
-      if (result.rows.length === 0) {
+      if (!userRow) {
         const error = new ValidationError("User not found");
         return res
           .status(error.statusCode)
           .json(createErrorResponse(error, getCorrelationId()));
       }
 
-      const userRow = result.rows[0];
-
       // Get user roles
-      const rolesResult = await query<{ role: string }>(
-        "SELECT role FROM user_roles WHERE user_id = $1",
-        [req.user.userId]
-      );
-
-      const roles = rolesResult.rows.map(row => row.role);
+      const roles = await authUsers().getUserRoles(req.user.userId);
 
       const user = {
         id: userRow.id,

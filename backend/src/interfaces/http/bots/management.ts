@@ -72,10 +72,7 @@ import {
   authMiddleware,
   AuthenticatedRequest,
 } from "../../middleware/auth.middleware";
-import { query } from "../../../database/pool";
-// TODO(architecture): HTTP route calls PostgreSQL directly — move data access
-// into a use case wired in server/route-config.ts (follow-up: remove this
-// import). See backend/eslint.config.mjs.
+import type { ExchangeAccountWithSecret } from "@trade-bot/shared";
 import {
   ValidationError,
   NotFoundError,
@@ -103,9 +100,62 @@ import { engineRegistryService } from "../../../core/bots/engine-registry.servic
 import { RateLimiters } from "../../../infrastructure/security/rate-limiter.service";
 import { redisService } from "../../../infrastructure/cache/redis.service";
 import { httpLogger as logger } from "../../../core/logging/context-aware-logger.service";
-import { exchangeAccountRepositoryAdapter } from "../../../infrastructure/adapters/repositories/exchange-account-repository.adapter";
-// TODO(architecture): HTTP route imports a repository adapter directly — call
-// an injected use case instead (follow-up). See backend/eslint.config.mjs.
+
+/**
+ * Persistence port (review P3): management routes must not import the database
+ * pool directly. Wired in `server/route-config.ts`; tests inject doubles
+ * through the setters. Fail-fast: an unwired port must never silently swallow
+ * audit-log writes.
+ */
+export interface ManagementDbPort {
+  auditCredentialAccess(
+    userId: string,
+    action: string,
+    details: unknown
+  ): Promise<void>;
+  selectBot(
+    botId: string,
+    userId: string
+  ): Promise<{ id: string; status: string } | null>;
+}
+
+export interface ManagementAccountPort {
+  getAccountWithSecret(
+    userId: string,
+    accountId: string
+  ): Promise<ExchangeAccountWithSecret | null>;
+}
+
+let dbImpl: ManagementDbPort | undefined;
+/** Route wiring (server/route-config.ts). Tests inject a double the same way. */
+export function setManagementDbDeps(deps: ManagementDbPort): void {
+  dbImpl = deps;
+}
+function managementDb(): ManagementDbPort {
+  if (!dbImpl) {
+    throw new Error(
+      "Management DB port not wired — call setManagementDbDeps() in route-config"
+    );
+  }
+  return dbImpl;
+}
+
+let accountImpl: ManagementAccountPort | undefined;
+/** Route wiring (server/route-config.ts). Tests inject a double the same way. */
+export function setManagementAccountDeps(deps: ManagementAccountPort): void {
+  accountImpl = deps;
+}
+function managementAccount(): ManagementAccountPort {
+  if (!accountImpl) {
+    throw new Error(
+      "Management account port not wired — call setManagementAccountDeps() in route-config"
+    );
+  }
+  return accountImpl;
+}
+
+/** Test-only access to wired port implementations. */
+export { managementDb as managementDb, managementAccount as managementAccount };
 
 const router = Router();
 
@@ -377,11 +427,10 @@ router.post(
           .status(missingError.statusCode)
           .json(createErrorResponse(missingError, getCorrelationId()));
       }
-      const boundAccount =
-        await exchangeAccountRepositoryAdapter.getAccountWithSecret(
-          userId,
-          exchangeAccountId as string
-        );
+      const boundAccount = await managementAccount().getAccountWithSecret(
+        userId,
+        exchangeAccountId as string
+      );
       if (!boundAccount) {
         const notFoundError = new NotFoundError(
           "Exchange account not found. Connect an account in Settings first."
@@ -431,21 +480,14 @@ router.post(
 
       // Log credential access for audit trail (engine will fetch
       // credentials through the authenticated engine endpoint).
-      await query(
-        "INSERT INTO audit_logs (user_id, action, details) VALUES ($1, $2, $3)",
-        [
-          userId,
-          "CREDENTIAL_ACCESS",
-          {
-            action: "bot_start",
-            botId: lifecycle.botId,
-            strategyId,
-            exchangeAccountId,
-            correlationId: lifecycle.correlationId,
-            timestamp: new Date().toISOString(),
-          },
-        ]
-      );
+      await managementDb().auditCredentialAccess(userId, "CREDENTIAL_ACCESS", {
+        action: "bot_start",
+        botId: lifecycle.botId,
+        strategyId,
+        exchangeAccountId,
+        correlationId: lifecycle.correlationId,
+        timestamp: new Date().toISOString(),
+      });
 
       // 202 Accepted: the bot is STARTING, not yet RUNNING.
       // Only a STATE_CHANGED event from the engine means RUNNING.
@@ -804,11 +846,8 @@ router.post(
       }
 
       // Validate bot ownership (simplified)
-      const botResult = await query<{ id: string; status: string }>(
-        "SELECT id, status FROM bot_instances WHERE id = $1 AND user_id = $2",
-        [botId, userId]
-      );
-      if (botResult.rows.length === 0) {
+      const botResult = await managementDb().selectBot(botId, userId);
+      if (!botResult) {
         const notFoundError = new NotFoundError("Bot not found");
         return res
           .status(notFoundError.statusCode)
@@ -820,7 +859,7 @@ router.post(
         success: true,
         data: {
           botId,
-          status: botResult.rows[0].status,
+          status: botResult.status,
           reconciled: false,
           reason: "sync_completed",
           engineHealth: {
