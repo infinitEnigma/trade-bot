@@ -184,9 +184,24 @@ export class ServiceFactory implements IServiceFactory {
    */
   assertDepsConfigured(): void {
     const deps = this.requireDeps();
-    const missing = (Object.keys(deps) as Array<keyof ServiceFactoryDeps>).filter(
-      key => deps[key] == null
-    );
+    const requiredKeys: Array<keyof ServiceFactoryDeps> = [
+      "authService",
+      "balanceService",
+      "positionService",
+      "roleManagementService",
+      "roleQualificationService",
+      "walletQualificationService",
+      "userProfileService",
+      "exchangeAccountService",
+      "botManagementService",
+      "strategyService",
+      "marketService",
+      "positionValidatorService",
+      "positionSyncService",
+      "healthService",
+      "engineManager",
+    ];
+    const missing = requiredKeys.filter(key => deps[key] == null);
     if (missing.length > 0) {
       throw new Error(
         `Service Factory dependencies missing: ${missing.join(", ")}`
