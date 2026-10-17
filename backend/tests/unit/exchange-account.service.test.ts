@@ -19,6 +19,7 @@ import {
   ExchangeAccountServiceDeps,
   EXCHANGE_ENVELOPE_VERSION,
 } from "../../src/core/user/exchange-account.service";
+import { getCredentialAdapter } from "../../src/infrastructure/external/exchange-accounts/credential-adapters";
 
 const kodiakRequest: ConnectExchangeAccountRequest = {
   exchange: "kodiak",
@@ -46,6 +47,7 @@ function createDeps(
   overrides: Partial<ExchangeAccountServiceDeps> = {}
 ): ExchangeAccountServiceDeps {
   return {
+    credentialAdapter: getCredentialAdapter,
     exchangeAccountRepository: {
       listAccounts: jest.fn().mockResolvedValue([activeAccount]),
       getAccountWithSecret: jest.fn().mockResolvedValue(null),
@@ -282,79 +284,92 @@ describe("ExchangeAccountService", () => {
     });
   });
 
-    describe("X4 — venue-verified wallet binding", () => {
-      const OWNER = "0x933e111111111111111111111111111111111111";
+  describe("X4 — venue-verified wallet binding", () => {
+    const OWNER = "0x933e111111111111111111111111111111111111";
 
-      const withBindingDeps = (overrides = {}) => {
-        const deps = createDeps({
-          venueOwner: jest.fn().mockResolvedValue(OWNER),
-          wallets: {
-            listWallets: jest.fn().mockResolvedValue([
-              { chain: "evm", address: OWNER },
-            ]),
-          },
-          ...overrides,
-        });
-        // The base deps omit setWalletBinding; add it so the binding persists.
-        deps.exchangeAccountRepository.setWalletBinding = jest
-          .fn()
-          .mockResolvedValue(true);
-        return deps;
-      };
-
-      it("stores meta.walletBinding when the venue owner is a linked wallet", async () => {
-        const deps = withBindingDeps();
-        const service = new ExchangeAccountService(deps);
-
-        const result = await service.connectAccount("test-user-id", kodiakRequest);
-
-        expect(result.success).toBe(true);
-        expect(
-          deps.exchangeAccountRepository.setWalletBinding
-        ).toHaveBeenCalledWith("test-user-id", "account-1", {
-          address: OWNER,
-          verifiedAt: expect.any(String),
-          source: "venue",
-        });
+    const withBindingDeps = (overrides = {}) => {
+      const deps = createDeps({
+        venueOwner: jest.fn().mockResolvedValue(OWNER),
+        wallets: {
+          listWallets: jest
+            .fn()
+            .mockResolvedValue([{ chain: "evm", address: OWNER }]),
+        },
+        ...overrides,
       });
+      // The base deps omit setWalletBinding; add it so the binding persists.
+      deps.exchangeAccountRepository.setWalletBinding = jest
+        .fn()
+        .mockResolvedValue(true);
+      return deps;
+    };
 
-      it("rejects the connect (400) when the venue owner is NOT a linked wallet", async () => {
-        const deps = withBindingDeps({
-          wallets: {
-            listWallets: jest
-              .fn()
-              .mockResolvedValue([{ chain: "evm", address: `0x${"9".repeat(40)}` }]),
-          },
-        });
-        const service = new ExchangeAccountService(deps);
+    it("stores meta.walletBinding when the venue owner is a linked wallet", async () => {
+      const deps = withBindingDeps();
+      const service = new ExchangeAccountService(deps);
 
-        const result = await service.connectAccount("test-user-id", kodiakRequest);
+      const result = await service.connectAccount(
+        "test-user-id",
+        kodiakRequest
+      );
 
-        expect(result.success).toBe(false);
-        expect(result.error).toBe("VENUE_OWNER_NOT_LINKED");
-        expect(result.message).toContain("link that wallet first");
-        // Fail-closed: the account never becomes ACTIVE.
-        expect(
-          deps.exchangeAccountRepository.setStatus
-        ).toHaveBeenCalledWith("test-user-id", "account-1", "INVALID", false);
-      });
-
-      it("rejects the connect when the venue returns no owner (fail-closed)", async () => {
-        const deps = withBindingDeps({
-          venueOwner: jest.fn().mockResolvedValue(null),
-        });
-        const service = new ExchangeAccountService(deps);
-
-        const result = await service.connectAccount("test-user-id", kodiakRequest);
-
-        expect(result.success).toBe(false);
-        expect(result.error).toBe("VENUE_OWNER_UNRESOLVED");
-        expect(
-          deps.exchangeAccountRepository.setWalletBinding
-        ).not.toHaveBeenCalled();
+      expect(result.success).toBe(true);
+      expect(
+        deps.exchangeAccountRepository.setWalletBinding
+      ).toHaveBeenCalledWith("test-user-id", "account-1", {
+        address: OWNER,
+        verifiedAt: expect.any(String),
+        source: "venue",
       });
     });
 
+    it("rejects the connect (400) when the venue owner is NOT a linked wallet", async () => {
+      const deps = withBindingDeps({
+        wallets: {
+          listWallets: jest
+            .fn()
+            .mockResolvedValue([
+              { chain: "evm", address: `0x${"9".repeat(40)}` },
+            ]),
+        },
+      });
+      const service = new ExchangeAccountService(deps);
+
+      const result = await service.connectAccount(
+        "test-user-id",
+        kodiakRequest
+      );
+
+      expect(result.success).toBe(false);
+      expect(result.error).toBe("VENUE_OWNER_NOT_LINKED");
+      expect(result.message).toContain("link that wallet first");
+      // Fail-closed: the account never becomes ACTIVE.
+      expect(deps.exchangeAccountRepository.setStatus).toHaveBeenCalledWith(
+        "test-user-id",
+        "account-1",
+        "INVALID",
+        false
+      );
+    });
+
+    it("rejects the connect when the venue returns no owner (fail-closed)", async () => {
+      const deps = withBindingDeps({
+        venueOwner: jest.fn().mockResolvedValue(null),
+      });
+      const service = new ExchangeAccountService(deps);
+
+      const result = await service.connectAccount(
+        "test-user-id",
+        kodiakRequest
+      );
+
+      expect(result.success).toBe(false);
+      expect(result.error).toBe("VENUE_OWNER_UNRESOLVED");
+      expect(
+        deps.exchangeAccountRepository.setWalletBinding
+      ).not.toHaveBeenCalled();
+    });
+  });
 
   describe("verifyAccount", () => {
     it("should return not-found without touching state", async () => {
@@ -563,7 +578,11 @@ describe("ExchangeAccountService", () => {
           ownerOverrides.venueOwner ?? jest.fn().mockResolvedValue(OWNER_A),
         wallets:
           ownerOverrides.wallets ??
-          ({ listWallets: jest.fn().mockResolvedValue([{ chain: "evm", address: OWNER_A }]) } as {
+          ({
+            listWallets: jest
+              .fn()
+              .mockResolvedValue([{ chain: "evm", address: OWNER_A }]),
+          } as {
             listWallets: jest.Mock;
           }),
         ...(ownerOverrides as object),
@@ -616,9 +635,7 @@ describe("ExchangeAccountService", () => {
         deps.exchangeAccountRepository.clearWalletBinding
       ).toHaveBeenCalledWith("test-user-id", "account-1");
       // Credentials were proven, so the account is NOT downgraded to INVALID.
-      expect(
-        deps.exchangeAccountRepository.setStatus
-      ).not.toHaveBeenCalledWith(
+      expect(deps.exchangeAccountRepository.setStatus).not.toHaveBeenCalledWith(
         "test-user-id",
         "account-1",
         "INVALID",

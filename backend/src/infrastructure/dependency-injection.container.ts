@@ -62,6 +62,7 @@ import { ExchangeAccountService } from "../core/user/exchange-account.service";
 import { kodiakIntegrationService } from "./external/kodiak-integration.service";
 import { lighterVerifierFromEnv } from "./external/exchange-accounts/lighter-verifier";
 import { resolveVenueOwner } from "./external/exchange-accounts/venue-owner";
+import { getCredentialAdapter } from "./external/exchange-accounts/credential-adapters";
 import { encryptionService } from "./security/encryption.service";
 
 /**
@@ -397,6 +398,7 @@ export class DependencyInjectionContainer {
       logger: this.loggerService,
     });
     return new ExchangeAccountService({
+      credentialAdapter: getCredentialAdapter,
       exchangeAccountRepository: this.exchangeAccountRepository,
       encryption: {
         encryptWithVersion: (plaintext: string) =>

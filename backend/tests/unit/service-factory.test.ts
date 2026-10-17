@@ -265,6 +265,7 @@ describe("Service Factory Interface", () => {
         >
       ).mockImplementation(deps => {
         expect(Object.keys(deps)).toEqual([
+          "credentialAdapter",
           "exchangeAccountRepository",
           "encryption",
           "verifyConnectivity",

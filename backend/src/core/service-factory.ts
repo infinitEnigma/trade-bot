@@ -28,6 +28,7 @@ import { createVerifyConnectivity } from "./user/verify-connectivity";
 import { lighterVerifierFromEnv } from "../infrastructure/external/exchange-accounts/lighter-verifier";
 import { UserLevelService } from "./auth/user-level.service";
 import { resolveVenueOwner } from "../infrastructure/external/exchange-accounts/venue-owner";
+import { getCredentialAdapter } from "../infrastructure/external/exchange-accounts/credential-adapters";
 import { encryptionService } from "../infrastructure/security/encryption.service";
 import { kodiakIntegrationService } from "../infrastructure/external/kodiak-integration.service";
 import { BotManagementService } from "./bots/bot-management.service";
@@ -361,6 +362,7 @@ export class ServiceFactory implements IServiceFactory {
   getExchangeAccountService(): ExchangeAccountService | undefined {
     try {
       const service = new ExchangeAccountService({
+        credentialAdapter: getCredentialAdapter,
         exchangeAccountRepository: diContainer.exchangeAccountRepository,
         encryption: {
           encryptWithVersion: (plaintext: string) =>

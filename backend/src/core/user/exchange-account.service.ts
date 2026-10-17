@@ -15,10 +15,47 @@ import type {
   ExchangeAccount,
   ExchangeAccountStatus,
 } from "@trade-bot/shared";
-import { getCredentialAdapter } from "../../infrastructure/external/exchange-accounts/credential-adapters";
 import { shortAddress } from "../wallet/wallet-proof.service";
 
+/** Plaintext credential payloads (memory only — encrypted before storage).
+ * Mirrors the infrastructure adapter's shape, rebuilt here from shared/literal
+ * types so core never imports the concrete credential-adapter registry. */
+export type ExchangeCredentialsPlaintext =
+  | {
+      exchange: "kodiak";
+      accountId: string;
+      apiKey: string;
+      secretKey: string;
+    }
+  | {
+      exchange: "lighter";
+      accountIndex: number;
+      apiKeyIndex: number;
+      privateKey: string;
+    };
+
+/** Port: per-venue credential adapter (validation + accountRef + plaintext).
+ * Implemented by the adapters in
+ * `infrastructure/external/exchange-accounts/credential-adapters.ts`; core never
+ * imports that registry. */
+export interface IExchangeCredentialAdapter {
+  readonly exchange: "kodiak" | "lighter";
+  validate(request: ConnectExchangeAccountRequest): {
+    valid: boolean;
+    error?: string;
+  };
+  accountRef(request: ConnectExchangeAccountRequest): string;
+  toPlaintext(
+    request: ConnectExchangeAccountRequest
+  ): ExchangeCredentialsPlaintext;
+}
+
 export interface ExchangeAccountServiceDeps {
+  /** Credential-adapter registry (C2): exchange name → venue adapter, or null
+   * for an unknown exchange. Injected so core never imports the concrete
+   * registry. Required — connect/verify cannot validate or build credentials
+   * without it. */
+  credentialAdapter: (exchange: string) => IExchangeCredentialAdapter | null;
   exchangeAccountRepository: {
     listAccounts(userId: string): Promise<ExchangeAccount[]>;
     getAccountWithSecret(
@@ -149,7 +186,7 @@ export class ExchangeAccountService {
     userId: string,
     request: ConnectExchangeAccountRequest
   ): Promise<ConnectResult> {
-    const adapter = getCredentialAdapter(request.exchange);
+    const adapter = this.deps.credentialAdapter(request.exchange);
     if (!adapter) {
       return {
         success: false,
@@ -525,7 +562,7 @@ export class ExchangeAccountService {
     credentialsEncrypted: string,
     encryptionVersion: number | null
   ): Promise<ConnectResult | null> {
-    const adapter = getCredentialAdapter(request.exchange);
+    const adapter = this.deps.credentialAdapter(request.exchange);
     const accountRef = adapter ? adapter.accountRef(request) : null;
     if (!accountRef) return null;
     const accounts =
@@ -695,7 +732,7 @@ export class ExchangeAccountService {
     try {
       const parsed = JSON.parse(envelope) as Record<string, unknown>;
       if (parsed.kind !== "kodiak-legacy") return;
-      const adapter = getCredentialAdapter(request.exchange);
+      const adapter = this.deps.credentialAdapter(request.exchange);
       if (!adapter) return;
       const fresh = JSON.stringify({
         v: EXCHANGE_ENVELOPE_VERSION,

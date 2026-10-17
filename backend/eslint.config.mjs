@@ -42,11 +42,6 @@ export default tseslint.config(
                 "Core depends on ports, not PostgreSQL. Move SQL behind a port in core/ and an adapter in infrastructure/ (review P1).",
             },
             {
-              group: ["**/infrastructure/adapters/repositories/**"],
-              message:
-                "Core must not import repository adapters. Inject a port; implement it in infrastructure/adapters/repositories (review P1).",
-            },
-            {
               group: ["**/infrastructure/**"],
               message:
                 "Core must not import infrastructure. Depend on a port defined in core/; the concrete implementation lives in infrastructure/ and is wired at startup.",
@@ -59,11 +54,10 @@ export default tseslint.config(
   // (2026-10-17, review Arch-2): existing debt — core files still importing
   // infrastructure concretely. Temporary exceptions; remove each entry as the
   // file is ported to ports (see docs/instructions/current_issues.md item 8).
-  // Remaining debt: exchange-account, wallet-proof, service-factory
-  // (service-factory deferred to a later phase).
+  // Remaining debt: wallet-proof, service-factory (service-factory deferred to
+  // a later phase).
   {
     files: [
-      "src/core/user/exchange-account.service.ts",
       "src/core/wallet/wallet-proof.service.ts",
       "src/core/service-factory.ts",
     ],
