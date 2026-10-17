@@ -5,6 +5,7 @@
  * services consumed by ServiceFactory without importing infrastructure.
  */
 
+import { getServiceFactory as getFactory } from "./service-factory";
 import type { AuthService } from "./auth/auth.service.pure";
 import type { RoleManagementService } from "./auth/role-management.service.pure";
 import type { RoleQualificationService } from "./auth/role-qualification.service";
@@ -58,4 +59,3 @@ export function resetServiceFactoryDepsForTests(): void {
   getFactory().resetDepsForTests();
 }
 
-import { getServiceFactory as getFactory } from "./service-factory";
