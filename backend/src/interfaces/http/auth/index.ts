@@ -323,7 +323,10 @@ router.post("/logout", async (req: Request, res: Response) => {
 
     // Blacklist the tokens so they cannot be used again (refresh via
     // refreshToken(), access via validateToken()) until their natural expiry
-    const logoutResult = await getAuthService().logout(refreshToken, accessToken);
+    const logoutResult = await getAuthService().logout(
+      refreshToken,
+      accessToken
+    );
 
     if (!logoutResult.success) {
       authLogger.warn("Logout token blacklisting failed", {
