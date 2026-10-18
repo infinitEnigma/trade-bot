@@ -19,7 +19,7 @@
  * behaviour the workspace relied on.
  */
 
-import React, { Suspense, lazy } from "react";
+import React, { Suspense, lazy, useCallback, useState } from "react";
 import { Card } from "../../../shared/components/ui";
 import {
   decodeChartOption,
@@ -39,6 +39,59 @@ const CandlestickChart = lazy(
 
 /** The pane's height — unchanged from the workspace's chart (Phase 3.1). */
 const CHART_HEIGHT = 450;
+
+/**
+ * Chart timeframes — mirror the Dashboard's PriceChart switcher so both
+ * chart surfaces agree. Values are human-readable (`1h`, not `60`); the
+ * shared hook's `getResolution()` maps them to the TradingView strings the
+ * backend expects (`1h` → `60`).
+ */
+const CHART_TIMEFRAMES: { label: string; value: string }[] = [
+  { label: "1m", value: "1m" },
+  { label: "5m", value: "5m" },
+  { label: "15m", value: "15m" },
+  { label: "1H", value: "1h" },
+  { label: "4H", value: "4h" },
+  { label: "1D", value: "1d" },
+];
+
+/** localStorage key for the user's preferred chart interval. */
+const intervalStorageKey = (userId: string | undefined) =>
+  `chart-interval:${userId ?? "default"}`;
+
+interface StrategyChartPanelProps {
+  /** The charted market + venue (page-owned selection). */
+  selection: ChartSelection;
+  /** Venue-grouped dropdown options (X1 labels, X3 venue disambiguation). */
+  groups: ChartSymbolGroup[];
+  /** Total selectable symbols — the picker only shows when there is a choice. */
+  optionCount: number;
+  onSelectionChange: (selection: ChartSelection) => void;
+  /**
+   * The account's open-orders book. May be unfiltered — the chart keeps only
+   * the rows for the market it is showing.
+   */
+  orders?: OpenOrderRow[];
+  /**
+   * F5: the grid the form is currently configuring. `null` (or absent) when no
+   * form is open. A draft naming another market is NOT drawn — a band on the
+   * wrong market is worse than no band — the panel says so instead.
+   */
+  previewGrid?: GridPreviewInput | null;
+  /** Review P1: where the forwarded order levels come from, in one honest line
+   * (e.g. "Levels: Lighter testnet · account 42"). Rendered under the picker so
+   * the operator can attribute levels to a venue+account. */
+  ordersNote?: string;
+  /** User id used to scope the persisted interval preference. */
+  userId?: string;
+  /**
+   * Initial interval override for controlled/test usage. The panel owns the
+   * interval afterwards: switching persists per user and is reported through
+   * `onIntervalChange`. Defaults to the persisted preference, else "1h".
+   */
+  interval?: string;
+  onIntervalChange?: (interval: string) => void;
+}
 
 /**
  * Do two symbol spellings name the same market? Venues disagree (`BTC` vs
@@ -95,7 +148,48 @@ export const StrategyChartPanel: React.FC<StrategyChartPanelProps> = ({
   orders,
   previewGrid,
   ordersNote,
+  userId,
+  interval: intervalProp,
+  onIntervalChange,
 }) => {
+  // Interval preference: explicit initial prop > persisted value > "1h"
+  // default. The panel owns the interval after mount (a view preference, not
+  // part of the page-owned market selection — that contract is unchanged):
+  // every user-driven change both re-renders and persists per user so the
+  // choice survives sessions (localStorage, not server state — the chart is
+  // a client-side market view).
+  const [interval, setInterval] = useState(() => {
+    if (intervalProp !== undefined) return intervalProp;
+    try {
+      const stored = localStorage.getItem(intervalStorageKey(userId));
+      if (stored && CHART_TIMEFRAMES.some(tf => tf.value === stored)) {
+        return stored;
+      }
+    } catch {
+      // localStorage unavailable in some environments — fall through to default.
+    }
+    return "1h";
+  });
+
+  // Persist every user-driven change (sync write; the try/catch keeps
+  // exotic-webview failures quiet — the state still holds this session).
+  const persistInterval = useCallback(
+    (next: string) => {
+      try {
+        localStorage.setItem(intervalStorageKey(userId), next);
+      } catch {
+        // localStorage unavailable — preference won't survive, still honored
+        // for this session via state.
+      }
+    },
+    [userId]
+  );
+
+  const handleIntervalChange = (next: string) => {
+    setInterval(next);
+    persistInterval(next);
+    onIntervalChange?.(next);
+  };
   // Review P1 + 026: the preview must name the charted MARKET *and* the
   // charted VENUE. The venue arrives on the preview itself (strategy's stored
   // pair) — never inferred from spelling. A preview with no known venue is an
@@ -161,6 +255,27 @@ export const StrategyChartPanel: React.FC<StrategyChartPanelProps> = ({
             </select>
           </div>
         )}
+        {/* Timeframe switcher — mirrors PriceChart's; changing interval
+            refetches candles via the shared hook (query key includes it). */}
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-textMuted shrink-0">Timeframe</span>
+          <div className="flex gap-0.5">
+            {CHART_TIMEFRAMES.map(tf => (
+              <button
+                key={tf.value}
+                onClick={() => handleIntervalChange(tf.value)}
+                aria-pressed={interval === tf.value}
+                className={`px-2 py-1 text-xs rounded shrink-0 ${
+                  interval === tf.value
+                    ? "bg-primary text-white"
+                    : "bg-surface text-textMuted hover:bg-white/5"
+                }`}
+              >
+                {tf.label}
+              </button>
+            ))}
+          </div>
+        </div>
       </div>
 
       {previewGrid && (previewOffMarket || previewOffVenue) && (
@@ -192,7 +307,7 @@ export const StrategyChartPanel: React.FC<StrategyChartPanelProps> = ({
       >
         <CandlestickChart
           symbol={selection.symbol}
-          interval="1h"
+          interval={interval}
           height={CHART_HEIGHT}
           venue={{
             exchange: selection.exchange,

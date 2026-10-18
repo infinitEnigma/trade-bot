@@ -26,12 +26,14 @@ import { StrategyChartPanel } from "./StrategyChartPanel";
 vi.mock("../../../shared/components/charts/CandlestickChart", () => ({
   default: (props: {
     symbol?: string;
+    interval?: string;
     orders?: unknown;
     previewGrid?: unknown;
   }) => (
     <div
       data-testid="candlestick-chart"
       data-symbol={props.symbol ?? ""}
+      data-interval={props.interval ?? ""}
       data-orders={JSON.stringify(props.orders ?? null)}
       data-preview={JSON.stringify(props.previewGrid ?? null)}
     />
@@ -232,5 +234,67 @@ describe("StrategyChartPanel", () => {
     expect(
       screen.getByText(/Levels: Kodiak mainnet · account 42/)
     ).toBeDefined();
+  });
+
+  // --- Interval switcher (Phase 2) ---------------------------------------
+
+  it("charts the default 1h interval when none is given", async () => {
+    renderPanel();
+
+    const chart = await screen.findByTestId("candlestick-chart");
+    expect(chart.getAttribute("data-interval")).toBe("1h");
+    // 1H is highlighted in the switcher.
+    expect(
+      screen.getByRole("button", { name: "1H", pressed: true })
+    ).toBeInTheDocument();
+  });
+
+  it("switches the chart interval and calls onIntervalChange", async () => {
+    const onIntervalChange = vi.fn();
+    renderPanel({ onIntervalChange });
+
+    fireEvent.click(screen.getByRole("button", { name: "5m" }));
+
+    const chart = await screen.findByTestId("candlestick-chart");
+    expect(chart.getAttribute("data-interval")).toBe("5m");
+    expect(onIntervalChange).toHaveBeenCalledWith("5m");
+    expect(
+      screen.getByRole("button", { name: "5m", pressed: true })
+    ).toBeInTheDocument();
+    // The previously-active 1H is no longer pressed.
+    expect(
+      screen.queryByRole("button", { name: "1H", pressed: true })
+    ).toBeNull();
+  });
+
+  it("restores the persisted interval per user (localStorage)", async () => {
+    // Pre-seed storage as another user's session would have left it.
+    localStorage.setItem("chart-interval:user-1", "4h");
+    renderPanel({ userId: "user-1" });
+
+    const chart = await screen.findByTestId("candlestick-chart");
+    expect(chart.getAttribute("data-interval")).toBe("4h");
+    expect(
+      screen.getByRole("button", { name: "4H", pressed: true })
+    ).toBeInTheDocument();
+
+    // Switching writes back under the same user key.
+    fireEvent.click(screen.getByRole("button", { name: "1m" }));
+    expect(localStorage.getItem("chart-interval:user-1")).toBe("1m");
+    expect(
+      screen.getByRole("button", { name: "1m", pressed: true })
+    ).toBeInTheDocument();
+
+    localStorage.removeItem("chart-interval:user-1");
+  });
+
+  it("falls back to 1h for a garbage stored value", async () => {
+    localStorage.setItem("chart-interval:user-1", "not-a-timeframe");
+    renderPanel({ userId: "user-1" });
+
+    const chart = await screen.findByTestId("candlestick-chart");
+    expect(chart.getAttribute("data-interval")).toBe("1h");
+
+    localStorage.removeItem("chart-interval:user-1");
   });
 });

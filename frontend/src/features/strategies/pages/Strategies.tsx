@@ -507,6 +507,7 @@ const Strategies: React.FC = React.memo(() => {
           orders={chartOrders}
           ordersNote={chartOrdersNote}
           previewGrid={previewGrid}
+          userId={user?.id}
         />
 
         {/* Strategy list — four distinct states, in precedence order:
