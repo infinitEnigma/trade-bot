@@ -317,7 +317,8 @@ export class ServiceFactory implements IServiceFactory {
    */
   getRoleQualificationService(): RoleQualificationService | undefined {
     try {
-      const roleQualificationService = this.requireDeps().roleQualificationService;
+      const roleQualificationService =
+        this.requireDeps().roleQualificationService;
       this.logger.debug("Role Qualification Service retrieved from container", {
         service: "RoleQualificationService",
         implementation: "pure",
@@ -340,7 +341,8 @@ export class ServiceFactory implements IServiceFactory {
    */
   getWalletQualificationService(): WalletQualificationService | undefined {
     try {
-      const walletQualificationService = this.requireDeps().walletQualificationService;
+      const walletQualificationService =
+        this.requireDeps().walletQualificationService;
       this.logger.debug(
         "Wallet Qualification Service retrieved from container",
         {
@@ -391,10 +393,13 @@ export class ServiceFactory implements IServiceFactory {
   getExchangeAccountService(): ExchangeAccountService | undefined {
     try {
       const exchangeAccountService = this.requireDeps().exchangeAccountService;
-      this.logger.debug("Exchange Account Service retrieved from dependencies", {
+      this.logger.debug(
+        "Exchange Account Service retrieved from dependencies",
+        {
         service: "ExchangeAccountService",
-        implementation: "injected",
-      });
+          implementation: "injected",
+        }
+      );
       return exchangeAccountService;
     } catch (error) {
       this.logger.error(
@@ -482,7 +487,8 @@ export class ServiceFactory implements IServiceFactory {
    */
   getPositionValidatorService(): PositionValidatorService | undefined {
     try {
-      const positionValidatorService = this.requireDeps().positionValidatorService;
+      const positionValidatorService =
+        this.requireDeps().positionValidatorService;
       this.logger.debug("Position Validator Service retrieved from container", {
         service: "PositionValidatorService",
         implementation: "pure",
