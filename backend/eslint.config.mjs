@@ -25,9 +25,8 @@ export default tseslint.config(
   // HTTP routes must never orchestrate repository/pool calls directly — that
   // belongs in application use cases wired in server/route-config.ts.
   //
-  // Entries are applied in order; the file-specific allowlist entries below
-  // deliberately carve out existing debt with a TODO + follow-up issue so the
-  // rule is enforced everywhere else and the allowlist can shrink over time.
+  // This boundary is enforced for all core files; exceptions should not be
+  // added without an explicit architecture decision and tracked follow-up.
   // =========================================================================
   {
     files: ["src/core/**/*.ts"],
@@ -51,21 +50,7 @@ export default tseslint.config(
       ],
     },
   },
-  // (2026-10-17, review Arch-2): existing debt — core files still importing
-  // infrastructure concretely. Temporary exceptions; remove each entry as the
-  // file is ported to ports (see docs/instructions/current_issues.md item 8).
-  // Remaining debt: service-factory (deferred to a later phase; wallet-proof
-  // cleared in Phase 5).
-  {
-    files: ["src/core/service-factory.ts"],
-    rules: {
-      "no-restricted-imports": "off",
-    },
-  },
-  // (2026-10-16, review P3 Phase 1): service-factory.ts and
-  // wallet-proof.service.ts were previously cleared of their P3 core
-  // allowlist entries; they are now re-listed above as temporary Arch-2
-  // exceptions pending the broader infra porting.
+  // ServiceFactory now receives prebuilt dependencies through core ports.
   {
     files: ["src/interfaces/http/**/*.ts"],
     rules: {

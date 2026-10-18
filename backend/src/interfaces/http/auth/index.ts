@@ -55,7 +55,8 @@ function authUsers(): AuthUserPort {
 export { authUsers as authUsers };
 
 // Select service implementation based on feature flags
-const authService = serviceProvider.getAuthService();
+// Resolve after startup wiring; route modules are imported before startServer().
+const getAuthService = () => serviceProvider.getAuthService();
 
 const router = Router();
 
@@ -65,7 +66,7 @@ router.post(
   validators.register,
   async (req: Request, res: Response) => {
     try {
-      const result = await authService.register(
+      const result = await getAuthService().register(
         req.body.email,
         req.body.password,
         req.body.username
@@ -135,7 +136,7 @@ router.post(
 router.post("/login", validators.login, async (req: Request, res: Response) => {
   authLogger.info("Login attempt", { email: maskEmail(req.body?.email) });
   try {
-    const result = await authService.login({
+    const result = await getAuthService().login({
       email: req.body.email,
       password: req.body.password,
     });
@@ -255,7 +256,7 @@ router.post(
   validators.refreshToken,
   async (req: Request, res: Response) => {
     try {
-      const result = await authService.refreshToken(req.body.refreshToken);
+      const result = await getAuthService().refreshToken(req.body.refreshToken);
 
       if (!result.success) {
         const authError = new ValidationError(
@@ -322,7 +323,10 @@ router.post("/logout", async (req: Request, res: Response) => {
 
     // Blacklist the tokens so they cannot be used again (refresh via
     // refreshToken(), access via validateToken()) until their natural expiry
-    const logoutResult = await authService.logout(refreshToken, accessToken);
+    const logoutResult = await getAuthService().logout(
+      refreshToken,
+      accessToken
+    );
 
     if (!logoutResult.success) {
       authLogger.warn("Logout token blacklisting failed", {

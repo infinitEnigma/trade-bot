@@ -125,6 +125,26 @@ infrastructure/
 └── adapters/      # Repository implementations, external service adapters
 ```
 
+### Service Factory (Phase 6 — delegation-only composition)
+
+The infrastructure `DependencyInjectionContainer` is the sole composition
+owner: it builds every pure service once at startup. `initializeCoreDependencies()`
+(`src/index.ts`) hands those prebuilt instances to the core in one call —
+`setServiceFactoryDeps({ authService, balanceService, … engineManager })` —
+then calls `assertServiceFactoryWired()` **before** `listen()`. A missing
+dependency fails fast at boot; it can never serve half-wired routes.
+
+`ServiceFactory` (`src/core/service-factory.ts`) holds no construction logic:
+each `getXService()` delegates to the injected instance, returning `undefined`
+plus a `Failed to get X Service` log when unwired (graceful partial operation),
+  while `assertDepsConfigured()` is the strict gate used at startup. HTTP routes
+  and middleware resolve services lazily through the `serviceProvider`
+  singleton (`serviceProvider.getAuthService()`), never via container imports —
+  so route modules can load before `startServer()` wires everything. Unit and
+  integration tests follow the same seam: mock `core/service-provider`, inject
+  doubles via `setServiceFactoryDeps()`, and isolate with
+  `resetServiceFactoryDepsForTests()`.
+
 ---
 
 ## Bot Lifecycle Protocol

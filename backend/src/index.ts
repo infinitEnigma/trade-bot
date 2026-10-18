@@ -70,6 +70,8 @@ import { exchangeAccountRepositoryAdapter } from "./infrastructure/adapters/repo
 import { walletRepositoryAdapter } from "./infrastructure/adapters/repositories/wallet-repository.adapter";
 import { signatureVerificationServiceAdapter } from "./infrastructure/adapters/security/signature-verification.adapter";
 import { setWalletProofDeps } from "./core/wallet/wallet-proof.service";
+import { assertServiceFactoryWired } from "./core/service-factory";
+import { setServiceFactoryDeps } from "./core/service-factory.ports";
 import { strategyRepositoryAdapter } from "./infrastructure/adapters/repositories/strategy-repository.adapter";
 import { TradeLedgerRepositoryAdapter } from "./infrastructure/adapters/repositories/trade-ledger-repository.adapter";
 import { EngineRegistryRepositoryAdapter } from "./infrastructure/adapters/repositories/engine-registry-repository.adapter";
@@ -229,13 +231,14 @@ runWithBackgroundContext("redis", () => {
   });
 });
 
-// Initialize dependency injection container
-diContainer.initialize().catch(error => {
+// Initialize dependency injection container once. startServer awaits this
+// exact promise before wiring core dependencies or opening the listening socket.
+const diInitPromise = diContainer.initialize();
+diInitPromise.catch(error => {
   logger.error(
     "❌ Failed to initialize dependency injection container",
     error instanceof Error ? error : new Error(String(error))
   );
-  throw new Error("Dependency injection container initialization failed");
 });
 
 // ===========================================
@@ -450,7 +453,15 @@ const PORT = process.env.PORT || 3000;
  * Starts the HTTP and WebSocket server
  * @returns A promise that resolves when the server is ready
  */
-export const startServer = (): Promise<typeof httpServer> => {
+/**
+ * Initialize the application's core ports after infrastructure services are
+ * ready. Exported so integration tests that exercise `app` without opening a
+ * listening socket can use the same composition path as production startup.
+ */
+export const initializeCoreDependencies = async (): Promise<void> => {
+  // DI initialization must finish successfully before any core dependency is wired.
+  await diInitPromise;
+
   // X4 wallet-proof gate (review P3 persistence + Arch-2 infra): core consumes
   // ports; the adapters are wired here, BEFORE the server listens, so a
   // request can never observe an unwired proof gate (fail-fast throw).
@@ -464,6 +475,32 @@ export const startServer = (): Promise<typeof httpServer> => {
     challengeStore: redisService,
     signatureVerifier: signatureVerificationServiceAdapter,
   });
+
+  // The infrastructure container is the sole composition owner. Capture its
+  // prebuilt service instances before listen so request handlers never observe
+  // an unwired ServiceFactory.
+  setServiceFactoryDeps({
+    authService: diContainer.authService,
+    balanceService: diContainer.balanceService,
+    positionService: diContainer.positionService,
+    roleManagementService: diContainer.roleManagementService,
+    roleQualificationService: diContainer.roleQualificationService,
+    walletQualificationService: diContainer.walletQualificationService,
+    userProfileService: diContainer.userProfileService,
+    exchangeAccountService: diContainer.exchangeAccountService,
+    botManagementService: diContainer.botManagementService,
+    strategyService: diContainer.strategyService,
+    marketService: diContainer.marketService,
+    positionValidatorService: diContainer.positionValidatorService,
+    positionSyncService: diContainer.positionSyncService,
+    healthService: diContainer.healthService,
+    engineManager: diContainer.engineManager,
+  });
+  assertServiceFactoryWired();
+};
+
+export const startServer = async (): Promise<typeof httpServer> => {
+  await initializeCoreDependencies();
 
   return new Promise(resolve => {
     httpServer.listen(PORT, () => {

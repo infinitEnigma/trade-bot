@@ -16,6 +16,20 @@ jest.mock("../../src/infrastructure/dependency-injection.container", () => ({
   diContainer: {
     initialize: jest.fn().mockResolvedValue(true),
     authService: {},
+    balanceService: {},
+    positionService: {},
+    roleManagementService: {},
+    roleQualificationService: {},
+    walletQualificationService: {},
+    userProfileService: {},
+    exchangeAccountService: {},
+    botManagementService: {},
+    strategyService: {},
+    marketService: {},
+    positionValidatorService: {},
+    positionSyncService: {},
+    healthService: {},
+    engineManager: {},
   },
 }));
 jest.mock("../../src/server/express-config", () => ({

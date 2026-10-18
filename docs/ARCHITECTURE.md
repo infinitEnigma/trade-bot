@@ -56,15 +56,25 @@ exchange SDK — exchange code lives behind the `ExchangeClient` interface.
 
 Inside the backend, the same discipline is **lint-enforced**
 (`backend/eslint.config.mjs`, `no-restricted-imports`): `src/core/**` must
-never import `**/database/**` or `**/infrastructure/adapters/repositories/**`
+never import `**/database/**` or `**/infrastructure/**`
 — core depends on ports, infrastructure implements them — and
 `src/interfaces/http/**` must not call PostgreSQL or repository adapters
 directly (data access belongs in use cases wired in
-`server/route-config.ts`). Core has **zero** file-specific exceptions; three
-HTTP routes remain exempt as tracked debt (`bots/engine.ts`,
-`bots/management.ts`, `auth/index.ts` — gap-analysis §4 row Arch-1), and the
-core rules do not yet cover every concrete infrastructure import (row
-Arch-2).
+`server/route-config.ts`).
+
+Service composition follows the same arrow (Phase 6): the infrastructure
+`DependencyInjectionContainer` builds every service once at startup;
+`initializeCoreDependencies()` (`backend/src/index.ts`) hands the prebuilt
+instances to the core via `setServiceFactoryDeps()` and then calls
+`assertServiceFactoryWired()` **before** `listen()`, so an unwired factory
+fails fast at boot instead of serving half-broken routes. The core
+`ServiceFactory` (`backend/src/core/service-factory.ts`) is delegation-only
+— each `getXService()` returns the injected instance (or `undefined` + a
+log when unwired) — and HTTP routes resolve services lazily through the
+`serviceProvider` boundary (`serviceProvider.getAuthService()`), never by
+importing the container. Tests mirror this: unit/integration suites mock at
+`core/service-provider` and reset the singleton via
+`resetServiceFactoryDepsForTests()`.
 
 ---
 
