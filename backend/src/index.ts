@@ -453,9 +453,13 @@ const PORT = process.env.PORT || 3000;
  * Starts the HTTP and WebSocket server
  * @returns A promise that resolves when the server is ready
  */
-export const startServer = async (): Promise<typeof httpServer> => {
-  // DI initialization must finish successfully before any core dependency is
-  // wired or the HTTP socket begins accepting requests.
+/**
+ * Initialize the application's core ports after infrastructure services are
+ * ready. Exported so integration tests that exercise `app` without opening a
+ * listening socket can use the same composition path as production startup.
+ */
+export const initializeCoreDependencies = async (): Promise<void> => {
+  // DI initialization must finish successfully before any core dependency is wired.
   await diInitPromise;
 
   // X4 wallet-proof gate (review P3 persistence + Arch-2 infra): core consumes
@@ -471,7 +475,7 @@ export const startServer = async (): Promise<typeof httpServer> => {
     challengeStore: redisService,
     signatureVerifier: signatureVerificationServiceAdapter,
   });
-
+  
   // The infrastructure container is the sole composition owner. Capture its
   // prebuilt service instances before listen so request handlers never observe
   // an unwired ServiceFactory.
@@ -493,6 +497,10 @@ export const startServer = async (): Promise<typeof httpServer> => {
     engineManager: diContainer.engineManager,
   });
   assertServiceFactoryWired();
+};
+
+export const startServer = async (): Promise<typeof httpServer> => {
+  await initializeCoreDependencies();
 
   return new Promise(resolve => {
     httpServer.listen(PORT, () => {
