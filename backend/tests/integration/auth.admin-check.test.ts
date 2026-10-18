@@ -1,7 +1,7 @@
 /** @format */
 
 import request from "supertest";
-import { app } from "../../src";
+import { app, initializeCoreDependencies } from "../../src";
 import { UserRole, UserLevel } from "@trade-bot/shared";
 import { serviceProvider } from "../../src/core/service-provider";
 import { query } from "../../src/database/pool";
@@ -33,6 +33,9 @@ describe("Admin Qualification Check API", () => {
       "0x5a30c392714a9a9a8177c7998d9d59c3dd120917";
     process.env.ADMIN_TOKEN_ID = "1695";
     process.env.ETHERSCAN_API_KEY = "test-api-key";
+
+    // Exercise the same DI composition path as production without opening a port.
+    await initializeCoreDependencies();
   });
 
   beforeEach(async () => {
