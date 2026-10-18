@@ -429,6 +429,11 @@ export class DependencyInjectionContainer {
       wallets: this.walletRepository,
       userLevel,
       auditLogRepository: this.auditLogRepository,
+      // Preserve the profile-cache invalidation previously wired by the
+      // ServiceFactory when account transitions change a user's level.
+      onLevelChanged: async (userId: string) => {
+        await this.userProfileService.invalidateUserProfileCache(userId);
+      },
       logger: this.loggerService,
       // C3a: revoke is blocked while *live* bots bind to the account (FK
       // RESTRICT). Terminal history (STOPPED/ERROR/UNKNOWN) never blocks —
