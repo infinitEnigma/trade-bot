@@ -18,10 +18,11 @@ jest.mock("../../src/core/auth/auth.service.pure", () => ({
   })),
 }));
 
-// Mock the DI container so the middleware resolves the mock auth service
-jest.mock("../../src/infrastructure/dependency-injection.container", () => ({
-  diContainer: {
-    authService: mockAuthService,
+// Mock the service-provider boundary used by the middleware. The factory no
+// longer reads service instances directly from the DI container.
+jest.mock("../../src/core/service-provider", () => ({
+  serviceProvider: {
+    getAuthService: jest.fn(() => mockAuthService),
   },
 }));
 
