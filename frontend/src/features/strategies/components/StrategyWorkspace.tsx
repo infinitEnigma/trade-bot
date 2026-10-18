@@ -6,6 +6,7 @@ import { Zap, Edit, Trash2 } from "lucide-react";
 import { Card, FreshnessIndicator } from "../../../shared/components/ui";
 import { RecentTradesTable } from "../../../shared/components/user/RecentTrades";
 import { useRecentTrades } from "../../../shared/hooks";
+import { useStrategyPerformance } from "../hooks/useStrategyPerformance";
 import { cn } from "../../../shared/utils";
 import { venueLabel } from "../utils/chartSymbolPicker";
 import { BotControls } from "../bots/components/BotControls";
@@ -146,6 +147,20 @@ export const StrategyWorkspace: React.FC<StrategyWorkspaceProps> = ({
     limit: 25,
     enabled: !!bot,
   });
+  // Phase 1 (strategy-page PnL): LIFETIME fill-ledger aggregate for this
+  // strategy — restart-safe, unlike the session's bot.total_pnl (every start
+  // inserts a fresh session row, zeroing the old display). Polls only while
+  // the bot reports RUNNING; the same query key serves BotControls' RUNNING
+  // line, so one strategy costs one fetch.
+  const {
+    performance,
+    isLoading: perfLoading,
+    error: perfError,
+    dataUpdatedAt: perfUpdatedAt,
+  } = useStrategyPerformance(strategy.id, {
+    enabled: !!bot,
+    live: bot?.status === "RUNNING",
+  });
   // Phase 3.1 (review P2-4): positions are ACCOUNT × MARKET on the backend —
   // the panel narrows the account book to this strategy's market (venue
   // forms differ: bare `BTC` vs `PERP_BTC_USDC` — same normalisation the
@@ -171,6 +186,25 @@ export const StrategyWorkspace: React.FC<StrategyWorkspaceProps> = ({
       style: "currency",
       currency: "USD",
     }).format(value);
+
+  // Phase 1: venue-exact unrealized PnL for this strategy's market — the sum
+  // of `unsettled_pnl` over the ALREADY market-filtered rows above (same
+  // figure the positions tab renders per-row; account × market, never
+  // strategy-attributed). Honesty: an empty/unparseable `unsettled_pnl` is
+  // UNKNOWN, never a zero — `Number("")` is 0, so the blank must not be
+  // folded into the sum (the PositionsTable NaN trick).
+  const unrealized = marketPositions.reduce(
+    (acc, row) => {
+      const pnl = Number(row.unsettled_pnl);
+      if (row.unsettled_pnl === "" || !Number.isFinite(pnl)) {
+        acc.unknown += 1;
+      } else {
+        acc.sum += pnl;
+      }
+      return acc;
+    },
+    { sum: 0, unknown: 0 }
+  );
 
   return (
     <Card className="space-y-5">
@@ -235,7 +269,13 @@ export const StrategyWorkspace: React.FC<StrategyWorkspaceProps> = ({
         >
           <div className="flex items-center justify-between mb-2">
             <span className="text-sm font-medium text-text">Bot</span>
-            <BotStatusBadge bot={bot} hideDetail />
+            <div className="flex items-center gap-2">
+              {/* Phase 1: honest age of the ledger aggregate — never an
+                  implied live feed (same chip contract as the execution
+                  tabs below). */}
+              <FreshnessIndicator updatedAt={perfUpdatedAt} />
+              <BotStatusBadge bot={bot} hideDetail />
+            </div>
           </div>
           {/* Bot lifecycle is distinct from the strategy's Enabled/Disabled
               state above. "Needs attention" (reconcile-park or lost engine)
@@ -244,33 +284,96 @@ export const StrategyWorkspace: React.FC<StrategyWorkspaceProps> = ({
             <BotStatusBadge bot={bot} />
           ) : null}
 
+          {/* Phase 1: LIFETIME ledger figures for trades + realized PnL —
+              a restart inserts a fresh session row (bot.total_* resets to 0)
+              but the ledger history never does. The session counters remain
+              only as the loading/error fallback, labeled with their scope.
+              F2 kept: unknown-PnL fills are excluded from the sum and shown
+              as the incomplete marker — unknown direction, never net PnL. */}
           <div className="grid grid-cols-2 gap-2 text-xs">
             <div className="flex justify-between">
-              <span className="text-textMuted">Trades:</span>
-              <span className="text-text">{bot.total_trades || 0}</span>
+              <span className="text-textMuted">Trades (lifetime):</span>
+              {perfLoading ? (
+                <span className="text-textMuted">…</span>
+              ) : performance ? (
+                <span className="text-text">{performance.totalTrades}</span>
+              ) : (
+                <span
+                  className="text-text"
+                  title="This session only — performance feed unavailable"
+                >
+                  {bot.total_trades || 0}
+                </span>
+              )}
             </div>
             <div className="flex justify-between">
-              {/* P1: ledger total_pnl is realized only — labeled as such so
-                  the workspace never implies total PnL. Venue-exact unrealized
-                  lives on the portfolio strip. F2: with unknown-PnL fills the
-                  figure is INCOMPLETE (unknown direction, never a lower
-                  bound) — incomplete marker + count, never net PnL. */}
-              <span className="text-textMuted">Realized PnL:</span>
+              {/* P1: realized only — labeled as such so the workspace never
+                  implies total PnL. F2: with unknown-PnL fills the figure is
+                  INCOMPLETE (unknown direction, never a lower bound). */}
+              <span className="text-textMuted">Realized PnL (lifetime):</span>
+              {perfLoading ? (
+                <span className="text-textMuted">…</span>
+              ) : performance ? (
+                <span
+                  className={`font-medium ${
+                    performance.totalPnL >= 0 ? "text-success" : "text-danger"
+                  }`}
+                  title={
+                    performance.unknownPnlFills > 0
+                      ? `${performance.unknownPnlFills} fill(s) have unknown PnL — total shows known fills only (incomplete, not net PnL)`
+                      : undefined
+                  }
+                >
+                  {formatCurrency(performance.totalPnL)}
+                  {performance.unknownPnlFills > 0
+                    ? ` (incomplete, ${performance.unknownPnlFills} unknown)`
+                    : ""}
+                </span>
+              ) : (
+                <span
+                  className={`font-medium ${
+                    (bot.total_pnl || 0) >= 0 ? "text-success" : "text-danger"
+                  }`}
+                  title={
+                    perfError
+                      ? "This session only — performance feed unavailable"
+                      : undefined
+                  }
+                >
+                  {formatCurrency(bot.total_pnl || 0)}
+                  {(bot.total_pnl_incomplete_fills ?? 0) > 0
+                    ? ` (incomplete, ${bot.total_pnl_incomplete_fills} unknown)`
+                    : ""}
+                </span>
+              )}
+            </div>
+            <div className="flex justify-between col-span-2">
+              {/* Venue-exact open-position PnL on this strategy's market —
+                  account × market, NOT strategy-attributed (same honesty as
+                  the positions tab). Unknown rows are counted, never folded
+                  into the sum as zeros. */}
               <span
-                className={`font-medium ${
-                  (bot.total_pnl || 0) >= 0 ? "text-success" : "text-danger"
-                }`}
-                title={
-                  (bot.total_pnl_incomplete_fills ?? 0) > 0
-                    ? `${bot.total_pnl_incomplete_fills} fill(s) have unknown PnL — total shows known fills only (incomplete, not net PnL)`
-                    : undefined
-                }
+                className="text-textMuted"
+                title="Open positions on this market (account × market, venue-exact) — not strategy-attributed"
               >
-                {formatCurrency(bot.total_pnl || 0)}
-                {(bot.total_pnl_incomplete_fills ?? 0) > 0
-                  ? ` (incomplete, ${bot.total_pnl_incomplete_fills} unknown)`
-                  : ""}
+                Unrealized PnL:
               </span>
+              {positionsLoading ? (
+                <span className="text-textMuted">…</span>
+              ) : positionsError ? (
+                <span className="text-textMuted">—</span>
+              ) : (
+                <span
+                  className={`font-medium ${
+                    unrealized.sum >= 0 ? "text-success" : "text-danger"
+                  }`}
+                >
+                  {formatCurrency(unrealized.sum)}
+                  {unrealized.unknown > 0
+                    ? ` (incomplete, ${unrealized.unknown} unknown)`
+                    : ""}
+                </span>
+              )}
             </div>
           </div>
         </div>

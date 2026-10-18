@@ -30,6 +30,40 @@ export interface LedgerTradeRow {
 }
 
 /**
+ * `GET /api/strategies/:id/performance` payload — the LIFETIME fill-ledger
+ * aggregate for one strategy (Phase 1 strategy-page PnL), NOT a per-session
+ * figure (`bot_instances.total_pnl` resets on restart; this never does).
+ *
+ * F2 honesty: `totalPnL` sums KNOWN pnl only; non-zero `unknownPnlFills`
+ * means the total is incomplete (unknown direction, never a lower bound)
+ * and must be surfaced, never implied away.
+ */
+export interface StrategyPerformance {
+  /** Ledger fill rows attributed to the strategy. */
+  totalTrades: number;
+  /** Realised PnL net of fees, known fills only. */
+  totalPnL: number;
+  /** Fills booked with unknown PnL — non-zero ⇒ totalPnL is incomplete. */
+  unknownPnlFills: number;
+  /** winningFills / knownPnlFills × 100; 0 when no known fills. */
+  winRate: number;
+  /** totalPnL / knownPnlFills; 0 when none. */
+  avgTrade: number;
+  /** MAX known pnl; null when no known fill exists. */
+  bestTrade: number | null;
+  /** MIN known pnl; null when no known fill exists. */
+  worstTrade: number | null;
+  /** SUM(fee) over fills whose fee was known. */
+  totalFees: number;
+  /** Fills whose fee the venue could not source. */
+  unknownFeeFills: number;
+  /** ISO-8601 of the oldest attributed fill; null when none. */
+  firstFillAt: string | null;
+  /** ISO-8601 of the newest attributed fill; null when none. */
+  lastFillAt: string | null;
+}
+
+/**
  * Trading API endpoints
  * Handles strategies, bots, and trading operations with global deduplication
  */
@@ -79,6 +113,23 @@ export const tradingApi = {
       .getClient()
       .delete(`/api/strategies/${strategyId}`);
     return response.data;
+  },
+
+  /**
+   * Lifetime fill-ledger aggregate for one strategy (Phase 1 strategy-page
+   * PnL). Ownership is the route's 404; the payload is the ledger truth —
+   * restart-safe, unlike the session's `bot_instances.total_pnl`.
+   */
+  async getStrategyPerformance(strategyId: string) {
+    return globalRequestManager.deduplicateRequest(
+      `strategies:perf:${strategyId}`,
+      () =>
+        httpClient
+          .getClient()
+          .get(`/api/strategies/${strategyId}/performance`)
+          .then(r => r.data),
+      "tradingApi"
+    );
   },
 
   // Bot endpoints (L1: management router is mounted at /management, so the

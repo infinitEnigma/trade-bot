@@ -85,6 +85,23 @@ vi.mock("../../../../shared/hooks/useWalletProof", () => ({
   useWalletProof: () => ({ getWalletProof: mockGetWalletProof }),
 }));
 
+// Phase 1: the RUNNING line's lifetime ledger aggregate (hook seam mocked,
+// the useRecentTrades precedent). Null by default → session fallback, which
+// keeps the existing payload tests deterministic.
+const perfByStrategy: Record<string, unknown> = {};
+vi.mock("../../hooks/useStrategyPerformance", () => ({
+  useStrategyPerformance: (strategyId?: string) => ({
+    performance: (strategyId && perfByStrategy[strategyId]) || null,
+    isLoading: false,
+    error: null,
+    dataUpdatedAt: 0,
+  }),
+  strategyPerformanceQueryKey: (id?: string) => [
+    "strategy-performance",
+    id ?? null,
+  ],
+}));
+
 const renderWithClient = (ui: React.ReactElement) => {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
@@ -375,5 +392,87 @@ describe("BotControls stop payload (L19)", () => {
       );
       expect(mockGetWalletProof).not.toHaveBeenCalled();
     });
+  });
+});
+
+/**
+ * Phase 1 (strategy-page PnL): the RUNNING line shows the LIFETIME ledger
+ * aggregate — restart-safe, unlike the session counters (every start inserts
+ * a fresh session row, zeroing bot.total_pnl). Session figures remain the
+ * loading/error fallback; the F2 incomplete marker rides whichever source is
+ * displayed.
+ */
+describe("BotControls RUNNING line (Phase 1 ledger PnL)", () => {
+  const verifiedUser = {
+    id: "u1",
+    email: "v@example.com",
+    username: "verified",
+    userLevel: UserLevel.VERIFIED,
+    roles: [],
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  };
+
+  // A FRESH session row: total_trades/total_pnl are 0 because this bot just
+  // started — the strategy's real history lives in the ledger aggregate.
+  const freshBotRow: BotInstance = {
+    id: "bot-1",
+    status: "RUNNING" as const,
+    total_trades: 0,
+    total_pnl: 0,
+    last_updated: "2026-10-18T12:00:00.000Z",
+    config: {
+      type: StrategyType.GRID,
+      config: {
+        symbol: "PERP_BTC_USDC",
+        leverage: 1,
+        gridSize: 10,
+        gridRange: 5,
+        orderQuantity: 1,
+      },
+    },
+  };
+
+  beforeEach(() => {
+    setUser(verifiedUser);
+    for (const key of Object.keys(perfByStrategy)) delete perfByStrategy[key];
+    vi.mocked(useBotState).mockReturnValue(botState("RUNNING"));
+  });
+
+  it("shows the lifetime aggregate over a zeroed fresh session (restart-survival)", async () => {
+    perfByStrategy["strategy-1"] = {
+      totalTrades: 5,
+      totalPnL: 12.5,
+      unknownPnlFills: 1,
+    };
+
+    renderWithClient(
+      <BotControls
+        strategyId="strategy-1"
+        bot={freshBotRow}
+        onStatusChange={() => {}}
+      />
+    );
+
+    // Lifetime figures — NOT the fresh session's 0 trades / $0.00 P&L.
+    expect(await screen.findByText(/Trading Active/)).toBeInTheDocument();
+    expect(screen.getByText(/5 trades/)).toBeInTheDocument();
+    expect(screen.getByText(/\$12\.50 P&L/)).toBeInTheDocument();
+    expect(screen.getByText(/incomplete, 1 fills unknown/)).toBeInTheDocument();
+  });
+
+  it("falls back to the session counters while the aggregate is unavailable", async () => {
+    renderWithClient(
+      <BotControls
+        strategyId="strategy-1"
+        bot={freshBotRow}
+        onStatusChange={() => {}}
+      />
+    );
+
+    // No aggregate → the session's own counters fill the line (0 trades,
+    // $0.00) — the line never goes blank mid-session.
+    expect(await screen.findByText(/0 trades/)).toBeInTheDocument();
+    expect(screen.getByText(/\$0\.00 P&L/)).toBeInTheDocument();
   });
 });

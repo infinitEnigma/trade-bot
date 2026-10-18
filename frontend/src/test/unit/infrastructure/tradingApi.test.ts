@@ -141,6 +141,45 @@ describe("tradingApi", () => {
         expect(result).toEqual(mockResponse);
       });
     });
+
+    describe("getStrategyPerformance", () => {
+      it("should call the performance endpoint under a per-strategy dedupe key", async () => {
+        const strategyId = "s1";
+        const mockResponse = {
+          success: true,
+          data: {
+            totalTrades: 5,
+            totalPnL: 12.5,
+            unknownPnlFills: 1,
+            winRate: 75,
+            avgTrade: 3.125,
+            bestTrade: 10.25,
+            worstTrade: -1.75,
+            totalFees: 0.84,
+            unknownFeeFills: 1,
+            firstFillAt: "2026-10-01T10:00:00.000Z",
+            lastFillAt: "2026-10-12T10:00:00.000Z",
+          },
+        };
+
+        (globalRequestManager.deduplicateRequest as Mock).mockImplementation(
+          async (_key: string, fn: () => unknown) => fn()
+        );
+        mockGet.mockResolvedValue({ data: mockResponse });
+
+        const result = await tradingApi.getStrategyPerformance(strategyId);
+
+        expect(globalRequestManager.deduplicateRequest).toHaveBeenCalledWith(
+          `strategies:perf:${strategyId}`,
+          expect.any(Function),
+          "tradingApi"
+        );
+        expect(mockGet).toHaveBeenCalledWith(
+          `/api/strategies/${strategyId}/performance`
+        );
+        expect(result).toEqual(mockResponse);
+      });
+    });
   });
 
   describe("bot endpoints", () => {

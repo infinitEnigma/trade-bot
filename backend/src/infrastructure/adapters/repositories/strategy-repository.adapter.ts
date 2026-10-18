@@ -12,6 +12,7 @@ import {
   IStrategyRepository,
   Strategy,
   StrategyConfig,
+  StrategyFillTotals,
   StrategyType,
   StrategyVenue,
 } from "@trade-bot/shared";
@@ -292,6 +293,75 @@ export class StrategyRepositoryAdapter implements IStrategyRepository {
   }
 
   /**
+   * Lifetime fill-ledger aggregate for one strategy (Phase 1 strategy-page
+   * PnL) — `bot_trade_fills WHERE strategy_id = $1` through
+   * `idx_bot_trade_fills_strategy`. Session-independent: a stop/start inserts
+   * a fresh `bot_instances` row but the ledger history is never reset.
+   *
+   * F2 honesty kept in SQL: `SUM(pnl)` covers KNOWN pnl only (NULL = unknown,
+   * never folded into the sum), unknowns are counted separately so the reader
+   * can flag the total as incomplete, and best/worst are NULL — not 0 — when
+   * no known fill exists.
+   *
+   * DECIMAL/NUMERIC arrive as STRINGS from node-postgres (the documented
+   * `total_pnl` toFixed crash): every figure is coerced here, at this single
+   * mapping boundary, so consumers only ever see numbers.
+   */
+  async getStrategyFillTotals(strategyId: string): Promise<StrategyFillTotals> {
+    try {
+      const result = await query<StrategyFillTotalsRow>(
+        `SELECT
+           COUNT(*)                                    AS total_fills,
+           COUNT(pnl)                                  AS known_pnl_fills,
+           COUNT(*) FILTER (WHERE pnl IS NULL)         AS unknown_pnl_fills,
+           COALESCE(SUM(pnl), 0)                       AS realized_pnl,
+           COUNT(*) FILTER (WHERE pnl > 0)             AS winning_fills,
+           COUNT(*) FILTER (WHERE pnl < 0)             AS losing_fills,
+           MAX(pnl)                                    AS best_fill,
+           MIN(pnl)                                    AS worst_fill,
+           COALESCE(SUM(fee), 0)                       AS total_fees,
+           COUNT(fee)                                  AS known_fee_fills,
+           COUNT(*) FILTER (WHERE fee IS NULL)         AS unknown_fee_fills,
+           MIN(executed_at)                            AS first_fill_at,
+           MAX(executed_at)                            AS last_fill_at
+         FROM bot_trade_fills
+         WHERE strategy_id = $1`,
+        [strategyId]
+      );
+
+      const row = result.rows[0];
+      if (!row) {
+        // Aggregate over zero rows still returns one row in PostgreSQL —
+        // a missing row means the query shape broke; fail loudly.
+        throw new Error("aggregate returned no row");
+      }
+      return {
+        totalFills: Number(row.total_fills ?? 0),
+        knownPnlFills: Number(row.known_pnl_fills ?? 0),
+        unknownPnlFills: Number(row.unknown_pnl_fills ?? 0),
+        realizedPnl: Number(row.realized_pnl ?? 0),
+        winningFills: Number(row.winning_fills ?? 0),
+        losingFills: Number(row.losing_fills ?? 0),
+        bestFill: row.best_fill == null ? null : Number(row.best_fill),
+        worstFill: row.worst_fill == null ? null : Number(row.worst_fill),
+        totalFees: Number(row.total_fees ?? 0),
+        knownFeeFills: Number(row.known_fee_fills ?? 0),
+        unknownFeeFills: Number(row.unknown_fee_fills ?? 0),
+        firstFillAt: row.first_fill_at
+          ? new Date(row.first_fill_at).toISOString()
+          : null,
+        lastFillAt: row.last_fill_at
+          ? new Date(row.last_fill_at).toISOString()
+          : null,
+      };
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      throw new Error(`Failed to get strategy fill totals: ${errorMessage}`);
+    }
+  }
+
+  /**
    * Map database row to Strategy interface object
    */
   private mapRowToStrategy(row: StrategyRow): Strategy | null {
@@ -340,6 +410,26 @@ interface StrategyRow {
   active: boolean;
   created_at: string;
   updated_at: string;
+}
+
+/**
+ * Raw aggregate row for `getStrategyFillTotals`. node-postgres types
+ * DECIMAL/NUMERIC/BIGINT as strings — the mapper above coerces every field.
+ */
+interface StrategyFillTotalsRow {
+  total_fills: string;
+  known_pnl_fills: string;
+  unknown_pnl_fills: string;
+  realized_pnl: string;
+  winning_fills: string;
+  losing_fills: string;
+  best_fill: string | null;
+  worst_fill: string | null;
+  total_fees: string;
+  known_fee_fills: string;
+  unknown_fee_fills: string;
+  first_fill_at: string | null;
+  last_fill_at: string | null;
 }
 // Export singleton instance
 export const strategyRepositoryAdapter = new StrategyRepositoryAdapter();

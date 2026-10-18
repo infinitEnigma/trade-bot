@@ -488,4 +488,119 @@ describe("StrategyRepositoryAdapter", () => {
       );
     });
   });
+
+  describe("getStrategyFillTotals (Phase 1 ledger aggregate)", () => {
+    // node-postgres returns DECIMAL/NUMERIC/BIGINT as STRINGS — the documented
+    // `total_pnl` toFixed crash class. The adapter is the single mapping
+    // boundary: these mocks mimic the wire, the assertions pin the coercion.
+    const stringyRow = {
+      total_fills: "5",
+      known_pnl_fills: "3",
+      unknown_pnl_fills: "2",
+      realized_pnl: "12.50000000",
+      winning_fills: "2",
+      losing_fills: "1",
+      best_fill: "10.25000000",
+      worst_fill: "-1.75000000",
+      total_fees: "0.84000000",
+      known_fee_fills: "4",
+      unknown_fee_fills: "1",
+      first_fill_at: "2026-10-01T10:00:00.000Z",
+      last_fill_at: "2026-10-12T10:00:00.000Z",
+    };
+
+    it("coerces every stringified DECIMAL/BIGINT to a number", async () => {
+      (query as jest.Mock).mockResolvedValue({ rows: [stringyRow] });
+      const adapter = new StrategyRepositoryAdapter();
+
+      const totals = await adapter.getStrategyFillTotals("strategy1");
+
+      expect(totals).toEqual({
+        totalFills: 5,
+        knownPnlFills: 3,
+        unknownPnlFills: 2,
+        realizedPnl: 12.5,
+        winningFills: 2,
+        losingFills: 1,
+        bestFill: 10.25,
+        worstFill: -1.75,
+        totalFees: 0.84,
+        knownFeeFills: 4,
+        unknownFeeFills: 1,
+        firstFillAt: "2026-10-01T10:00:00.000Z",
+        lastFillAt: "2026-10-12T10:00:00.000Z",
+      });
+      // typeof guards — a lingering string is the toFixed-crash shape.
+      expect(typeof totals.realizedPnl).toBe("number");
+      expect(typeof totals.totalFills).toBe("number");
+    });
+
+    it("scopes the aggregate to the strategy and counts unknown pnl", async () => {
+      (query as jest.Mock).mockResolvedValue({ rows: [stringyRow] });
+      const adapter = new StrategyRepositoryAdapter();
+
+      await adapter.getStrategyFillTotals("strategy1");
+
+      const [sql, params] = (query as jest.Mock).mock.calls[0];
+      expect(sql).toContain("FROM bot_trade_fills");
+      expect(sql).toContain("WHERE strategy_id = $1");
+      // F2 honesty lives in SQL: the sum covers known pnl only, unknowns are
+      // counted separately so the reader can flag incompleteness.
+      expect(sql).toContain("COUNT(*) FILTER (WHERE pnl IS NULL)");
+      expect(sql).toContain("SUM(pnl)");
+      expect(params).toEqual(["strategy1"]);
+    });
+
+    it("maps the empty-ledger aggregates to zeros and nulls (never fabricated 0 best/worst)", async () => {
+      // PostgreSQL returns one row of NULL aggregates for zero matching rows.
+      (query as jest.Mock).mockResolvedValue({
+        rows: [
+          {
+            total_fills: "0",
+            known_pnl_fills: "0",
+            unknown_pnl_fills: "0",
+            realized_pnl: "0",
+            winning_fills: "0",
+            losing_fills: "0",
+            best_fill: null,
+            worst_fill: null,
+            total_fees: "0",
+            known_fee_fills: "0",
+            unknown_fee_fills: "0",
+            first_fill_at: null,
+            last_fill_at: null,
+          },
+        ],
+      });
+      const adapter = new StrategyRepositoryAdapter();
+
+      const totals = await adapter.getStrategyFillTotals("strategy1");
+
+      expect(totals.totalFills).toBe(0);
+      expect(totals.realizedPnl).toBe(0);
+      // A null best/worst must stay null — 0 would read as "breakeven fill".
+      expect(totals.bestFill).toBeNull();
+      expect(totals.worstFill).toBeNull();
+      expect(totals.firstFillAt).toBeNull();
+      expect(totals.lastFillAt).toBeNull();
+    });
+
+    it("fails loudly when the aggregate returns no row", async () => {
+      (query as jest.Mock).mockResolvedValue({ rows: [] });
+      const adapter = new StrategyRepositoryAdapter();
+
+      await expect(
+        adapter.getStrategyFillTotals("strategy1")
+      ).rejects.toThrow("Failed to get strategy fill totals");
+    });
+
+    it("wraps query failures with the adapter's error contract", async () => {
+      (query as jest.Mock).mockRejectedValue(new Error("Database error"));
+      const adapter = new StrategyRepositoryAdapter();
+
+      await expect(
+        adapter.getStrategyFillTotals("strategy1")
+      ).rejects.toThrow("Failed to get strategy fill totals");
+    });
+  });
 });

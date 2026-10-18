@@ -18,6 +18,7 @@ import {
   ILogger,
   Strategy,
   StrategyConfig,
+  StrategyFillTotals,
   StrategyType,
   StrategyVenue,
 } from "@trade-bot/shared";
@@ -35,14 +36,39 @@ export interface StrategyServiceDependencies {
   lifecycleRepository: ILifecycleRepository;
 }
 
-/** Placeholder performance metrics returned by `getStrategyPerformance`. */
+/**
+ * Ledger-backed strategy performance metrics (Phase 1). Served by
+ * `GET /api/strategies/:id/performance` — a lifetime aggregate over the fill
+ * ledger, NOT a per-session figure (session totals reset on restart; these
+ * do not).
+ */
 export interface StrategyPerformanceMetrics {
+  /** Ledger fill rows attributed to the strategy (fills = trades, A8). */
   totalTrades: number;
+  /** Realised PnL net of fees over KNOWN fills only (F2). */
   totalPnL: number;
+  /**
+   * Fills booked with unknown PnL. Non-zero ⇒ `totalPnL` sums known fills
+   * only and is INCOMPLETE (unknown direction, never a lower bound) — every
+   * render site must surface the count instead of implying net PnL.
+   */
+  unknownPnlFills: number;
+  /** winningFills / knownPnlFills × 100; 0 when no known fills exist. */
   winRate: number;
+  /** totalPnL / knownPnlFills; 0 when none. */
   avgTrade: number;
-  bestTrade: number;
-  worstTrade: number;
+  /** MAX known pnl; null when no known fill exists (never a fabricated 0). */
+  bestTrade: number | null;
+  /** MIN known pnl; null when no known fill exists. */
+  worstTrade: number | null;
+  /** SUM(fee) over fills whose fee was known. */
+  totalFees: number;
+  /** Fills whose fee the venue could not source — totalFees excludes them. */
+  unknownFeeFills: number;
+  /** ISO-8601 of the oldest attributed fill; null when none. */
+  firstFillAt: string | null;
+  /** ISO-8601 of the newest attributed fill; null when none. */
+  lastFillAt: string | null;
 }
 
 export class StrategyService {
@@ -322,22 +348,24 @@ export class StrategyService {
   }
 
   /**
-   * Get strategy performance metrics
+   * Lifetime strategy performance from the fill ledger (Phase 1).
+   *
+   * Replaces the old all-zeros placeholder. The aggregate lives in the
+   * repository (single SQL over `bot_trade_fills WHERE strategy_id`); this
+   * layer only derives the ratios and enforces the honesty rules:
+   * - win rate / avg trade divide by KNOWN-pnl fills only — unknown-PnL fills
+   *   are surfaced in `unknownPnlFills`, never counted as losses (F2);
+   * - `bestTrade`/`worstTrade` are null when nothing known exists, never 0.
+   *
+   * Ownership is the route's job (404 before this call) — this method trusts
+   * the strategyId it is handed, like the rest of the service.
    */
   async getStrategyPerformance(
     id: string
   ): Promise<StrategyPerformanceMetrics> {
+    let totals: StrategyFillTotals | undefined;
     try {
-      // This would typically query trade repository for performance data
-      // For now, return placeholder data
-      return {
-        totalTrades: 0,
-        totalPnL: 0,
-        winRate: 0,
-        avgTrade: 0,
-        bestTrade: 0,
-        worstTrade: 0,
-      };
+      totals = await this.deps.strategyRepository.getStrategyFillTotals?.(id);
     } catch (error) {
       this.deps.logger.error("Failed to get strategy performance", {
         error: error instanceof Error ? error.message : String(error),
@@ -345,6 +373,30 @@ export class StrategyService {
       });
       throw new Error("Failed to get strategy performance");
     }
+    if (!totals) {
+      // Optional-port precedent (updateStrategyTx): absent wiring fails
+      // loudly and OUTSIDE the catch above so the reason survives — an
+      // all-zero payload would read as "no profit", which is a lie.
+      this.deps.logger.error("Strategy fill-totals repository is not wired", {
+        strategyId: id,
+      });
+      throw new Error("Strategy fill-totals repository is not wired");
+    }
+    // Pure derivation from here — no failure mode left to wrap.
+    const known = totals.knownPnlFills;
+    return {
+      totalTrades: totals.totalFills,
+      totalPnL: totals.realizedPnl,
+      unknownPnlFills: totals.unknownPnlFills,
+      winRate: known > 0 ? (totals.winningFills / known) * 100 : 0,
+      avgTrade: known > 0 ? totals.realizedPnl / known : 0,
+      bestTrade: totals.bestFill,
+      worstTrade: totals.worstFill,
+      totalFees: totals.totalFees,
+      unknownFeeFills: totals.unknownFeeFills,
+      firstFillAt: totals.firstFillAt,
+      lastFillAt: totals.lastFillAt,
+    };
   }
 }
 

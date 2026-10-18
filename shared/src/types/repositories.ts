@@ -313,7 +313,44 @@ export interface ITradeRepository {
 // STRATEGY REPOSITORY
 // ===========================================
 
+/** Ledger aggregate for one strategy (Phase 1 strategy-page PnL). */
+export interface StrategyFillTotals {
+  /** Every ledger row attributed to the strategy (fills = trades, A8). */
+  totalFills: number;
+  /** Fills whose pnl was known (F2). */
+  knownPnlFills: number;
+  /** Fills booked with unknown pnl — sum/win-rate exclude, never count as loss. */
+  unknownPnlFills: number;
+  /** SUM(pnl) over KNOWN fills only, net of fees. Lifetime, not per-session. */
+  realizedPnl: number;
+  /** pnl > 0. */
+  winningFills: number;
+  /** pnl < 0 (pnl === 0 fills are neither). */
+  losingFills: number;
+  /** MAX(pnl) over known; null when none known. */
+  bestFill: number | null;
+  /** MIN(pnl) over known; null when none known. */
+  worstFill: number | null;
+  /** SUM(fee) over KNOWN fees. */
+  totalFees: number;
+  knownFeeFills: number;
+  unknownFeeFills: number;
+  /** ISO-8601 of the oldest attributed fill; null when none. */
+  firstFillAt: string | null;
+  /** ISO-8601 of the newest attributed fill; null when none. */
+  lastFillAt: string | null;
+}
+
 export interface IStrategyRepository {
+  /**
+   * Lifetime fill-ledger aggregate for one strategy (Phase 1 strategy-page
+   * PnL). Optional so existing mocks without it still satisfy the interface
+   * (the `updateStrategyTx` precedent) — the service throws a loud
+   * "not wired" error when absent, never fabricated zeros. The PostgreSQL
+   * adapter implements it.
+   */
+  getStrategyFillTotals?(strategyId: string): Promise<StrategyFillTotals>;
+
   /**
    * Get all strategies for a user
    */

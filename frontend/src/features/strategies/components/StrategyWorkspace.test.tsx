@@ -45,6 +45,28 @@ vi.mock("../../../shared/hooks", () => ({
   },
 }));
 
+// Phase 1: the lifetime ledger aggregate (mocked at the hook seam, the
+// useRecentTrades precedent). Per-strategy records + a mutable query state so
+// each test scripts loading/error/data without touching the network.
+const perfByStrategy: Record<string, unknown> = {};
+const perfState = {
+  isLoading: false,
+  error: null as unknown,
+  dataUpdatedAt: 0,
+};
+vi.mock("../hooks/useStrategyPerformance", () => ({
+  useStrategyPerformance: (strategyId?: string) => ({
+    performance: (strategyId && perfByStrategy[strategyId]) || null,
+    isLoading: perfState.isLoading,
+    error: perfState.error,
+    dataUpdatedAt: perfState.dataUpdatedAt,
+  }),
+  strategyPerformanceQueryKey: (id?: string) => [
+    "strategy-performance",
+    id ?? null,
+  ],
+}));
+
 const FILL = {
   id: "t1",
   strategyId: "s1",
@@ -155,6 +177,10 @@ describe("StrategyWorkspace", () => {
     vi.clearAllMocks();
     recentTradesCalls.length = 0;
     for (const key of Object.keys(fillsByStrategy)) delete fillsByStrategy[key];
+    for (const key of Object.keys(perfByStrategy)) delete perfByStrategy[key];
+    perfState.isLoading = false;
+    perfState.error = null;
+    perfState.dataUpdatedAt = 0;
   });
 
   it("shows the strategy identity, enabled state, and wires edit/delete", () => {
@@ -172,13 +198,98 @@ describe("StrategyWorkspace", () => {
     expect(props.onDelete).toHaveBeenCalledWith(STRATEGY);
   });
 
-  it("shows bot stats with the honest incomplete realized PnL", () => {
+  it("falls back to the session counters while the aggregate is unavailable, honestly scoped", () => {
+    // No aggregate loaded (fresh fetch pending elsewhere / error) → the
+    // session counters fill in with the same F2 incomplete marker; the
+    // labels say "(lifetime)" so the fallback's scope is a tooltip away.
     renderWorkspace(<StrategyWorkspace {...workspaceProps()} />);
 
     expect(screen.getByText("Running")).toBeDefined();
     expect(screen.getByText("3")).toBeDefined();
     expect(screen.getByText(/\$12\.50/)).toBeDefined();
     expect(screen.getByText(/incomplete, 2 unknown/)).toBeDefined();
+  });
+
+  it("shows the LIFETIME ledger aggregate over a zeroed fresh session (restart-survival)", () => {
+    // The Phase 1 bug this fixes: every start inserts a NEW session row, so
+    // bot.total_pnl resets to 0 after a stop/start while the strategy's real
+    // PnL history sits in the ledger. The aggregate must win.
+    const freshSessionBot = {
+      ...(BOT as unknown as Record<string, unknown>),
+      total_trades: 0,
+      total_pnl: 0,
+      total_pnl_incomplete_fills: 0,
+    } as unknown as BotInstance;
+    perfByStrategy["s1"] = {
+      totalTrades: 5,
+      totalPnL: 12.5,
+      unknownPnlFills: 1,
+    };
+    renderWorkspace(
+      <StrategyWorkspace {...workspaceProps({ bot: freshSessionBot })} />
+    );
+
+    // Lifetime figures from the ledger — not the session's fresh 0/0.
+    expect(screen.getByText("5")).toBeDefined();
+    expect(screen.getByText(/\$12\.50/)).toBeDefined();
+    // The F2 marker comes from the aggregate's unknown count, not the
+    // session counter (which is 0 on this fresh row).
+    expect(screen.getByText(/incomplete, 1 unknown/)).toBeDefined();
+  });
+
+  it("shows loading placeholders while the aggregate is in flight", () => {
+    perfState.isLoading = true;
+    renderWorkspace(
+      <StrategyWorkspace {...workspaceProps({ positionsLoading: true })} />
+    );
+
+    // Three "…" placeholders: trades, realized, unrealized — never a
+    // fabricated figure while the real one is loading.
+    expect(screen.getAllByText("…")).toHaveLength(3);
+  });
+
+  it("sums unrealized PnL over the market-filtered positions and counts unknowns", () => {
+    renderWorkspace(
+      <StrategyWorkspace
+        {...workspaceProps({
+          positions: [
+            {
+              symbol: "PERP_ETH_USDC",
+              position_qty: "0.5",
+              unsettled_pnl: "10",
+              mark_price: "2500",
+              average_open_price: "2400",
+            },
+            {
+              symbol: "PERP_ETH_USDC",
+              position_qty: "0.1",
+              unsettled_pnl: "", // venue gave no figure — UNKNOWN, never 0
+              mark_price: "2500",
+              average_open_price: "2490",
+            },
+            {
+              symbol: "PERP_BTC_USDC", // foreign market — excluded from the sum
+              position_qty: "-1",
+              unsettled_pnl: "-100",
+              mark_price: "65000",
+              average_open_price: "66000",
+            },
+          ],
+        })}
+      />
+    );
+
+    // $10 from the one known row + the blank counted as unknown — the blank
+    // must never fold into the sum as $0.00.
+    expect(screen.getByText(/\$10\.00/)).toBeDefined();
+    expect(screen.getByText(/incomplete, 1 unknown/)).toBeDefined();
+  });
+
+  it("renders a flat zero unrealized when the strategy's market has no open position", () => {
+    renderWorkspace(<StrategyWorkspace {...workspaceProps()} />);
+
+    // No positions on this market → $0.00 is the truth, not a fabrication.
+    expect(screen.getByText(/\$0\.00/)).toBeDefined();
   });
 
   it("forwards the scoped open orders to the table", () => {

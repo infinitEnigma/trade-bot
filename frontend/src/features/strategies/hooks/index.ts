@@ -8,3 +8,11 @@ export {
   accountPositionsQueryKey,
 } from "./useAccountPositions";
 export type { AccountPositionsScope } from "./useAccountPositions";
+export {
+  useStrategyPerformance,
+  strategyPerformanceQueryKey,
+} from "./useStrategyPerformance";
+export type {
+  StrategyPerformanceOptions,
+  StrategyPerformanceResult,
+} from "./useStrategyPerformance";

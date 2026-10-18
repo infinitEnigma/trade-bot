@@ -42,6 +42,7 @@ import {
   useBotState,
   BOT_INSTANCES_QUERY_KEY,
 } from "../../../bots/hooks/useBotLifecycle";
+import { useStrategyPerformance } from "../../hooks/useStrategyPerformance";
 import { CleanupIncompleteBanner } from "./CleanupIncompleteBanner";
 import { BotInstance } from "../../../strategies/types/strategies.types";
 
@@ -321,6 +322,17 @@ export const BotControls: React.FC<BotControlsProps> = ({
   const { actualState, isTransitional, isConnectionLost } = useBotState(
     bot?.id ?? strategyId
   );
+
+  // Phase 1 (strategy-page PnL): the RUNNING line's trades/PnL come from the
+  // LIFETIME ledger aggregate — restart-safe (the session's bot.total_pnl
+  // resets to 0 on every start). Same query key as the workspace bot panel →
+  // one fetch per strategy. Hook is unconditional (rules of hooks) but only
+  // enabled while a bot exists and only polls while RUNNING.
+  const currentState = actualState ?? bot?.status;
+  const { performance: perf } = useStrategyPerformance(strategyId, {
+    enabled: !!bot,
+    live: currentState === "RUNNING",
+  });
 
   // X4: wallet-owner proof for start/stop/resume (emergency-stop stays
   // ungated — the panic button never requires a signature).
@@ -610,8 +622,8 @@ export const BotControls: React.FC<BotControlsProps> = ({
   }
 
   // Bot exists - show appropriate controls based on actual server state
-  // Use actualState from the hook if available, otherwise fall back to bot.status
-  const currentState = actualState ?? bot.status;
+  // (`currentState` is derived once at the top, where the performance hook
+  // also reads it — rules of hooks require the call before these returns.)
 
   // RUNNING state
   if (currentState === "RUNNING") {
@@ -643,14 +655,22 @@ export const BotControls: React.FC<BotControlsProps> = ({
         </div>
         <div className="text-xs text-textMuted text-center flex items-center justify-center gap-1">
           <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+          {/* Phase 1: LIFETIME ledger figures (restart-safe). The session
+              counters (bot.total_*) only fill in while the aggregate is
+              loading or after a fetch error — same F2 incomplete marker on
+              whichever source is displayed; unknown direction, never net. */}
           <span>
-            Trading Active • {bot.total_trades} trades • $
-            {/* F2: an incomplete total sums known fills only — name the
-                unknown fills rather than implying net PnL (never a lower
-                bound: an omitted fill may have been a loss). */}
-            {Number(bot.total_pnl || 0).toFixed(2)} P&L
-            {(bot.total_pnl_incomplete_fills ?? 0) > 0
-              ? ` (incomplete, ${bot.total_pnl_incomplete_fills} fills unknown)`
+            Trading Active • {perf ? perf.totalTrades : (bot.total_trades ?? 0)}{" "}
+            trades • $
+            {Number(perf ? perf.totalPnL : bot.total_pnl || 0).toFixed(2)} P&L
+            {(perf
+              ? perf.unknownPnlFills
+              : (bot.total_pnl_incomplete_fills ?? 0)) > 0
+              ? ` (incomplete, ${
+                  perf
+                    ? perf.unknownPnlFills
+                    : (bot.total_pnl_incomplete_fills ?? 0)
+                } fills unknown)`
               : ""}
           </span>
         </div>

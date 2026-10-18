@@ -34,6 +34,7 @@ describe("StrategyService", () => {
         updateStrategy: jest.fn(),
         deleteStrategy: jest.fn(),
         toggleStrategy: jest.fn(),
+        getStrategyFillTotals: jest.fn(),
       },
       botInstanceRepository: {
         getBotInstances: jest.fn(),
@@ -459,39 +460,147 @@ describe("StrategyService", () => {
     });
   });
 
-  describe("getStrategyPerformance", () => {
-    it("should retrieve strategy performance metrics", async () => {
+  describe("getStrategyPerformance (Phase 1 ledger aggregate)", () => {
+    const totals = (overrides: Record<string, unknown> = {}) => ({
+      totalFills: 5,
+      knownPnlFills: 4,
+      unknownPnlFills: 1,
+      realizedPnl: 12.5,
+      winningFills: 3,
+      losingFills: 1,
+      bestFill: 10.25,
+      worstFill: -1.75,
+      totalFees: 0.84,
+      knownFeeFills: 4,
+      unknownFeeFills: 1,
+      firstFillAt: "2026-10-01T10:00:00.000Z",
+      lastFillAt: "2026-10-12T10:00:00.000Z",
+      ...overrides,
+    });
+
+    it("derives win rate / avg trade over KNOWN fills and passes the aggregate through", async () => {
       const deps = createMockDependencies();
+      (
+        deps.strategyRepository.getStrategyFillTotals as jest.Mock
+      ).mockResolvedValue(totals());
       const strategyService = new StrategyService(deps);
 
-      const testStrategyId = "strategy-123";
-      const result =
-        await strategyService.getStrategyPerformance(testStrategyId);
+      const result = await strategyService.getStrategyPerformance(
+        "strategy-123"
+      );
 
+      expect(deps.strategyRepository.getStrategyFillTotals).toHaveBeenCalledWith(
+        "strategy-123"
+      );
       expect(result).toEqual({
-        totalTrades: 0,
-        totalPnL: 0,
-        winRate: 0,
-        avgTrade: 0,
-        bestTrade: 0,
-        worstTrade: 0,
+        totalTrades: 5,
+        totalPnL: 12.5,
+        // The incompleteness counter (F2) survives to the render surface:
+        // 1 unknown-PnL fill is excluded from the sum, never counted as loss.
+        unknownPnlFills: 1,
+        // 3 wins / 4 known fills — the unknown-PnL fill is EXCLUDED from the
+        // denominator (F2: unknown must never drag the rate down as a loss).
+        winRate: 75,
+        avgTrade: 12.5 / 4,
+        bestTrade: 10.25,
+        worstTrade: -1.75,
+        totalFees: 0.84,
+        unknownFeeFills: 1,
+        firstFillAt: "2026-10-01T10:00:00.000Z",
+        lastFillAt: "2026-10-12T10:00:00.000Z",
       });
     });
 
-    it("should handle errors when retrieving strategy performance", async () => {
+    it("answers zeros with null best/worst for an empty ledger (no fabricated figures)", async () => {
       const deps = createMockDependencies();
+      (
+        deps.strategyRepository.getStrategyFillTotals as jest.Mock
+      ).mockResolvedValue(
+        totals({
+          totalFills: 0,
+          knownPnlFills: 0,
+          unknownPnlFills: 0,
+          realizedPnl: 0,
+          winningFills: 0,
+          losingFills: 0,
+          bestFill: null,
+          worstFill: null,
+          totalFees: 0,
+          knownFeeFills: 0,
+          unknownFeeFills: 0,
+          firstFillAt: null,
+          lastFillAt: null,
+        })
+      );
       const strategyService = new StrategyService(deps);
 
-      // Since getStrategyPerformance doesn't actually use any external dependencies in the current implementation,
-      // we need to test error handling by modifying the test approach
-      // Let's override the method temporarily to test error handling
-      (strategyService as any).getStrategyPerformance = jest
-        .fn()
-        .mockRejectedValue(new Error("Performance data unavailable"));
+      const result = await strategyService.getStrategyPerformance(
+        "strategy-123"
+      );
+
+      expect(result.totalTrades).toBe(0);
+      expect(result.totalPnL).toBe(0);
+      // Divisions by zero known-fills resolve to 0 — and best/worst stay
+      // null: 0 would read as a breakeven fill that never happened.
+      expect(result.winRate).toBe(0);
+      expect(result.avgTrade).toBe(0);
+      expect(result.bestTrade).toBeNull();
+      expect(result.worstTrade).toBeNull();
+    });
+
+    it("surfaces a pure-unknown ledger as zero realized with a non-zero unknown count", async () => {
+      // Every fill's pnl was unknown: totalPnL 0 here means "nothing KNOWN",
+      // and the counter is what tells the UI not to render it as net zero.
+      const deps = createMockDependencies();
+      (
+        deps.strategyRepository.getStrategyFillTotals as jest.Mock
+      ).mockResolvedValue(
+        totals({
+          knownPnlFills: 0,
+          unknownPnlFills: 5,
+          realizedPnl: 0,
+          winningFills: 0,
+          losingFills: 0,
+          bestFill: null,
+          worstFill: null,
+        })
+      );
+      const strategyService = new StrategyService(deps);
+
+      const result = await strategyService.getStrategyPerformance(
+        "strategy-123"
+      );
+
+      expect(result.totalPnL).toBe(0);
+      expect(result.unknownPnlFills).toBe(5);
+      expect(result.winRate).toBe(0);
+      expect(result.bestTrade).toBeNull();
+    });
+
+    it("throws a loud not-wired error when the optional port is absent (never zeros)", async () => {
+      const deps = createMockDependencies();
+      // Simulate a repository that does not implement the optional method.
+      delete (deps.strategyRepository as unknown as Record<string, unknown>)
+        .getStrategyFillTotals;
+      const strategyService = new StrategyService(deps);
 
       await expect(
-        (strategyService as any).getStrategyPerformance("strategy-123")
-      ).rejects.toThrow("Performance data unavailable");
+        strategyService.getStrategyPerformance("strategy-123")
+      ).rejects.toThrow("Strategy fill-totals repository is not wired");
+      expect(deps.logger.error).toHaveBeenCalled();
+    });
+
+    it("wraps repository failures as 'Failed to get strategy performance'", async () => {
+      const deps = createMockDependencies();
+      (
+        deps.strategyRepository.getStrategyFillTotals as jest.Mock
+      ).mockRejectedValue(new Error("Database error"));
+      const strategyService = new StrategyService(deps);
+
+      await expect(
+        strategyService.getStrategyPerformance("strategy-123")
+      ).rejects.toThrow("Failed to get strategy performance");
+      expect(deps.logger.error).toHaveBeenCalled();
     });
   });
 });
