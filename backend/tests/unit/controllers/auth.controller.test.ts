@@ -49,6 +49,53 @@ jest.mock("../../../src/infrastructure/dependency-injection.container", () => {
   };
 });
 
+// Route handlers resolve services through ServiceProvider; mock that boundary
+// instead of the infrastructure container (the factory no longer reads it).
+jest.mock("../../../src/core/service-provider", () => {
+  const mockAuthService = {
+    register: jest.fn(),
+    login: jest.fn(),
+    refreshToken: jest.fn(),
+    validateToken: jest.fn(),
+    getUserById: jest.fn(),
+    getAuthenticatedUserData: jest.fn(),
+    logout: jest.fn().mockResolvedValue({
+      success: true,
+      message: "Logged out successfully",
+      tokensBlacklisted: 0,
+    }),
+  };
+  const mockWalletQualificationService = {
+    checkAlphaQualification: jest.fn().mockResolvedValue({
+      qualified: true,
+      walletConnected: true,
+      chainValid: true,
+      criteria: { balance: 1000 },
+      reasons: [],
+    }),
+    getQualificationConfig: jest.fn().mockReturnValue({ minBalance: 500 }),
+  };
+  const mockRoleManagementService = {
+    assignRole: jest.fn().mockResolvedValue(true),
+  };
+  const mockRoleQualificationService = {
+    checkQualification: jest.fn().mockResolvedValue({
+      qualified: false,
+      criteria: {},
+      reason: "Not qualified",
+    }),
+  };
+  return {
+    serviceProvider: {
+      getAuthService: jest.fn(() => mockAuthService),
+      getWalletQualificationService: jest.fn(() => mockWalletQualificationService),
+      getRoleManagementService: jest.fn(() => mockRoleManagementService),
+      getRoleQualificationService: jest.fn(() => mockRoleQualificationService),
+    },
+    __mockAuthService: mockAuthService,
+  };
+});
+
 // Mock database query
 jest.mock("../../../src/database/pool", () => ({
   query: jest.fn().mockImplementation((sql: string) => {
@@ -144,10 +191,9 @@ jest.mock("../../../src/interfaces/middleware/auth.middleware", () => ({
   AuthenticatedRequest: jest.fn(),
 }));
 
-// Get the mock auth service from the DI container mock
+// Get the mock service from the ServiceProvider boundary
 const mockAuthService =
-  require("../../../src/infrastructure/dependency-injection.container")
-    .diContainer.authService;
+  require("../../../src/core/service-provider").__mockAuthService;
 
 import { setAuthUserDeps, authUsers } from "../../../src/interfaces/http/auth";
 
