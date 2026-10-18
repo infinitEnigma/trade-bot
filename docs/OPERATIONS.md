@@ -229,6 +229,22 @@ swallowed; any residual open orders are reconciled at startup via the snapshot
 cross-check before the bot resumes. After an unclean stop, verify with
 `reconcileSymbol()` and confirm the venue state matches the restored snapshot.
 
+### 5.7a Backend fails fast when the service factory is unwired (Phase 6)
+
+Expected boot order: `Service Factory initialized` → `Service Provider
+initialized` → `DI Container initialized` → `initializeCoreDependencies()`
+(`setServiceFactoryDeps()` + `assertServiceFactoryWired()`) → `Server running`.
+If startup throws `Service Factory dependencies have not been configured`, the
+container never handed prebuilt services to the core — check DI init order in
+`src/index.ts`, not the network. A runtime `Failed to get X Service` log means
+that getter was called unwired and returned `undefined` (graceful partial
+operation); the strict `assertServiceFactoryWired()` gate is what blocks
+`listen()`. Reproduce sanitized proof without leaking secrets:
+
+```bash
+jq -c '{timestamp, level, component, message}' logs/app-2026-10-18.log | grep -E 'Service Factory|Service Provider|Dependency Injection|Server running|WebSocket server ready'
+```
+
 ### 5.7 Lighter signer sidecar down
 
 `exchange: "lighter"` bots sign create/cancel transactions through the
