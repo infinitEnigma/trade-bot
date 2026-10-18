@@ -25,9 +25,8 @@ export default tseslint.config(
   // HTTP routes must never orchestrate repository/pool calls directly — that
   // belongs in application use cases wired in server/route-config.ts.
   //
-  // Entries are applied in order; the file-specific allowlist entries below
-  // deliberately carve out existing debt with a TODO + follow-up issue so the
-  // rule is enforced everywhere else and the allowlist can shrink over time.
+  // This boundary is enforced for all core files; exceptions should not be
+  // added without an explicit architecture decision and tracked follow-up.
   // =========================================================================
   {
     files: ["src/core/**/*.ts"],
