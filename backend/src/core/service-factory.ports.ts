@@ -58,4 +58,3 @@ export function setServiceFactoryDeps(deps: ServiceFactoryDeps): void {
 export function resetServiceFactoryDepsForTests(): void {
   getFactory().resetDepsForTests();
 }
-
