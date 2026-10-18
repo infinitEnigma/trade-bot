@@ -15,7 +15,7 @@
 import * as os from "os";
 import * as path from "path";
 import * as fs from "fs";
-import { GridTradingStrategy, isSizeRefusal } from "../grid";
+import { GridTradingStrategy, isSizeRefusal, isMarginRefusal } from "../grid";
 import { ExchangeClient } from "../../domain/exchange";
 import { GridStrategyConfig, GridLevel } from "../../types/strategy";
 import { SlotOutcome } from "../../domain/order-state";
@@ -827,5 +827,36 @@ describe("isSizeRefusal (C2 classifier)", () => {
     expect(isSizeRefusal("lighter nonce drift: 21104 invalid nonce")).toBe(
       false
     );
+  });
+});
+
+describe("isMarginRefusal (margin-rejection retry loop fix)", () => {
+  it("recognizes a venue margin refusal", () => {
+    expect(
+      isMarginRefusal(
+        "lighter create refused: code=21739 message='not enough margin to create the order'"
+      )
+    ).toBe(true);
+    expect(isMarginRefusal("insufficient margin")).toBe(true);
+    expect(isMarginRefusal("margin is too low for this order")).toBe(true);
+    expect(
+      isMarginRefusal("margin refusal: account has insufficient funds")
+    ).toBe(true);
+    expect(isMarginRefusal("margin rejected")).toBe(true);
+  });
+
+  it("never mistakes a size refusal or nonce drift for one", () => {
+    expect(
+      isMarginRefusal("lighter create refused: 21706 below the minimum size")
+    ).toBe(false);
+    expect(isMarginRefusal("lighter nonce drift: 21104 invalid nonce")).toBe(
+      false
+    );
+    expect(isMarginRefusal("lighter unreachable (create timed out)")).toBe(
+      false
+    );
+    expect(
+      isMarginRefusal("lighter create refused: 21733 accidental price")
+    ).toBe(false);
   });
 });

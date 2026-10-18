@@ -87,9 +87,29 @@ const POSITION_DRIFT_TOLERANCE_FRACTION = 0.5;
 const SIZE_REFUSAL_PATTERN =
   /21706|minimum (order )?(size|amount|qty|quantity)|min(imum)? size|size (is )?(too )?(small|low|tiny)|below (the )?min(imum)?|less than (the )?min(imum)?/i;
 
+/**
+ * Does a submission refusal read as a **margin** refusal?
+ *
+ * The engine has no typed venue-rejection vocabulary: a refused create reaches
+ * the grid as an `UNAVAILABLE` string reason, so this is a deliberately narrow
+ * text classifier matching the Lighter margin code pinned live (`21739`, venue
+ * "not enough margin") plus the wording venues use for the same refusal.
+ * A miss degrades to the pre-existing behaviour — the slot stays UNAVAILABLE
+ * and the tick keeps retrying (the defect this classifier fixes); a false
+ * positive would mark a level exit-only and stop trading, which an operator
+ * can observe and clear.
+ */
+const MARGIN_REFUSAL_PATTERN =
+  /21739|not enough margin|insufficient margin|margin (is )?(too )?(low|small|insufficient)|margin (refusal|rejected)/i;
+
 /** See `SIZE_REFUSAL_PATTERN`. */
 export function isSizeRefusal(reason: string): boolean {
   return SIZE_REFUSAL_PATTERN.test(reason);
+}
+
+/** See `MARGIN_REFUSAL_PATTERN`. */
+export function isMarginRefusal(reason: string): boolean {
+  return MARGIN_REFUSAL_PATTERN.test(reason);
 }
 
 function messageOf(error: unknown): string {
@@ -905,6 +925,28 @@ export class GridTradingStrategy {
               }
             );
             this.manager?.markExitOnly(i);
+          } else if (
+            outcome.kind === "UNAVAILABLE" &&
+            isMarginRefusal(outcome.reason)
+          ) {
+            // The venue refuses BUY orders due to insufficient margin: mark the
+            // level exit-only so it stops trying to place new buys and instead
+            // exits its real inventory. Without this the slot retries the same
+            // refused order on every tick (infinite retry loop, observed live
+            // as 103x `code=21739 not enough margin` refusals in ~6 minutes).
+            logger.warn(
+              "Remainder BUY refused on margin - marking the level exit-only",
+              {
+                botId: this.botId,
+                symbol: this.config.symbol,
+                levelPrice: level.price,
+                remainder: quantity,
+                heldQty: this.heldQtyOf(level),
+                orderQuantity: this.config.orderQuantity,
+                reason: outcome.reason,
+              }
+            );
+            this.manager?.markExitOnly(i);
           } else {
             await this.bookOutcome(i, level, "BUY", outcome);
           }
@@ -977,7 +1019,24 @@ export class GridTradingStrategy {
               exitQty,
               true
             );
-            await this.bookOutcome(i, level, "SELL", outcome);
+            if (
+              outcome.kind === "UNAVAILABLE" &&
+              isMarginRefusal(outcome.reason)
+            ) {
+              // The venue refuses SELL orders due to insufficient margin: log
+              // and do not retry this tick. Without this the slot retries the
+              // same refused order on every tick (infinite retry loop).
+              logger.warn("SELL refused on margin - not retrying this tick", {
+                botId: this.botId,
+                symbol: this.config.symbol,
+                levelPrice: level.price,
+                sellPrice: validatedSell,
+                exitQty,
+                reason: outcome.reason,
+              });
+            } else {
+              await this.bookOutcome(i, level, "SELL", outcome);
+            }
           }
         }
       }
