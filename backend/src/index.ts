@@ -475,7 +475,7 @@ export const initializeCoreDependencies = async (): Promise<void> => {
     challengeStore: redisService,
     signatureVerifier: signatureVerificationServiceAdapter,
   });
-  
+
   // The infrastructure container is the sole composition owner. Capture its
   // prebuilt service instances before listen so request handlers never observe
   // an unwired ServiceFactory.
