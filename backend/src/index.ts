@@ -70,9 +70,7 @@ import { exchangeAccountRepositoryAdapter } from "./infrastructure/adapters/repo
 import { walletRepositoryAdapter } from "./infrastructure/adapters/repositories/wallet-repository.adapter";
 import { signatureVerificationServiceAdapter } from "./infrastructure/adapters/security/signature-verification.adapter";
 import { setWalletProofDeps } from "./core/wallet/wallet-proof.service";
-import {
-  assertServiceFactoryWired,
-} from "./core/service-factory";
+import { assertServiceFactoryWired } from "./core/service-factory";
 import { setServiceFactoryDeps } from "./core/service-factory.ports";
 import { strategyRepositoryAdapter } from "./infrastructure/adapters/repositories/strategy-repository.adapter";
 import { TradeLedgerRepositoryAdapter } from "./infrastructure/adapters/repositories/trade-ledger-repository.adapter";
