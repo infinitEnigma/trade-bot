@@ -396,7 +396,7 @@ export class ServiceFactory implements IServiceFactory {
       this.logger.debug(
         "Exchange Account Service retrieved from dependencies",
         {
-        service: "ExchangeAccountService",
+          service: "ExchangeAccountService",
           implementation: "injected",
         }
       );
