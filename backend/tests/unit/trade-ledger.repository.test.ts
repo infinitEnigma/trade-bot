@@ -132,10 +132,16 @@ describe("TradeLedgerRepository", () => {
       expect(totalsSql).toContain("UPDATE bot_instances");
       expect(totalsSql).toContain("total_trades = total_trades + 1");
       // F2: a KNOWN pnl adds to total_pnl; the incompleteness counter only
-      // moves when the pnl is NULL (unknown).
-      expect(totalsSql).toContain("total_pnl = total_pnl + COALESCE($2, 0)");
+      // moves when the pnl is NULL (unknown). The explicit ::numeric cast on
+      // $2 prevents PostgreSQL from resolving COALESCE against the integer
+      // literal 0 and rejecting fractional values like 101.5 (SQLSTATE 22P02).
+      expect(totalsSql).toContain(
+        "total_pnl = total_pnl + COALESCE($2::numeric, 0)"
+      );
       expect(totalsSql).toContain("total_pnl_incomplete_fills");
-      expect(totalsSql).toContain("CASE WHEN $2::numeric IS NULL THEN 1 ELSE 0 END");
+      expect(totalsSql).toContain(
+        "CASE WHEN $2::numeric IS NULL THEN 1 ELSE 0 END"
+      );
       expect(totalsSql).toContain("WHERE id = $1");
       expect(totalsSql).not.toContain("strategy_id");
       expect(totalsParams).toEqual([BOT_ID, -1.25]);
@@ -198,6 +204,32 @@ describe("TradeLedgerRepository", () => {
 
       const [, exactParams] = clientQuery.mock.calls[2];
       expect(exactParams[11]).toBe(false);
+    });
+
+    it("records a fractional pnl such as 101.5 without an integer cast error (regression)", async () => {
+      clientQuery
+        .mockResolvedValueOnce({ rows: [{ user_id: "user-1" }] })
+        .mockResolvedValueOnce({ rows: [{ strategy_id: "strat-1" }] })
+        .mockResolvedValueOnce({ rowCount: 1, rows: [{ id: "fill-row" }] })
+        .mockResolvedValueOnce({ rowCount: 1 })
+        .mockResolvedValueOnce({ rowCount: 1 })
+        .mockResolvedValueOnce({ rowCount: 1 });
+
+      const result = await repo.recordFill({ ...FILL, pnl: 101.5 });
+
+      expect(result).toBe("INSERTED");
+      // The totals UPDATE must use the explicit ::numeric cast so PostgreSQL
+      // does not resolve COALESCE against the integer literal 0 and reject
+      // fractional values with SQLSTATE 22P02.
+      const [totalsSql, totalsParams] = clientQuery.mock.calls[5];
+      expect(totalsSql).toContain(
+        "total_pnl = total_pnl + COALESCE($2::numeric, 0)"
+      );
+      expect(totalsParams).toEqual([BOT_ID, 101.5]);
+      // The incompleteness counter must NOT move for a known (non-null) pnl.
+      expect(totalsSql).toContain(
+        "CASE WHEN $2::numeric IS NULL THEN 1 ELSE 0 END"
+      );
     });
 
     it("on a duplicate: short-circuits — no display row, no totals increment", async () => {

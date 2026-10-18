@@ -23,6 +23,7 @@ import {
   ProtocolMessage,
   createBotCommand,
   isBotEvent,
+  isEngineLedgerEventType,
 } from "@trade-bot/shared";
 import { redisLogger as logger } from "../../core/logging/context-aware-logger.service";
 
@@ -334,22 +335,23 @@ export class EngineProtocolService {
           consumerName: this.consumerName,
         });
 
-        if (
-          !result.success ||
-          !result.messages ||
-          result.messages.length === 0
-        ) {
-          await this.recoverPendingEvents(lastRecoveryAt).then(recovered => {
-            if (recovered) {
-              lastRecoveryAt = Date.now();
-            }
-          });
-          continue;
+        // Process any newly delivered events first.
+        if (result.success && result.messages) {
+          for (const message of result.messages) {
+            await this.processEventMessage(message.id, message.data);
+          }
         }
 
-        for (const message of result.messages) {
-          await this.processEventMessage(message.id, message.data);
-        }
+        // Reclaim pending events on a time-based schedule regardless of
+        // traffic. Pending-ledger events (left unacked by the financial-event
+        // poison guard) must be retried even when the stream is continuously
+        // busy; `recoverPendingEvents` is internally rate-limited to
+        // PENDING_RECOVERY_INTERVAL_MS so this is never a hot loop.
+        await this.recoverPendingEvents(lastRecoveryAt).then(recovered => {
+          if (recovered) {
+            lastRecoveryAt = Date.now();
+          }
+        });
       } catch (error) {
         if (this.isListening) {
           logger.error("Error reading engine events", undefined, {
@@ -476,8 +478,38 @@ export class EngineProtocolService {
       // applied to the bot's current state); leaving it unacked forever makes
       // the PEL spin once per pending-recovery pass. Past the threshold the
       // entry is alert-and-dropped so it cannot bury the stream.
+      //
+      // Ledger events (ORDER_INTENT / TRADE_EXECUTED / POSITION_UPDATED /
+      // PERFORMANCE_SNAPSHOT) contribute durable financial state and must
+      // never be declared processed merely because persistence keeps failing.
+      // The ledger's unique key makes redelivery idempotent, so leaving the
+      // message pending preserves at-least-once delivery until an explicit
+      // reconciliation resolves it. Non-ledger events retain the bounded
+      // poison-handling where dropping is appropriate.
+      const isLedgerEvent = isEngineLedgerEventType(data.type);
       const deliveries = await this.pendingDeliveries(streamId);
       if (deliveries >= PENDING_POISON_MAX_DELIVERIES) {
+        if (isLedgerEvent) {
+          logger.error(
+            "Persistent financial-event failure: event left unacked for recovery",
+            undefined,
+            {
+              streamId,
+              messageId: data.messageId,
+              eventType: data.type,
+              financialEvent: true,
+              deliveries,
+              maxDeliveries: PENDING_POISON_MAX_DELIVERIES,
+              error: errorMessage,
+            }
+          );
+          // Intentionally neither markProcessed() nor safeAck(): the message
+          // stays pending so pending-event recovery can redeliver it once the
+          // persistence problem is fixed. Do not blindly replay — reconcile
+          // against the durable ledger first if a prior delivery may have
+          // already booked the fill.
+          return;
+        }
         logger.error(
           "Poison engine event ACKed and dropped after repeated redelivery",
           undefined,

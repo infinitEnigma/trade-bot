@@ -126,7 +126,7 @@ export class TradeLedgerRepositoryAdapter implements ITradeLedgerRepository {
       await client.query(
         `UPDATE bot_instances
             SET total_trades = total_trades + 1,
-                total_pnl = total_pnl + COALESCE($2, 0),
+                total_pnl = total_pnl + COALESCE($2::numeric, 0),
                 total_pnl_incomplete_fills = total_pnl_incomplete_fills
                   + CASE WHEN $2::numeric IS NULL THEN 1 ELSE 0 END,
                 updated_at = CURRENT_TIMESTAMP

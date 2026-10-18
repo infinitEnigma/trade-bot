@@ -88,6 +88,56 @@ function failingEvent(): BotEvent {
   );
 }
 
+/** Build a valid ledger event of the given type for poison-cap tests. */
+function makeLedgerEvent(
+  type:
+    | "ORDER_INTENT"
+    | "TRADE_EXECUTED"
+    | "POSITION_UPDATED"
+    | "PERFORMANCE_SNAPSHOT",
+  correlationId = "corr-ledger"
+): BotEvent {
+  const base = {
+    botId: "bot-1",
+    engineId: "engine-1",
+    engineEpoch: 1,
+  };
+  const payload =
+    type === "TRADE_EXECUTED"
+      ? {
+          ...base,
+          symbol: "ETH",
+          side: "BUY",
+          price: 100,
+          quantity: 1,
+          clientOrderId: "c-1",
+          exchangeOrderId: "e-1",
+          fillId: "f-1",
+          executedAt: "2026-10-02T10:00:00.000Z",
+        }
+      : type === "ORDER_INTENT"
+        ? {
+            ...base,
+            symbol: "ETH",
+            side: "BUY",
+            price: 100,
+            quantity: 1,
+            clientOrderId: "c-1",
+          }
+        : type === "POSITION_UPDATED"
+          ? {
+              ...base,
+              symbol: "ETH",
+              side: "LONG",
+              quantity: 1,
+              entryPrice: 100,
+              markPrice: 100,
+              pnl: 0,
+            }
+          : { ...base, metrics: { totalTrades: 1, totalPnl: 0 } };
+  return createBotEvent(type, payload as never, correlationId);
+}
+
 function makeService(ops: RedisStreamOperations): EngineProtocolService {
   return new EngineProtocolService({
     streamOperations: ops,
@@ -148,6 +198,70 @@ describe("engine-protocol event consumer poison cap (L22/L25)", () => {
       "backend-group",
       "1-2"
     );
+  });
+
+  it.each([
+    "ORDER_INTENT",
+    "TRADE_EXECUTED",
+    "POSITION_UPDATED",
+    "PERFORMANCE_SNAPSHOT",
+  ] as const)(
+    "ledger event %s is left pending at the poison threshold — not marked processed or ACKed",
+    async type => {
+      const { acks, ops, raw } = makeStreamOps(PENDING_POISON_MAX_DELIVERIES);
+      const service = makeService(ops);
+      const internals = service as unknown as ServiceInternals;
+      internals.eventHandler = () =>
+        Promise.reject(new Error("persistence failure"));
+
+      await internals.processEventMessage("1-2-ledger", makeLedgerEvent(type));
+
+      expect(acks).toEqual([]);
+      expect(raw.markMessageProcessed).not.toHaveBeenCalled();
+      // The event stays in the PEL so pending-event recovery can redeliver it
+      // once the persistence problem is fixed.
+      expect(raw.getPendingDeliveries).toHaveBeenCalledWith(
+        "tradebot:engine:events",
+        "backend-group",
+        "1-2-ledger"
+      );
+    }
+  );
+
+  it("retries and acknowledges a ledger event once persistence is restored", async () => {
+    const { acks, ops, raw } = makeStreamOps(PENDING_POISON_MAX_DELIVERIES);
+    const service = makeService(ops);
+    const internals = service as unknown as ServiceInternals;
+
+    // First delivery: persistence fails at the poison threshold. The ledger
+    // event must stay pending — not marked processed, not ACKed.
+    let attempts = 0;
+    internals.eventHandler = () => {
+      attempts += 1;
+      if (attempts === 1) {
+        return Promise.reject(new Error("persistence failure"));
+      }
+      return Promise.resolve();
+    };
+
+    await internals.processEventMessage(
+      "1-4-recovery",
+      makeLedgerEvent("TRADE_EXECUTED")
+    );
+
+    expect(acks).toEqual([]);
+    expect(raw.markMessageProcessed).not.toHaveBeenCalled();
+
+    // Persistence restored: redelivery succeeds, so the event is marked
+    // processed and acknowledged exactly once.
+    await internals.processEventMessage(
+      "1-4-recovery",
+      makeLedgerEvent("TRADE_EXECUTED")
+    );
+
+    expect(acks).toEqual(["1-4-recovery"]);
+    expect(raw.markMessageProcessed).toHaveBeenCalledTimes(1);
+    expect(attempts).toBe(2);
   });
 
   it("keeps retrying when the delivery counter cannot be read (fail open)", async () => {
