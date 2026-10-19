@@ -15,7 +15,7 @@ export interface LedgerIntegrityAlert {
  * The unique key makes retries/concurrent consumers idempotent.
  */
 export class LedgerIntegrityAlertRepository {
-  async record(alert: LedgerIntegrityAlert): Promise<void> {
+  async record(alert: LedgerIntegrityAlert): Promise<boolean> {
     await query(
       `INSERT INTO ledger_integrity_alerts
          (bot_id, event_type, message_id, correlation_id, deliveries, reason)
@@ -23,7 +23,8 @@ export class LedgerIntegrityAlertRepository {
        ON CONFLICT (event_type, message_id) DO UPDATE
          SET deliveries = GREATEST(ledger_integrity_alerts.deliveries, EXCLUDED.deliveries),
              last_seen_at = CURRENT_TIMESTAMP,
-             correlation_id = COALESCE(EXCLUDED.correlation_id, ledger_integrity_alerts.correlation_id)`,
+             correlation_id = COALESCE(EXCLUDED.correlation_id, ledger_integrity_alerts.correlation_id)
+       RETURNING (xmax = 0) AS inserted`,
       [
         alert.botId,
         alert.eventType,
@@ -33,5 +34,6 @@ export class LedgerIntegrityAlertRepository {
         alert.reason,
       ]
     );
+    return result.rows[0]?.inserted === true;
   }
 }
