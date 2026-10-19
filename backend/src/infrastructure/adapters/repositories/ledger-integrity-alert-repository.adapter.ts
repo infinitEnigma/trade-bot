@@ -16,7 +16,7 @@ export interface LedgerIntegrityAlert {
  */
 export class LedgerIntegrityAlertRepository {
   async record(alert: LedgerIntegrityAlert): Promise<boolean> {
-    await query(
+    const result = await query(
       `INSERT INTO ledger_integrity_alerts
          (bot_id, event_type, message_id, correlation_id, deliveries, reason)
        VALUES ($1, $2, $3, $4, $5, $6)
