@@ -168,6 +168,16 @@ describe("Trade ledger idempotency (real PostgreSQL)", () => {
     };
   }
 
+  /** State of the seeded intent (client_order_id = 'bot1-00-B'). */
+  async function intentState(): Promise<string | null> {
+    const result = await query(
+      `SELECT state FROM bot_order_intents
+         WHERE bot_id = $1 AND client_order_id = 'bot1-00-B'`,
+      [BOT_ID]
+    );
+    return (result.rows[0] as { state: string | null })?.state ?? null;
+  }
+
   const FILL: LedgerFill = {
     botId: BOT_ID,
     clientOrderId: "bot1-00-B",
@@ -204,6 +214,7 @@ describe("Trade ledger idempotency (real PostgreSQL)", () => {
     const before = await counts();
     expect(before.fills).toBe(0);
     expect(before.trades).toBe(0);
+    expect(await intentState()).toBe("INTENDED"); // intent starts open
 
     const result = await repo.recordFill(FILL);
     expect(result).toBe("INSERTED");
@@ -211,7 +222,8 @@ describe("Trade ledger idempotency (real PostgreSQL)", () => {
     const after = await counts();
     expect(after.fills).toBe(1);
     expect(after.trades).toBe(1);
-    expect(after.intents).toBe(1); // intent row exists (seeded by insert+update no-op path) — closed to FILLED
+    expect(after.intents).toBe(1); // intent row exists — closed to FILLED
+    expect(await intentState()).toBe("FILLED"); // intent closed exactly once
     expect(after.totalTrades).toBe(1);
     expect(after.totalPnl).toBe("-1.25000000");
   });
@@ -225,6 +237,7 @@ describe("Trade ledger idempotency (real PostgreSQL)", () => {
     const afterFirst = await counts();
     expect(afterFirst.fills).toBe(1);
     expect(afterFirst.totalTrades).toBe(1);
+    expect(await intentState()).toBe("FILLED"); // intent closed once by the insert
 
     const second = await repo.recordFill(FILL); // same messageId-equivalent identity
     expect(second).toBe("DUPLICATE");
@@ -234,6 +247,7 @@ describe("Trade ledger idempotency (real PostgreSQL)", () => {
     expect(afterSecond.trades).toBe(1); // no duplicate display trade
     expect(afterSecond.totalTrades).toBe(1); // totals not incremented again
     expect(afterSecond.totalPnl).toBe("-1.25000000"); // pnl not added twice
+    expect(await intentState()).toBe("FILLED"); // intent stays FILLED — not re-closed
   });
 
   it("concurrent duplicate deliveries yield exactly one INSERTED and one DUPLICATE", async () => {
@@ -254,5 +268,6 @@ describe("Trade ledger idempotency (real PostgreSQL)", () => {
     expect(final.trades).toBe(1); // exactly one display row
     expect(final.totalTrades).toBe(1); // totals incremented once
     expect(final.totalPnl).toBe("-1.25000000");
+    expect(await intentState()).toBe("FILLED"); // intent closed exactly once
   });
 });

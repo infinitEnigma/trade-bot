@@ -17,8 +17,12 @@
  *  5. Same messageId delivered twice ⇒ handler runs once, both deliveries ACKed.
  *  6. Restart (empty in-memory dedup set, no Redis marker) ⇒ handler re-runs on redelivery;
  *     ledger idempotency must then come from the repository (trade-ledger-idempotency.test.ts).
- *  7. UNKNOWN_BOT / DUPLICATE ledger results are swallowed by TradeLedgerService (no throw),
- *     so the consumer marks them processed and ACKs them — this is NOT an integrity halt.
+ *  7. DUPLICATE ledger results are swallowed by TradeLedgerService (no throw),
+ *     so the consumer marks them processed and ACKs them — this is NOT an
+ *     integrity halt.
+ *  8. UNKNOWN_BOT ledger results throw, leaving the event pending for
+ *     redelivery; at the poison threshold the durable integrity alert fires —
+ *     an unattributed fill is never silently discarded.
  *
  * Failure matrix (each row traced to its `it` case below). "Outcome" is what the
  * current implementation actually does, verified by these tests.
@@ -32,7 +36,8 @@
  * | 5 | Restart with pending events | Pending events recovered / re-handled | "restart redelivery re-runs the handler" | handler re-runs |
  * | 6 | Event at poison-delivery threshold (ledger) | Financial events not silently discarded | "ledger event at poison threshold stays pending, not acked" | unacked, not marked |
  * | 7 | Event at poison threshold (non-ledger) | Bounded drop, not indefinite spin | "non-ledger event at poison threshold is processed and acked" | processed + acked |
- * | 8 | UNKNOWN_BOT / DUPLICATE from ledger | Swallowed, processed + ACKed (no silent halt) | "unknown-bot and duplicate ledger results are swallowed and acked" | processed + acked |
+ * | 8 | UNKNOWN_BOT from ledger | Throws → event left pending for redelivery; at poison threshold the | "UNKNOWN_BOT fill result throws — event left pending, not swallowed" | pending, integrity alert fires |
+ * |   | DUPLICATE from ledger   | Swallowed, processed + ACKed (no silent halt)                        | "DUPLICATE fill result is swallowed and acked — ledger already holds the fill" | processed + acked             |
  *
  * Companion suite: `trade-ledger-idempotency.test.ts` proves the PostgreSQL
  * repository-level invariant (one fill row, one trade row, totals incremented

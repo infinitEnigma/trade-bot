@@ -198,9 +198,6 @@ export class EngineProtocolService {
   private readonly deps: EngineProtocolServiceDependencies;
   private consumerName: string;
   private eventHandler: BotEventHandler | null = null;
-  /** Durable integrity alert callback — wired by the composition root. */
-  private integrityAlertHandler:
-    ((event: BotEvent, deliveries: number) => Promise<void>) | null = null;
   private isListening = false;
   /** Recently processed event messageIds for at-least-once deduplication. */
   private processedMessageIds: Set<string> = new Set();
@@ -210,7 +207,6 @@ export class EngineProtocolService {
   constructor(deps: EngineProtocolServiceDependencies = {}) {
     this.deps = deps;
     this.consumerName = deps.consumerName ?? "backend-consumer";
-    this.integrityAlertHandler = deps.integrityAlertHandler ?? null;
   }
 
   /**
@@ -238,6 +234,16 @@ export class EngineProtocolService {
       );
     }
     return impl;
+  }
+
+  /** Durable integrity alert callback — instance deps first, then startup wiring. */
+  private get alertHandler():
+    ((event: BotEvent, deliveries: number) => Promise<void>) | null {
+    return (
+      this.deps.integrityAlertHandler ??
+      defaultRedisDeps.integrityAlertHandler ??
+      null
+    );
   }
 
   // ===========================================
@@ -518,9 +524,10 @@ export class EngineProtocolService {
           // Raise a durable integrity alert so operators can see the stuck
           // financial event — it is not silently left pending with only a log
           // line. Observability failure must never break the recovery loop.
-          if (this.integrityAlertHandler) {
+          const handler = this.alertHandler;
+          if (handler) {
             try {
-              await this.integrityAlertHandler(data, deliveries);
+              await handler(data, deliveries);
             } catch (alertError) {
               logger.error(
                 "Integrity alert handler failed",

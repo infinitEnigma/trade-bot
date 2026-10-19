@@ -56,6 +56,7 @@ import { Server } from "socket.io";
 
 // Import logger first before any other code
 import { contextLogger as logger } from "./core/logging";
+import { BotEvent } from "@trade-bot/shared";
 import {
   engineProtocolService,
   setEngineProtocolRedisDeps,
@@ -579,11 +580,48 @@ export const startServer = async (): Promise<typeof httpServer> => {
       // BEFORE engineProtocolService.start() so the fail-fast accessors
       // resolve (Arch-2).
       const engineProtocolConnectionManager = new RedisConnectionManager();
+
+      // Durable integrity alert for ledger events stuck at the poison
+      // threshold. Writes a `LEDGER_INTEGRITY_ALERT` row to
+      // `bot_lifecycle_events` so operators can see fills that are stuck
+      // pending due to persistence failure. Idempotent per
+      // (bot_id, message_id) so repeated poison deliveries don't flood the
+      // audit trail. Unknown bots (FK violation) are logged by the adapter
+      // but do not crash the consumer.
+      const ledgerLifecycleRepo = new BotLifecycleRepositoryAdapter();
+      const integrityAlertHandler = async (
+        event: BotEvent,
+        deliveries: number
+      ): Promise<void> => {
+        const botId = (event.payload as { botId?: string })?.botId;
+        if (!botId) return;
+
+        if (
+          await ledgerLifecycleRepo.findIntegrityAlert(botId, event.messageId)
+        ) {
+          return; // already alerted for this stuck financial event
+        }
+
+        await ledgerLifecycleRepo.recordLifecycleEvent(botId, {
+          eventType: "LEDGER_INTEGRITY_ALERT",
+          fromState: null,
+          toState: null,
+          correlationId: event.correlationId,
+          messageId: event.messageId,
+          metadata: {
+            eventType: event.type,
+            deliveries,
+            reason: "financial-event-poison-threshold",
+          },
+        });
+      };
+
       setEngineProtocolRedisDeps({
         connectionManager: engineProtocolConnectionManager,
         streamOperations: new RedisStreamOperations(
           engineProtocolConnectionManager
         ),
+        integrityAlertHandler,
       });
       engineProtocolService
         .start(event => botLifecycleService.handleEngineEvent(event))
