@@ -56,6 +56,8 @@ import { Server } from "socket.io";
 
 // Import logger first before any other code
 import { contextLogger as logger } from "./core/logging";
+import { BotEvent } from "@trade-bot/shared";
+import { LedgerIntegrityAlertRepository } from "./infrastructure/adapters/repositories/ledger-integrity-alert-repository.adapter";
 import {
   engineProtocolService,
   setEngineProtocolRedisDeps,
@@ -579,11 +581,64 @@ export const startServer = async (): Promise<typeof httpServer> => {
       // BEFORE engineProtocolService.start() so the fail-fast accessors
       // resolve (Arch-2).
       const engineProtocolConnectionManager = new RedisConnectionManager();
+
+      // Persist the alert independently of bot lifecycle rows. UNKNOWN_BOT events
+      // cannot satisfy bot_lifecycle_events.bot_id's FK, so the durable alert table
+      // intentionally accepts an unrecognized bot ID and deduplicates atomically.
+      const integrityAlertRepo = new LedgerIntegrityAlertRepository();
+      const ledgerLifecycleRepo = new BotLifecycleRepositoryAdapter();
+      const integrityAlertHandler = async (
+        event: BotEvent,
+        deliveries: number
+      ): Promise<void> => {
+        const rawBotId = (event.payload as { botId?: unknown })?.botId;
+        const botId =
+          typeof rawBotId === "string" && rawBotId.trim()
+            ? rawBotId.trim()
+            : "<missing-bot-id>";
+
+        // Persistence errors propagate to EngineProtocolService, which logs the
+        // failure and leaves the financial event pending. Never ACK because the
+        // alert write failed.
+        const firstAlert = await integrityAlertRepo.record({
+          botId,
+          eventType: event.type,
+          messageId: event.messageId,
+          correlationId: event.correlationId,
+          deliveries,
+          reason: "financial-event-poison-threshold",
+        });
+
+        // Preserve the existing per-bot audit/UI trail when this is a valid UUID.
+        // This secondary audit write is best-effort; the independent alert row is
+        // already durable and is not lost if the bot row is absent.
+        if (
+          firstAlert &&
+          /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+            botId
+          )
+        ) {
+          await ledgerLifecycleRepo.recordLifecycleEvent(botId, {
+            eventType: "LEDGER_INTEGRITY_ALERT",
+            fromState: null,
+            toState: null,
+            correlationId: event.correlationId,
+            messageId: event.messageId,
+            metadata: {
+              eventType: event.type,
+              deliveries,
+              reason: "financial-event-poison-threshold",
+            },
+          });
+        }
+      };
+
       setEngineProtocolRedisDeps({
         connectionManager: engineProtocolConnectionManager,
         streamOperations: new RedisStreamOperations(
           engineProtocolConnectionManager
         ),
+        integrityAlertHandler,
       });
       engineProtocolService
         .start(event => botLifecycleService.handleEngineEvent(event))

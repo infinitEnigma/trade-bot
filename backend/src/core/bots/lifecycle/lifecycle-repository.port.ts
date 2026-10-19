@@ -100,7 +100,6 @@ export interface ILifecycleRepository {
     input: LifecycleEventInput
   ): Promise<void>;
   findLatestLifecycleEvent(botId: string): Promise<LifecycleEventRow | null>;
-
   // --- command tracking ---
   recordPendingCommand(
     botId: string,
