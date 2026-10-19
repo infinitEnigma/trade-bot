@@ -12,8 +12,10 @@
  *   ACKed — a broken event must not redeliver forever.
  * - Persistence failures throw, leaving the message unacked for redelivery;
  *   the ledger's unique key makes the redelivery idempotent.
- * - UNKNOWN_BOT is a warning + swallow (identity is resolved server-side, so
- *   a spoofed/stale bot id can never write).
+ * - UNKNOWN_BOT throws, leaving the message unacked for redelivery; the
+ *   poison threshold bounds any permanent mis-attribution and triggers the
+ *   durable integrity alert (Gap 2). A transiently-missing bot row will
+ *   eventually be retried; a genuinely bad bot_id becomes operator-visible.
  *
  * @format
  */
@@ -200,11 +202,13 @@ export class TradeLedgerService {
         messageId: event.messageId,
       });
     } else if (result === "UNKNOWN_BOT") {
-      logger.warn("Fill for unknown bot - ignored", {
-        botId: payload.botId,
-        clientOrderId: payload.clientOrderId,
-        messageId: event.messageId,
-      });
+      // The fill cannot be attributed yet — throw so the event stays pending
+      // for redelivery. Transiently-missing bot rows will eventually be
+      // retried; permanently-bad bot_ids hit the poison threshold and trigger
+      // the durable integrity alert (Gap 2) instead of being silently lost.
+      throw new Error(
+        `UNKNOWN_BOT: fill unattributed for bot ${payload.botId} (clientOrderId ${payload.clientOrderId}, fillId ${payload.fillId})`
+      );
     } else {
       logger.info("Fill recorded in ledger", {
         botId: payload.botId,

@@ -141,9 +141,14 @@ describe("TradeLedgerService", () => {
       expect(repo.recordFill).toHaveBeenCalledTimes(1);
     });
 
-    it("swallows UNKNOWN_BOT (identity resolved server-side)", async () => {
+    it("throws on UNKNOWN_BOT so the event stays pending for redelivery", async () => {
       repo.recordFill.mockResolvedValue("UNKNOWN_BOT");
-      await expect(service.handle(tradeEvent())).resolves.toBeUndefined();
+
+      // UNKNOWN_BOT means the fill cannot be attributed yet. Throwing leaves
+      // the event unacked so pending-event recovery can redeliver it once the
+      // bot row exists; the poison threshold + integrity alert (Gap 2) bounds
+      // any permanent mis-attribution so it is operator-visible.
+      await expect(service.handle(tradeEvent())).rejects.toThrow("UNKNOWN_BOT");
     });
 
     it("rejects a malformed payload without touching the repository", async () => {

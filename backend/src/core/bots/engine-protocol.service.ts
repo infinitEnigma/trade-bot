@@ -154,6 +154,14 @@ export interface EngineProtocolServiceDependencies {
   streamOperations?: IEngineProtocolRedisStreams;
   connectionManager?: IEngineProtocolRedisConnection;
   consumerName?: string;
+  /** Durable integrity alert raised when a financial event hits the poison
+   * threshold and must remain pending for recovery. Wired at the composition
+   * root (index.ts) to write an operator-visible alert (e.g. bot_lifecycle_events).
+   * Optional: when unset, no alert is raised and the event stays pending. */
+  integrityAlertHandler?: (
+    event: BotEvent,
+    deliveries: number
+  ) => Promise<void>;
 }
 
 /**
@@ -190,6 +198,8 @@ export class EngineProtocolService {
   private readonly deps: EngineProtocolServiceDependencies;
   private consumerName: string;
   private eventHandler: BotEventHandler | null = null;
+  /** Durable integrity alert callback — wired by the composition root. */
+  private integrityAlertHandler: ((event: BotEvent, deliveries: number) => Promise<void>) | null = null;
   private isListening = false;
   /** Recently processed event messageIds for at-least-once deduplication. */
   private processedMessageIds: Set<string> = new Set();
@@ -199,6 +209,7 @@ export class EngineProtocolService {
   constructor(deps: EngineProtocolServiceDependencies = {}) {
     this.deps = deps;
     this.consumerName = deps.consumerName ?? "backend-consumer";
+    this.integrityAlertHandler = deps.integrityAlertHandler ?? null;
   }
 
   /**
@@ -503,6 +514,24 @@ export class EngineProtocolService {
               error: errorMessage,
             }
           );
+          // Raise a durable integrity alert so operators can see the stuck
+          // financial event — it is not silently left pending with only a log
+          // line. Observability failure must never break the recovery loop.
+          if (this.integrityAlertHandler) {
+            try {
+              await this.integrityAlertHandler(data, deliveries);
+            } catch (alertError) {
+              logger.error(
+                "Integrity alert handler failed",
+                alertError as Error,
+                {
+                  streamId,
+                  messageId: data.messageId,
+                  eventType: data.type,
+                }
+              );
+            }
+          }
           // Intentionally neither markProcessed() nor safeAck(): the message
           // stays pending so pending-event recovery can redeliver it once the
           // persistence problem is fixed. Do not blindly replay — reconcile
@@ -562,7 +591,19 @@ export class EngineProtocolService {
     if (this.processedMessageIds.has(messageId)) {
       return true;
     }
-    return this.streamOperations.isMessageProcessed(this.dedupScope, messageId);
+    try {
+      return await this.streamOperations.isMessageProcessed(
+        this.dedupScope,
+        messageId
+      );
+    } catch (error) {
+      logger.error(
+        "Dedup marker read failed — failing open",
+        error as Error,
+        { scope: this.dedupScope, messageId }
+      );
+      return false; // fail open: let the handler run; repository idempotency is the backstop
+    }
   }
 
   private async markProcessed(messageId: string): Promise<void> {
@@ -572,10 +613,23 @@ export class EngineProtocolService {
         Array.from(this.processedMessageIds).slice(-DEDUP_SET_MAX_SIZE / 2)
       );
     }
-    await this.streamOperations.markMessageProcessed(
-      this.dedupScope,
-      messageId
-    );
+    try {
+      await this.streamOperations.markMessageProcessed(
+        this.dedupScope,
+        messageId
+      );
+    } catch (error) {
+      // Dedup marker write failure must not be treated as a handler failure.
+      // Fail open: the in-memory marker is set, so this process won't
+      // reprocess the message; the Redis marker will be retried on the next
+      // delivery of the same messageId. Repository-level idempotency is the
+      // backstop against duplicate financial effects.
+      logger.error(
+        "Dedup marker write failed — failing open",
+        error as Error,
+        { scope: this.dedupScope, messageId }
+      );
+    }
   }
 
   private async safeAck(streamId: string): Promise<void> {
