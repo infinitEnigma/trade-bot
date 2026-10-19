@@ -239,19 +239,6 @@ export class BotLifecycleRepositoryAdapter implements ILifecycleRepository {
     return result.rows[0] ?? null;
   }
 
-  /** Idempotency check: has a LEDGER_INTEGRITY_ALERT already been raised for this fill? */
-  async findIntegrityAlert(botId: string, messageId: string): Promise<boolean> {
-    const result = await query<{ count: string }>(
-      `SELECT COUNT(*) as count
-             FROM bot_lifecycle_events
-            WHERE bot_id = $1
-              AND event_type = 'LEDGER_INTEGRITY_ALERT'
-              AND message_id = $2`,
-      [botId, messageId]
-    );
-    return parseInt(result.rows[0]?.count ?? "0", 10) > 0;
-  }
-
   // ===========================================
   // COMMAND TRACKING
   // ===========================================
