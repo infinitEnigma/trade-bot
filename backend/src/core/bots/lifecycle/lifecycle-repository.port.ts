@@ -100,14 +100,6 @@ export interface ILifecycleRepository {
     input: LifecycleEventInput
   ): Promise<void>;
   findLatestLifecycleEvent(botId: string): Promise<LifecycleEventRow | null>;
-  /**
-   * Returns true when a `LEDGER_INTEGRITY_ALERT` row already exists for this
-   * bot + message_id. Used by the engine-protocol integrity alert handler to
-   * avoid emitting an unbounded stream of duplicate alerts for the same stuck
-   * financial event.
-   */
-  findIntegrityAlert(botId: string, messageId: string): Promise<boolean>;
-
   // --- command tracking ---
   recordPendingCommand(
     botId: string,
