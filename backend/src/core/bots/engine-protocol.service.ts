@@ -199,7 +199,8 @@ export class EngineProtocolService {
   private consumerName: string;
   private eventHandler: BotEventHandler | null = null;
   /** Durable integrity alert callback — wired by the composition root. */
-  private integrityAlertHandler: ((event: BotEvent, deliveries: number) => Promise<void>) | null = null;
+  private integrityAlertHandler:
+    ((event: BotEvent, deliveries: number) => Promise<void>) | null = null;
   private isListening = false;
   /** Recently processed event messageIds for at-least-once deduplication. */
   private processedMessageIds: Set<string> = new Set();
@@ -597,11 +598,10 @@ export class EngineProtocolService {
         messageId
       );
     } catch (error) {
-      logger.error(
-        "Dedup marker read failed — failing open",
-        error as Error,
-        { scope: this.dedupScope, messageId }
-      );
+      logger.error("Dedup marker read failed — failing open", error as Error, {
+        scope: this.dedupScope,
+        messageId,
+      });
       return false; // fail open: let the handler run; repository idempotency is the backstop
     }
   }
@@ -624,11 +624,10 @@ export class EngineProtocolService {
       // reprocess the message; the Redis marker will be retried on the next
       // delivery of the same messageId. Repository-level idempotency is the
       // backstop against duplicate financial effects.
-      logger.error(
-        "Dedup marker write failed — failing open",
-        error as Error,
-        { scope: this.dedupScope, messageId }
-      );
+      logger.error("Dedup marker write failed — failing open", error as Error, {
+        scope: this.dedupScope,
+        messageId,
+      });
     }
   }
 

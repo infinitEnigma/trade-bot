@@ -71,9 +71,12 @@ describe("Trade ledger idempotency (real PostgreSQL)", () => {
         );
       }
     } catch (error) {
-      logger.warn("Trade-ledger idempotency integration test skipped: no database", {
-        error: error instanceof Error ? error.message : String(error),
-      });
+      logger.warn(
+        "Trade-ledger idempotency integration test skipped: no database",
+        {
+          error: error instanceof Error ? error.message : String(error),
+        }
+      );
     }
   });
 
@@ -142,20 +145,26 @@ describe("Trade ledger idempotency (real PostgreSQL)", () => {
     totalPnl: string | null;
   }> {
     const [fills, trades, intents, totals] = await Promise.all([
-      query(`SELECT count(*) AS n FROM bot_trade_fills WHERE bot_id = $1`, [BOT_ID]),
+      query(`SELECT count(*) AS n FROM bot_trade_fills WHERE bot_id = $1`, [
+        BOT_ID,
+      ]),
       query(`SELECT count(*) AS n FROM trades WHERE bot_id = $1`, [BOT_ID]),
-      query(`SELECT count(*) AS n FROM bot_order_intents WHERE bot_id = $1`, [BOT_ID]),
-      query(
-        `SELECT total_trades, total_pnl FROM bot_instances WHERE id = $1`,
-        [BOT_ID]
-      ),
+      query(`SELECT count(*) AS n FROM bot_order_intents WHERE bot_id = $1`, [
+        BOT_ID,
+      ]),
+      query(`SELECT total_trades, total_pnl FROM bot_instances WHERE id = $1`, [
+        BOT_ID,
+      ]),
     ]);
     return {
       fills: Number((fills.rows[0] as { n: number })?.n ?? 0),
       trades: Number((trades.rows[0] as { n: number })?.n ?? 0),
       intents: Number((intents.rows[0] as { n: number })?.n ?? 0),
-      totalTrades: Number((totals.rows[0] as { total_trades: number })?.total_trades ?? 0),
-      totalPnl: (totals.rows[0] as { total_pnl: string | null })?.total_pnl ?? null,
+      totalTrades: Number(
+        (totals.rows[0] as { total_trades: number })?.total_trades ?? 0
+      ),
+      totalPnl:
+        (totals.rows[0] as { total_pnl: string | null })?.total_pnl ?? null,
     };
   }
 
@@ -247,4 +256,3 @@ describe("Trade ledger idempotency (real PostgreSQL)", () => {
     expect(final.totalPnl).toBe("-1.25000000");
   });
 });
-

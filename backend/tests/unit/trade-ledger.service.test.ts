@@ -81,9 +81,7 @@ describe("TradeLedgerService", () => {
     jest.clearAllMocks();
     repo = makeRepo();
     service = new TradeLedgerService();
-    service.setTradeLedgerRepository(
-      repo as unknown as jest.Mocked<MockRepo>
-    );
+    service.setTradeLedgerRepository(repo as unknown as jest.Mocked<MockRepo>);
   });
 
   describe("TRADE_EXECUTED", () => {

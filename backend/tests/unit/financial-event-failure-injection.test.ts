@@ -79,7 +79,11 @@ const GROUP = "backend-group";
 /** Build a ledger event with a caller-controlled messageId (for dedup/redelivery). */
 function ledgerEvent(
   messageId: string,
-  type: "TRADE_EXECUTED" | "ORDER_INTENT" | "POSITION_UPDATED" | "PERFORMANCE_SNAPSHOT" = "TRADE_EXECUTED"
+  type:
+    | "TRADE_EXECUTED"
+    | "ORDER_INTENT"
+    | "POSITION_UPDATED"
+    | "PERFORMANCE_SNAPSHOT" = "TRADE_EXECUTED"
 ): BotEvent {
   return {
     ...createBotEvent(
@@ -108,7 +112,13 @@ function nonLedgerEvent(messageId: string): BotEvent {
   return {
     ...createBotEvent(
       "STATE_CHANGED",
-      { botId: BOT_ID, engineId: "engine-1", engineEpoch: 1, from: "RUNNING", to: "STOPPED" } as never,
+      {
+        botId: BOT_ID,
+        engineId: "engine-1",
+        engineEpoch: 1,
+        from: "RUNNING",
+        to: "STOPPED",
+      } as never,
       "corr-state"
     ),
     messageId,
@@ -186,7 +196,7 @@ describe("Financial-event failure-injection (consumer / dedup / ACK)", () => {
       const internals = makeService(ops);
       const svc = new TradeLedgerService();
       svc.setTradeLedgerRepository(repo);
-      internals.eventHandler = (e) => svc.handle(e);
+      internals.eventHandler = e => svc.handle(e);
 
       const event = ledgerEvent("msg-persist-1");
 
@@ -205,13 +215,16 @@ describe("Financial-event failure-injection (consumer / dedup / ACK)", () => {
       const internals = makeService(ops);
       const svc = new TradeLedgerService();
       svc.setTradeLedgerRepository(repo);
-      internals.eventHandler = (e) => svc.handle(e);
+      internals.eventHandler = e => svc.handle(e);
 
       (ops.getPendingDeliveries as jest.Mock).mockResolvedValueOnce(
         PENDING_POISON_MAX_DELIVERIES
       );
 
-      await internals.processEventMessage("stream-poison-1", ledgerEvent("msg-poison-1"));
+      await internals.processEventMessage(
+        "stream-poison-1",
+        ledgerEvent("msg-poison-1")
+      );
 
       expect(ops.markMessageProcessed).not.toHaveBeenCalled();
       expect(ops.ack).not.toHaveBeenCalled();
@@ -230,7 +243,7 @@ describe("Financial-event failure-injection (consumer / dedup / ACK)", () => {
       const internals = makeService(ops, alertHandler);
       const svc = new TradeLedgerService();
       svc.setTradeLedgerRepository(repo);
-      internals.eventHandler = (e) => svc.handle(e);
+      internals.eventHandler = e => svc.handle(e);
 
       const event = ledgerEvent("msg-poison-alert-1");
 
@@ -259,7 +272,7 @@ describe("Financial-event failure-injection (consumer / dedup / ACK)", () => {
       const internals = makeService(ops, alertHandler);
       const svc = new TradeLedgerService();
       svc.setTradeLedgerRepository(repo);
-      internals.eventHandler = (e) => svc.handle(e);
+      internals.eventHandler = e => svc.handle(e);
 
       const event = ledgerEvent("msg-unknown-1");
 
@@ -284,7 +297,7 @@ describe("Financial-event failure-injection (consumer / dedup / ACK)", () => {
     it("non-ledger event at the poison threshold is processed and ACKed (bounded drop)", async () => {
       const { ops } = makeStreamOps();
       const internals = makeService(ops);
-      let handlerThrows = true;
+      const handlerThrows = true;
       internals.eventHandler = async () => {
         if (handlerThrows) throw new Error("cannot apply");
       };
@@ -293,7 +306,10 @@ describe("Financial-event failure-injection (consumer / dedup / ACK)", () => {
         PENDING_POISON_MAX_DELIVERIES
       );
 
-      await internals.processEventMessage("stream-poison-2", nonLedgerEvent("msg-poison-2"));
+      await internals.processEventMessage(
+        "stream-poison-2",
+        nonLedgerEvent("msg-poison-2")
+      );
 
       // Non-ledger events past the threshold are ACKed so a poison message cannot
       // bury the stream indefinitely.
@@ -318,7 +334,7 @@ describe("Financial-event failure-injection (consumer / dedup / ACK)", () => {
       const internals = makeService(ops);
       const svc = new TradeLedgerService();
       svc.setTradeLedgerRepository(repo);
-      internals.eventHandler = (e) => svc.handle(e);
+      internals.eventHandler = e => svc.handle(e);
 
       const event = ledgerEvent("msg-ack-1");
 
@@ -341,7 +357,7 @@ describe("Financial-event failure-injection (consumer / dedup / ACK)", () => {
       const internals = makeService(ops);
       const svc = new TradeLedgerService();
       svc.setTradeLedgerRepository(repo);
-      internals.eventHandler = (e) => svc.handle(e);
+      internals.eventHandler = e => svc.handle(e);
 
       const event = ledgerEvent("msg-dup-1");
 
@@ -361,13 +377,16 @@ describe("Financial-event failure-injection (consumer / dedup / ACK)", () => {
       const internals = makeService(ops);
       const svc = new TradeLedgerService();
       svc.setTradeLedgerRepository(repo);
-      internals.eventHandler = (e) => svc.handle(e);
+      internals.eventHandler = e => svc.handle(e);
 
       // When Redis dedup read fails, alreadyProcessed must fail open: the
       // handler still runs, the event is marked processed and ACKed. No crash,
       // no silent loss — the repository's unique constraint is the backstop
       // against duplicate financial effects on redelivery.
-      await internals.processEventMessage("stream-failopen-1", ledgerEvent("msg-fo-1"));
+      await internals.processEventMessage(
+        "stream-failopen-1",
+        ledgerEvent("msg-fo-1")
+      );
 
       expect(repo.recordFill).toHaveBeenCalledTimes(1);
       expect(ops.markMessageProcessed).toHaveBeenCalledTimes(1);
@@ -384,7 +403,7 @@ describe("Financial-event failure-injection (consumer / dedup / ACK)", () => {
         const internals = makeService(ops);
         const svc = new TradeLedgerService();
         svc.setTradeLedgerRepository(repo);
-        internals.eventHandler = (e) => svc.handle(e);
+        internals.eventHandler = e => svc.handle(e);
         return { internals, repo };
       };
 
@@ -414,7 +433,7 @@ describe("Financial-event failure-injection (consumer / dedup / ACK)", () => {
       const internals = makeService(ops);
       const svc = new TradeLedgerService();
       svc.setTradeLedgerRepository(repo);
-      internals.eventHandler = (e) => svc.handle(e);
+      internals.eventHandler = e => svc.handle(e);
 
       await internals.processEventMessage(
         "stream-duplicate-1",
@@ -435,13 +454,16 @@ describe("Financial-event failure-injection (consumer / dedup / ACK)", () => {
       const internals = makeService(ops);
       const svc = new TradeLedgerService();
       svc.setTradeLedgerRepository(repo);
-      internals.eventHandler = (e) => svc.handle(e);
+      internals.eventHandler = e => svc.handle(e);
 
       // TradeLedgerService throws on UNKNOWN_BOT. The consumer catches it
       // (below poison threshold) and leaves the event unacked for redelivery
       // rather than silently dropping the fill. processEventMessage does not
       // propagate the throw — it handles it internally.
-      await internals.processEventMessage("stream-unknown-2", ledgerEvent("msg-unknown-2"));
+      await internals.processEventMessage(
+        "stream-unknown-2",
+        ledgerEvent("msg-unknown-2")
+      );
 
       expect(repo.recordFill).toHaveBeenCalledTimes(1);
       expect(ops.markMessageProcessed).not.toHaveBeenCalled();
@@ -459,12 +481,15 @@ describe("Financial-event failure-injection (consumer / dedup / ACK)", () => {
       const internals = makeService(ops);
       const svc = new TradeLedgerService();
       svc.setTradeLedgerRepository(repo);
-      internals.eventHandler = (e) => svc.handle(e);
+      internals.eventHandler = e => svc.handle(e);
 
       // markProcessed must not throw when the Redis dedup marker write fails.
       // It fails open: the handler result is committed, the event is marked
       // processed (in memory) and ACKed. No poison treatment, no redelivery.
-      await internals.processEventMessage("stream-dedup-write-fail-1", ledgerEvent("msg-dedup-write-fail-1"));
+      await internals.processEventMessage(
+        "stream-dedup-write-fail-1",
+        ledgerEvent("msg-dedup-write-fail-1")
+      );
 
       expect(repo.recordFill).toHaveBeenCalledTimes(1);
       expect(ops.markMessageProcessed).toHaveBeenCalledTimes(1);
@@ -472,5 +497,3 @@ describe("Financial-event failure-injection (consumer / dedup / ACK)", () => {
     });
   });
 });
-
-
