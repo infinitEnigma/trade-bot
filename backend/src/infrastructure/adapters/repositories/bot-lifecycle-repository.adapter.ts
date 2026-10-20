@@ -582,11 +582,66 @@ export class BotLifecycleRepositoryAdapter implements ILifecycleRepository {
     const symbols=await client.query<{symbol:string|null}>(`SELECT DISTINCT COALESCE(config->>'symbol',config->'strategy'->>'symbol') AS symbol FROM strategy_runs WHERE bot_id=$1`,[botId]);
     return {...row,run_symbols:symbols.rows.map(x=>x.symbol).filter((x):x is string=>Boolean(x))};
   }
-  async completeResidualAbandonTx(tx: LifecycleTx, botId: string, userId: string, input:{reason:string;quantity:string;symbol:string;operator:string;forceStopReason:string;resolution:'parsed'|'operator'}):Promise<void>{
-    const client=clientOf(tx);
-    const updated=await client.query(`UPDATE bot_instances SET residual_abandoned_at=CURRENT_TIMESTAMP,residual_abandoned_by=$3,residual_abandon_reason=$4,residual_accepted_quantity=$5::numeric,residual_accepted_symbol=$6 WHERE id=$1 AND user_id=$2 AND residual_abandoned_at IS NULL AND actual_state='STOPPED' AND force_stop_reason LIKE '%cleanup_incomplete%'`,[botId,userId,input.operator,input.reason,input.quantity,input.symbol]);
-    if(updated.rowCount!==1){const error=new Error("Residual abandonment state changed; refresh and retry");(error as Error & {statusCode?:number}).statusCode=409;throw error;}
-    await client.query(`INSERT INTO bot_lifecycle_events(bot_id,event_type,from_state,to_state,correlation_id,message_id,metadata) VALUES($1,'RESIDUAL_ABANDONED','STOPPED','STOPPED',NULL,NULL,$2::jsonb)`,[botId,JSON.stringify({operator:input.operator,reason:input.reason,quantity:input.quantity,symbol:input.symbol,resolution:input.resolution,force_stop_reason:input.forceStopReason})]);
+  async completeResidualAbandonTx(
+    tx: LifecycleTx,
+    botId: string,
+    userId: string,
+    input: {
+      reason: string;
+      quantity: string;
+      symbol: string;
+      operator: string;
+      forceStopReason: string;
+      resolution: "parsed" | "operator";
+    }
+  ): Promise<void> {
+    const client = clientOf(tx);
+    const updated = await client.query<{ residual_abandoned_at: string }>(
+      `UPDATE bot_instances
+          SET residual_abandoned_at = CURRENT_TIMESTAMP,
+              residual_abandoned_by = $3,
+              residual_abandon_reason = $4,
+              residual_accepted_quantity = $5::numeric,
+              residual_accepted_symbol = $6
+        WHERE id = $1 AND user_id = $2
+          AND residual_abandoned_at IS NULL
+          AND actual_state = 'STOPPED'
+          AND force_stop_reason LIKE '%cleanup_incomplete%'
+        RETURNING residual_abandoned_at`,
+      [botId, userId, input.operator, input.reason, input.quantity, input.symbol]
+    );
+    if (updated.rowCount !== 1 || !updated.rows[0]) {
+      const error = new Error("Residual abandonment state changed; refresh and retry");
+      (error as Error & { statusCode?: number }).statusCode = 409;
+      throw error;
+    }
+
+    // This event is the durable, self-contained audit record. Do not rely on
+    // the five bot_instances columns to reconstruct history: they may be
+    // cleared during a future reviewed normalization. Preserve the raw parser
+    // input and the operator's accepted fallback values in event metadata.
+    const abandonedAt = updated.rows[0].residual_abandoned_at;
+    await client.query(
+      `INSERT INTO bot_lifecycle_events
+         (bot_id, event_type, from_state, to_state, correlation_id, message_id, metadata)
+       VALUES ($1, 'RESIDUAL_ABANDONED', 'STOPPED', 'STOPPED', NULL, NULL, $2::jsonb)`,
+      [
+        botId,
+        JSON.stringify({
+          operator: input.operator,
+          reason: input.reason,
+          acceptedQuantity: input.quantity,
+          symbol: input.symbol,
+          resolution: input.resolution,
+          force_stop_reason: input.forceStopReason,
+          rawParserInput: input.forceStopReason,
+          operatorFallback: input.resolution === "operator"
+            ? { acceptedQuantity: input.quantity, symbol: input.symbol, reason: input.reason }
+            : null,
+          residualAbandonedAt: abandonedAt,
+        }),
+      ]
+    );
   }
 
   async findUnresolvedExposureTx(tx: LifecycleTx, exchangeAccountId: string): Promise<{ id: string } | null> {
