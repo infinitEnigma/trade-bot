@@ -98,6 +98,19 @@ export interface ILifecycleRepository {
     expectedActualState: BotActualState,
     forceStopReason?: string
   ): Promise<boolean>;
+  /**
+   * Start transition guarded by the account's unresolved-exposure invariant.
+   * Account lock, unresolved check, CAS transition, and START_REQUESTED audit
+   * write share one transaction so a concurrent cleanup marker cannot slip
+   * between the guard and the state change.
+   */
+  persistStartTx(
+    botId: string,
+    exchangeAccountId: string | null,
+    input: PersistTransitionInput,
+    expectedActualState: BotActualState,
+    event: LifecycleEventInput
+  ): Promise<{ persisted: boolean; unresolvedExposureId?: string }>;
   updateStatus(botId: string, status: string): Promise<void>;
   recordForceStopReason(botId: string, reason: string): Promise<void>;
   insertBotInstance(
