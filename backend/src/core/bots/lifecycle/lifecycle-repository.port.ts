@@ -162,7 +162,7 @@ export interface ILifecycleRepository {
   /** Must be called after lockAccountRowTx; detects unresolved venue exposure. */
   findUnresolvedExposureTx(tx: LifecycleTx, exchangeAccountId: string): Promise<{ id: string } | null>;
   findResidualAbandonContextTx(tx: LifecycleTx, botId: string, userId: string): Promise<ResidualAbandonContext | null>;
-  completeResidualAbandonTx(tx: LifecycleTx, botId: string, userId: string, input: { reason:string; quantity:string; symbol:string; operator:string; forceStopReason:string }): Promise<void>;
+  completeResidualAbandonTx(tx: LifecycleTx, botId: string, userId: string, input: { reason:string; quantity:string; symbol:string; operator:string; forceStopReason:string; resolution:'parsed'|'operator' }): Promise<void>;
   findEditBlockersTx(
     tx: LifecycleTx,
     strategyId: string
