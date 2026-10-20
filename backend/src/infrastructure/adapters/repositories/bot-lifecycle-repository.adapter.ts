@@ -118,6 +118,64 @@ export class BotLifecycleRepositoryAdapter implements ILifecycleRepository {
     });
   }
 
+  /**
+   * Atomic start admission: serialize with stop/abandon/create/attach on the
+   * account row, reject unresolved venue exposure, then persist the CAS state
+   * transition and audit event before releasing the lock.
+   */
+  async persistStartTx(
+    botId: string,
+    exchangeAccountId: string | null,
+    input: PersistTransitionInput,
+    expectedActualState: BotActualState,
+    event: LifecycleEventInput
+  ): Promise<{ persisted: boolean; unresolvedExposureId?: string }> {
+    return transaction(async client => {
+      const tx = client as unknown as LifecycleTx;
+      if (exchangeAccountId) {
+        await this.lockAccountRowTx(tx, exchangeAccountId);
+        const unresolved = await this.findUnresolvedExposureTx(
+          tx,
+          exchangeAccountId
+        );
+        if (unresolved) {
+          return { persisted: false, unresolvedExposureId: unresolved.id };
+        }
+      }
+
+      const params: unknown[] = [
+        botId,
+        input.desiredState,
+        input.actualState,
+        input.actualState === "UNKNOWN" ? "ERROR" : input.actualState,
+        input.engineId ?? null,
+        new Date(),
+        input.startedAt ?? null,
+        input.stoppedAt ?? null,
+        input.errorCode === undefined ? null : input.errorCode,
+        input.errorMessage === undefined ? null : input.errorMessage,
+        expectedActualState,
+      ];
+      const result = await client.query(
+        `UPDATE bot_instances
+            SET desired_state = $2, actual_state = $3, status = $4,
+                engine_id = COALESCE($5, engine_id), state_changed_at = $6,
+                started_at = COALESCE($7, started_at), stopped_at = COALESCE($8, stopped_at),
+                last_error_code = COALESCE($9, last_error_code),
+                last_error_message = COALESCE($10, last_error_message),
+                updated_at = CURRENT_TIMESTAMP
+          WHERE id = $1 AND actual_state = $11`,
+        params
+      );
+      if ((result.rowCount ?? 0) !== 1) {
+        return { persisted: false };
+      }
+
+      await this.recordLifecycleEventTx(tx, botId, event);
+      return { persisted: true };
+    });
+  }
+
   async persistTransition(
     botId: string,
     input: PersistTransitionInput,
