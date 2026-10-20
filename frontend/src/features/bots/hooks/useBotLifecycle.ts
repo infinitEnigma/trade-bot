@@ -165,6 +165,7 @@ export function useBotLifecycle(botId?: string) {
           // could not confirm the venue flat. Surfaced by the banner; never
           // dropped here, or the STOPPED row reads clean by omission.
           forceStopReason: bot.force_stop_reason ?? null,
+          residualAbandonedAt: bot.residual_abandoned_at ?? null,
           // Migration 028 keeps a forensic fallback when partial historical
           // resolution fields are cleared; never infer resolved state from it.
           residualNormalizationHistory: bot.residual_normalization_history ?? null,
