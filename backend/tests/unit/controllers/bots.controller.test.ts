@@ -53,6 +53,9 @@ jest.mock("../../../src/interfaces/middleware/validation.middleware", () => ({
     detachRun: jest
       .fn()
       .mockImplementation((req: any, res: any, next: any) => next()),
+    abandonResidual: jest
+      .fn()
+      .mockImplementation((req: any, res: any, next: any) => next()),
   },
 }));
 
@@ -81,6 +84,7 @@ jest.mock("../../../src/core/bots/bot-lifecycle.service", () => ({
     emergencyStop: jest.fn(),
     attachStrategyRun: jest.fn(),
     detachStrategyRun: jest.fn(),
+    abandonResidual: jest.fn(),
     handleEngineEvent: jest.fn(),
     sweepTimedOutCommands: jest.fn(),
     setSocketServer: jest.fn(),

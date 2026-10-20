@@ -76,6 +76,7 @@ vi.mock("../../../bots/hooks/useBotLifecycle", () => ({
     isTransitional: false,
     isConnectionLost: false,
   })),
+  useBotsList: vi.fn(() => ({ bots: [] })),
 }));
 
 // X4: the wallet-proof hook. Default returns no proof (flag off); individual

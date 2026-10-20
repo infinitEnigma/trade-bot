@@ -625,7 +625,11 @@ export const BotControls: React.FC<BotControlsProps> = ({
           onClick={() => startMutation.mutate()}
         />
         {unresolvedExposureMessage ? (
-          <p className="text-xs text-red-300" role="alert" data-testid="unresolved-account-exposure">
+          <p
+            className="text-xs text-red-300"
+            role="alert"
+            data-testid="unresolved-account-exposure"
+          >
             {unresolvedExposureMessage}
           </p>
         ) : (
@@ -759,7 +763,9 @@ export const BotControls: React.FC<BotControlsProps> = ({
           exchangeAccountId={bot.exchange_account_id}
           symbol={strategySymbol}
           residualAbandonedAt={bot.residualAbandonedAt}
-          residualNormalizationHistory={bot.residualNormalizationHistory ?? null}
+          residualNormalizationHistory={
+            bot.residualNormalizationHistory ?? null
+          }
         />
         {/* Restarting creates a fresh bound bot, so the account is picked here. */}
         <AccountSizePicker
@@ -771,7 +777,11 @@ export const BotControls: React.FC<BotControlsProps> = ({
           onNotionalChange={setNotionalAmount}
         />
         {unresolvedExposureMessage ? (
-          <p className="text-xs text-red-300" role="alert" data-testid="unresolved-account-exposure">
+          <p
+            className="text-xs text-red-300"
+            role="alert"
+            data-testid="unresolved-account-exposure"
+          >
             {unresolvedExposureMessage}
           </p>
         ) : null}

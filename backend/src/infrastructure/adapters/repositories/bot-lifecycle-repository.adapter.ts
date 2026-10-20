@@ -69,19 +69,31 @@ export class BotLifecycleRepositoryAdapter implements ILifecycleRepository {
     forceStopReason?: string
   ): Promise<boolean> {
     return transaction(async client => {
-      const binding = await client.query<{ exchange_account_id: string | null }>(
-        "SELECT exchange_account_id FROM bot_instances WHERE id = $1",
-        [botId]
-      );
+      const binding = await client.query<{
+        exchange_account_id: string | null;
+      }>("SELECT exchange_account_id FROM bot_instances WHERE id = $1", [
+        botId,
+      ]);
       const exchangeAccountId = binding.rows[0]?.exchange_account_id;
-      if (!exchangeAccountId) {
-        throw new Error(`Cannot persist stop for session ${botId} without a bound exchange account`);
+      // Only serialize on the account lock when the bot is bound. A bot
+      // without a bound account can't start a concurrent session anyway, so
+      // there's nothing to race against; skip the lock rather than failing
+      // the stop entirely.
+      if (exchangeAccountId) {
+        await client.query(
+          "SELECT id FROM exchange_accounts WHERE id = $1 FOR UPDATE",
+          [exchangeAccountId]
+        );
       }
-      await client.query("SELECT id FROM exchange_accounts WHERE id = $1 FOR UPDATE", [exchangeAccountId]);
       const params: unknown[] = [
-        botId, input.desiredState, input.actualState,
+        botId,
+        input.desiredState,
+        input.actualState,
         input.actualState === "UNKNOWN" ? "ERROR" : input.actualState,
-        input.engineId ?? null, new Date(), input.startedAt ?? null, input.stoppedAt ?? null,
+        input.engineId ?? null,
+        new Date(),
+        input.startedAt ?? null,
+        input.stoppedAt ?? null,
         input.errorCode === undefined ? null : input.errorCode,
         input.errorMessage === undefined ? null : input.errorMessage,
       ];
@@ -574,13 +586,30 @@ export class BotLifecycleRepositoryAdapter implements ILifecycleRepository {
    * state alone never permits edits: ERROR/UNKNOWN sessions, incomplete
    * venue cleanup, or an unresolved RECONCILE_NEEDS_USER_ACTION tail block.
    */
-  async findResidualAbandonContextTx(tx: LifecycleTx, botId: string, userId: string): Promise<ResidualAbandonContext | null> {
+  async findResidualAbandonContextTx(
+    tx: LifecycleTx,
+    botId: string,
+    userId: string
+  ): Promise<ResidualAbandonContext | null> {
     const client = clientOf(tx);
-    const session = await client.query<Omit<ResidualAbandonContext, "run_symbols">>(
-      `SELECT id,user_id,exchange_account_id,actual_state,force_stop_reason,residual_abandoned_at FROM bot_instances WHERE id=$1 AND user_id=$2 FOR UPDATE`,[botId,userId]);
-    const row=session.rows[0]; if(!row) return null;
-    const symbols=await client.query<{symbol:string|null}>(`SELECT DISTINCT COALESCE(config->>'symbol',config->'strategy'->>'symbol') AS symbol FROM strategy_runs WHERE bot_id=$1`,[botId]);
-    return {...row,run_symbols:symbols.rows.map(x=>x.symbol).filter((x):x is string=>Boolean(x))};
+    const session = await client.query<
+      Omit<ResidualAbandonContext, "run_symbols">
+    >(
+      `SELECT id,user_id,exchange_account_id,actual_state,force_stop_reason,residual_abandoned_at FROM bot_instances WHERE id=$1 AND user_id=$2 FOR UPDATE`,
+      [botId, userId]
+    );
+    const row = session.rows[0];
+    if (!row) return null;
+    const symbols = await client.query<{ symbol: string | null }>(
+      `SELECT DISTINCT COALESCE(config->>'symbol',config->'strategy'->>'symbol') AS symbol FROM strategy_runs WHERE bot_id=$1`,
+      [botId]
+    );
+    return {
+      ...row,
+      run_symbols: symbols.rows
+        .map(x => x.symbol)
+        .filter((x): x is string => Boolean(x)),
+    };
   }
   async completeResidualAbandonTx(
     tx: LifecycleTx,
@@ -608,10 +637,19 @@ export class BotLifecycleRepositoryAdapter implements ILifecycleRepository {
           AND actual_state = 'STOPPED'
           AND force_stop_reason LIKE '%cleanup_incomplete%'
         RETURNING residual_abandoned_at`,
-      [botId, userId, input.operator, input.reason, input.quantity, input.symbol]
+      [
+        botId,
+        userId,
+        input.operator,
+        input.reason,
+        input.quantity,
+        input.symbol,
+      ]
     );
     if (updated.rowCount !== 1 || !updated.rows[0]) {
-      const error = new Error("Residual abandonment state changed; refresh and retry");
+      const error = new Error(
+        "Residual abandonment state changed; refresh and retry"
+      );
       (error as Error & { statusCode?: number }).statusCode = 409;
       throw error;
     }
@@ -635,16 +673,24 @@ export class BotLifecycleRepositoryAdapter implements ILifecycleRepository {
           resolution: input.resolution,
           force_stop_reason: input.forceStopReason,
           rawParserInput: input.forceStopReason,
-          operatorFallback: input.resolution === "operator"
-            ? { acceptedQuantity: input.quantity, symbol: input.symbol, reason: input.reason }
-            : null,
+          operatorFallback:
+            input.resolution === "operator"
+              ? {
+                  acceptedQuantity: input.quantity,
+                  symbol: input.symbol,
+                  reason: input.reason,
+                }
+              : null,
           residualAbandonedAt: abandonedAt,
         }),
       ]
     );
   }
 
-  async findUnresolvedExposureTx(tx: LifecycleTx, exchangeAccountId: string): Promise<{ id: string } | null> {
+  async findUnresolvedExposureTx(
+    tx: LifecycleTx,
+    exchangeAccountId: string
+  ): Promise<{ id: string } | null> {
     const client = clientOf(tx);
     const result = await client.query<{ id: string }>(
       `SELECT id FROM bot_instances

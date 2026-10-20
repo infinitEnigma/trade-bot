@@ -550,11 +550,22 @@ export class BotEventProcessor {
       errorCode: isRunning || isStopped ? null : undefined,
       errorMessage: isRunning || isStopped ? null : undefined,
     };
-    const cleanupReason = isStopped && payload.reason?.includes(CLEANUP_INCOMPLETE_MARKER)
-      ? payload.reason : undefined;
+    const cleanupReason =
+      isStopped && payload.reason?.includes(CLEANUP_INCOMPLETE_MARKER)
+        ? payload.reason
+        : undefined;
     const persisted = isStopped
-      ? await this.repository.persistStopTx(bot.id, transitionInput, bot.actual_state, cleanupReason)
-      : await this.repository.persistTransition(bot.id, transitionInput, bot.actual_state);
+      ? await this.repository.persistStopTx(
+          bot.id,
+          transitionInput,
+          bot.actual_state,
+          cleanupReason
+        )
+      : await this.repository.persistTransition(
+          bot.id,
+          transitionInput,
+          bot.actual_state
+        );
     if (!persisted) {
       logger.warn(
         "State changed event processed against stale bot state - skipping",
@@ -589,7 +600,9 @@ export class BotEventProcessor {
     // STOPPED and cleanup marker are persisted atomically under the account lock.
     if (cleanupReason) {
       logger.warn("Bot stopped with incomplete venue cleanup", {
-        botId: bot.id, reason: cleanupReason, correlationId: event.correlationId,
+        botId: bot.id,
+        reason: cleanupReason,
+        correlationId: event.correlationId,
       });
     }
 

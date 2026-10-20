@@ -1,0 +1,50 @@
+Residual admission preflight — trade_bot on localhost:5432 (user bot_trader_y71)
+Source: database/ops/residual-admission-preflight.sql (read-only)
+Branch renumbered the stage files to avoid the 028_ledger_integrity_alerts.sql
+collision: 027_residual_admission.sql → 029_residual_admission_normalize.sql →
+030_residual_admission_validate.sql.
+
+GATE RUN — after 027 only, BEFORE normalization (migration 029)
+Migration state: 027_residual_admission.sql applied; 029/030 pending.
+
+--- Row-pattern counts (bot_instances) ---
+all_null                          : 5
+all_set                           : 0
+all_set_zero                      : 0   (valid zero-quantity rows — must be preserved)
+partial                           : 0   (rows to be normalized by migration 029)
+negative_qty_all_set              : 0
+empty_reason_all_set              : 0
+empty_symbol_all_set              : 0
+invalid_reason_length_all_set     : 0
+invalid_symbol_length_all_set     : 0
+
+--- Abandonment audit evidence ---
+abandonment_events_missing_required_metadata : 0
+residual_abandoned_event_count               : 0
+existing_residual_normalization_log_count    : 0
+
+Interpretation: this dev snapshot carries no historical residual-abandonment
+data — every session is all_null, no partial or invalid records exist, and no
+RESIDUAL_ABANDONED events predate the feature. Normalization (029) is a no-op
+here; all-zero violation counts mean no value-level adjudication is required
+before validating the all-null-or-all-set constraint (030).
+CAVEAT for the PR gate: this is NOT a restored production snapshot. The counts
+a team member must attach before merge come from the same preflight run against
+a restored production-like database, exactly as staged above.
+
+POST-MIGRATION VERIFICATION (fixture-driven, same database)
+database/ops/residual-admission-fixture.sql inserted one row per pattern
+(PARTIAL, all_set_zero qty=0, all_null, all-set qty=-1), then 029 + 030 ran
+via run-migrations.js --through=:
+
+- PARTIAL row: residual_* columns cleared; original values preserved as one
+  residual_normalization_log row (pattern=PARTIAL, migration_id='027').
+- all_set_zero row (qty=0): untouched — preserved as a valid abandonment.
+- all_null row: untouched.
+- all-set qty=-1 row: untouched (value-level constraints stay NOT VALID).
+- Post-run preflight: all_null=7, all_set=2, all_set_zero=1, partial=0,
+  negative_qty_all_set=1, normalization_log_count=1.
+- pg_constraint after 030: bot_instances_residual_abandon_complete
+  convalidated=t; the three value-level constraints convalidated=f (NOT VALID).
+- Rerun safety: re-executing 029 and 030 via --through= is a no-op
+  ("Nothing to do" — ledger-skipped), zero rows touched.
