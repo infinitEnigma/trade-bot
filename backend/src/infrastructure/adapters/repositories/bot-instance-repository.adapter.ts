@@ -90,6 +90,25 @@ export class BotInstanceRepositoryAdapter implements IBotInstanceRepository {
                     ORDER BY e.created_at DESC
                     LIMIT 1
                 ) tail ON TRUE
+                LEFT JOIN LATERAL (
+                    SELECT json_build_object(
+                      'sessionId', n.session_id,
+                      'pattern', n.pattern,
+                      'migrationId', n.migration_id,
+                      'actor', n.actor,
+                      'loggedAt', n.logged_at,
+                      'reason', n.reason,
+                      'originalResidualAbandonedAt', n.residual_abandoned_at,
+                      'originalResidualAbandonedBy', n.residual_abandoned_by,
+                      'originalResidualAbandonReason', n.residual_abandon_reason,
+                      'originalAcceptedQuantity', n.residual_accepted_quantity,
+                      'originalAcceptedSymbol', n.residual_accepted_symbol
+                    ) AS history
+                    FROM residual_normalization_log n
+                    WHERE n.session_id = bi.id
+                    ORDER BY n.logged_at DESC, n.id DESC
+                    LIMIT 1
+                ) normalization ON TRUE
                 WHERE bi.user_id = $1
                 ORDER BY bi.created_at DESC
             `,
