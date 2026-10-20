@@ -60,7 +60,7 @@ interface VenueCheck {
 
 export const CleanupIncompleteBanner: React.FC<
   CleanupIncompleteBannerProps
-> = ({ forceStopReason, exchangeAccountId, symbol }) => {
+> = ({ forceStopReason, exchangeAccountId, symbol, residualAbandonedAt, residualNormalizationHistory }) => {
   const detail = cleanupIncompleteDetail(forceStopReason);
   const [checking, setChecking] = useState(false);
   const [checkError, setCheckError] = useState<string | null>(null);
