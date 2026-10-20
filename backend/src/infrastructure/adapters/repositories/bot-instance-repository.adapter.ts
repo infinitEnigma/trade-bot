@@ -101,7 +101,7 @@ export class BotInstanceRepositoryAdapter implements IBotInstanceRepository {
                       'originalResidualAbandonedAt', n.residual_abandoned_at,
                       'originalResidualAbandonedBy', n.residual_abandoned_by,
                       'originalResidualAbandonReason', n.residual_abandon_reason,
-                      'originalAcceptedQuantity', n.residual_accepted_quantity,
+                      'originalAcceptedQuantity', n.residual_accepted_quantity::text,
                       'originalAcceptedSymbol', n.residual_accepted_symbol
                     ) AS history
                     FROM residual_normalization_log n
