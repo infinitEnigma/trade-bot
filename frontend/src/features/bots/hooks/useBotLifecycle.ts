@@ -128,6 +128,7 @@ export function useBotLifecycle(botId?: string) {
           needs_user_action_reason?: string | null;
           exchange_account_id?: string | null;
           force_stop_reason?: string | null;
+          residual_normalization_history?: BotInstance["residualNormalizationHistory"];
           runs?: BotInstance["runs"];
         }) => ({
           // L19: `id` is the session id, never a strategy id — stop,
