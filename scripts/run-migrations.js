@@ -169,6 +169,20 @@ async function runMigrations() {
       }
     }
 
+    // Controlled rollout support: stop after a named migration so operators
+    // can run the read-only preflight against the expanded schema before the
+    // next data-changing migration. Example: npm run db:migrate -- --through=027_residual_admission.sql
+    const throughArg = process.argv.find(arg => arg.startsWith("--through="));
+    const throughFile = throughArg ? throughArg.slice("--through=".length) : null;
+    if (throughFile) {
+      const throughIndex = migrationFiles.indexOf(throughFile);
+      if (throughIndex < 0) {
+        throw new Error(`Unknown --through migration: ${throughFile}`);
+      }
+      pending = pending.filter(file => migrationFiles.indexOf(file) <= throughIndex);
+      console.log(`🛑 Migration run limited through ${throughFile}; later files are left pending.`);
+    }
+
     if (pending.length === 0) {
       console.log("\n🎉 Nothing to do - database schema is up to date.");
       return;
