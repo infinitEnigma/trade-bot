@@ -277,27 +277,38 @@ export class BotLifecycleService {
       0
     );
 
-    // Compare-and-set: only persist if actual_state is still what we read.
-    const persisted = await this.repository.persistTransition(
+    // Atomically serialize resume/start with STOPPED cleanup-marker writes
+    // and residual abandonment. Frontend button state is not an admission
+    // boundary: the account lock + unresolved-exposure query must share the
+    // transaction with the CAS transition.
+    const startTransition = await this.repository.persistStartTx(
       botId,
+      bot.exchange_account_id,
       { desiredState: "RUNNING", actualState: nextState },
-      bot.actual_state
+      bot.actual_state,
+      {
+        eventType: "START_REQUESTED",
+        fromState: bot.actual_state,
+        toState: nextState,
+        correlationId: null,
+        messageId: null,
+        metadata: { userId },
+      }
     );
-    if (!persisted) {
+    if (startTransition.unresolvedExposureId) {
+      const error = new Error(
+        `Account has unresolved venue exposure from session ${startTransition.unresolvedExposureId}. Close it or abandon the residual before starting.`
+      );
+      (error as Error & { statusCode?: number }).statusCode = 409;
+      throw error;
+    }
+    if (!startTransition.persisted) {
       const error = new Error(
         "Bot lifecycle state changed concurrently - retry"
       );
       (error as Error & { statusCode?: number }).statusCode = 409;
       throw error;
     }
-    await this.repository.recordLifecycleEvent(botId, {
-      eventType: "START_REQUESTED",
-      fromState: bot.actual_state,
-      toState: nextState,
-      correlationId: null,
-      messageId: null,
-      metadata: { userId },
-    });
 
     // Session start (022 shim-drop): the dispatch payload fans the session's
     // attached runs out to N engine runners. The legacy top-level
