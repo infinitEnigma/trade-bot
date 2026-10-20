@@ -917,7 +917,7 @@ export class BotLifecycleService {
       if(evidence.kind==="parsed"){
         if(input.acceptedQuantity!==evidence.quantity||input.symbol.toLowerCase()!==evidence.symbol.toLowerCase()){const e=new Error("Accepted quantity and symbol must exactly match the cleanup evidence");(e as Error & {statusCode?:number}).statusCode=400;throw e;}
       }else if(row.run_symbols.length&&!row.run_symbols.some(x=>x.toLowerCase()===input.symbol.toLowerCase())){const e=new Error("For unparsed cleanup evidence, symbol must match a strategy symbol from this session");(e as Error & {statusCode?:number}).statusCode=400;throw e;}
-      await this.repository.completeResidualAbandonTx(tx,botId,userId,{reason:input.reason.trim(),quantity:input.acceptedQuantity,symbol:input.symbol,operator:userId,forceStopReason:row.force_stop_reason});
+      await this.repository.completeResidualAbandonTx(tx,botId,userId,{reason:input.reason.trim(),quantity:input.acceptedQuantity,symbol:input.symbol,operator:userId,forceStopReason:row.force_stop_reason,resolution:evidence.kind === 'parsed' ? 'parsed' : 'operator'});
     });
   }
 

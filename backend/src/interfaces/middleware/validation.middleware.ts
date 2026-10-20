@@ -331,7 +331,7 @@ export const validators = {
 
   abandonResidual: validateRequest(Joi.object({
     reason:Joi.string().trim().min(1).max(500).required(),
-    acceptedQuantity:Joi.string().pattern(/^\\d+(?:\\.\\d+)?$/).required(),
+    acceptedQuantity:Joi.string().pattern(/^\d+(?:\.\d+)?$/).required(),
     symbol:Joi.string().pattern(/^[A-Za-z0-9._/-]{1,64}$/).required(),
     walletProof:commonSchemas.walletProof,
   }),{errorPrefix:"Residual abandonment validation failed"}),
