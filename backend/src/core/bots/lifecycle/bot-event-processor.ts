@@ -541,19 +541,20 @@ export class BotEventProcessor {
 
     // Compare-and-set against the state we just read: if another actor
     // changed it meanwhile, this event is stale and must not be applied.
-    const persisted = await this.repository.persistTransition(
-      bot.id,
-      {
-        desiredState: bot.desired_state,
-        actualState: payload.to,
-        engineId: payload.engineId,
-        startedAt: isRunning ? new Date() : null,
-        stoppedAt: isStopped ? new Date() : null,
-        errorCode: isRunning || isStopped ? null : undefined,
-        errorMessage: isRunning || isStopped ? null : undefined,
-      },
-      bot.actual_state
-    );
+    const transitionInput = {
+      desiredState: bot.desired_state,
+      actualState: payload.to,
+      engineId: payload.engineId,
+      startedAt: isRunning ? new Date() : null,
+      stoppedAt: isStopped ? new Date() : null,
+      errorCode: isRunning || isStopped ? null : undefined,
+      errorMessage: isRunning || isStopped ? null : undefined,
+    };
+    const cleanupReason = isStopped && payload.reason?.includes(CLEANUP_INCOMPLETE_MARKER)
+      ? payload.reason : undefined;
+    const persisted = isStopped
+      ? await this.repository.persistStopTx(bot.id, transitionInput, bot.actual_state, cleanupReason)
+      : await this.repository.persistTransition(bot.id, transitionInput, bot.actual_state);
     if (!persisted) {
       logger.warn(
         "State changed event processed against stale bot state - skipping",
@@ -585,18 +586,10 @@ export class BotEventProcessor {
       metadata: { engineId: payload.engineId, reason: payload.reason ?? null },
     });
 
-    // A panic stop that could not finish its venue cleanup (M1) reports the
-    // same terminal STOPPED as a clean one, so the engine marks the reason.
-    // The row cannot carry that reason — `persistTransition` just cleared the
-    // error fields, precisely because the stop itself succeeded — hence the
-    // dedicated column. A clean-looking STOPPED next to live venue exposure is
-    // the one failure mode an operator cannot recover from without being told.
-    if (isStopped && payload.reason?.includes(CLEANUP_INCOMPLETE_MARKER)) {
-      await this.repository.recordForceStopReason(bot.id, payload.reason);
+    // STOPPED and cleanup marker are persisted atomically under the account lock.
+    if (cleanupReason) {
       logger.warn("Bot stopped with incomplete venue cleanup", {
-        botId: bot.id,
-        reason: payload.reason,
-        correlationId: event.correlationId,
+        botId: bot.id, reason: cleanupReason, correlationId: event.correlationId,
       });
     }
 

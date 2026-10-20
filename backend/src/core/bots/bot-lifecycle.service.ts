@@ -519,6 +519,12 @@ export class BotLifecycleService {
         throw error;
       }
       await this.repository.lockAccountRowTx(tx, exchangeAccountId);
+      const unresolved = await this.repository.findUnresolvedExposureTx(tx, exchangeAccountId);
+      if (unresolved) {
+        const error = new Error(`Account has unresolved venue exposure from session ${unresolved.id}. Close it or abandon the residual before starting.`);
+        (error as Error & { statusCode?: number }).statusCode = 409;
+        throw error;
+      }
       const lockedSession = await this.repository.findLiveSessionForAccountTx(
         tx,
         exchangeAccountId
@@ -723,6 +729,13 @@ export class BotLifecycleService {
             attachCatalog,
             { strict: curBound }
           );
+        }
+        await this.repository.lockAccountRowTx(tx, exchangeAccountId);
+        const unresolved = await this.repository.findUnresolvedExposureTx(tx, exchangeAccountId);
+        if (unresolved) {
+          const error = new Error(`Account has unresolved venue exposure from session ${unresolved.id}. Close it or abandon the residual before starting.`);
+          (error as Error & { statusCode?: number }).statusCode = 409;
+          throw error;
         }
         const txLive = await this.repository.findLiveRunForStrategyTx(
           tx,

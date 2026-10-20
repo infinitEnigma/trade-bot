@@ -61,6 +61,50 @@ export class BotLifecycleRepositoryAdapter implements ILifecycleRepository {
    * cannot race: the caller receives `false` if the row's actual_state
    * changed underneath it and must treat the transition as stale.
    */
+  async persistStopTx(
+    botId: string,
+    input: PersistTransitionInput,
+    expectedActualState: BotActualState,
+    forceStopReason?: string
+  ): Promise<boolean> {
+    return transaction(async client => {
+      const binding = await client.query<{ exchange_account_id: string | null }>(
+        "SELECT exchange_account_id FROM bot_instances WHERE id = $1",
+        [botId]
+      );
+      const exchangeAccountId = binding.rows[0]?.exchange_account_id;
+      if (!exchangeAccountId) {
+        throw new Error(`Cannot persist stop for session ${botId} without a bound exchange account`);
+      }
+      await client.query("SELECT id FROM exchange_accounts WHERE id = $1 FOR UPDATE", [exchangeAccountId]);
+      const params: unknown[] = [
+        botId, input.desiredState, input.actualState,
+        input.actualState === "UNKNOWN" ? "ERROR" : input.actualState,
+        input.engineId ?? null, new Date(), input.startedAt ?? null, input.stoppedAt ?? null,
+        input.errorCode === undefined ? null : input.errorCode,
+        input.errorMessage === undefined ? null : input.errorMessage,
+      ];
+      let markerSql = "";
+      if (forceStopReason?.includes("cleanup_incomplete")) {
+        params.push(forceStopReason);
+        markerSql = `, force_stop_reason = ${params.length}`;
+      }
+      params.push(expectedActualState);
+      const result = await client.query(
+        `UPDATE bot_instances
+            SET desired_state = $2, actual_state = $3, status = $4,
+                engine_id = COALESCE($5, engine_id), state_changed_at = $6,
+                started_at = COALESCE($7, started_at), stopped_at = COALESCE($8, stopped_at),
+                last_error_code = COALESCE($9, last_error_code),
+                last_error_message = COALESCE($10, last_error_message)${markerSql},
+                updated_at = CURRENT_TIMESTAMP
+          WHERE id = $1 AND actual_state = ${params.length}`,
+        params
+      );
+      return (result.rowCount ?? 0) === 1;
+    });
+  }
+
   async persistTransition(
     botId: string,
     input: PersistTransitionInput,
@@ -529,6 +573,19 @@ export class BotLifecycleRepositoryAdapter implements ILifecycleRepository {
    * state alone never permits edits: ERROR/UNKNOWN sessions, incomplete
    * venue cleanup, or an unresolved RECONCILE_NEEDS_USER_ACTION tail block.
    */
+  async findUnresolvedExposureTx(tx: LifecycleTx, exchangeAccountId: string): Promise<{ id: string } | null> {
+    const client = clientOf(tx);
+    const result = await client.query<{ id: string }>(
+      `SELECT id FROM bot_instances
+        WHERE exchange_account_id = $1 AND residual_abandoned_at IS NULL
+          AND (actual_state = 'STOPPING'
+            OR (actual_state = 'STOPPED' AND force_stop_reason LIKE '%cleanup_incomplete%'))
+        ORDER BY created_at ASC LIMIT 1`,
+      [exchangeAccountId]
+    );
+    return result.rows[0] ?? null;
+  }
+
   async findEditBlockersTx(
     tx: LifecycleTx,
     strategyId: string

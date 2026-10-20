@@ -81,6 +81,8 @@ export interface ILifecycleRepository {
     input: PersistTransitionInput,
     expectedActualState?: BotActualState
   ): Promise<boolean>;
+  /** Atomically lock the bound account and persist STOPPED plus its cleanup marker. */
+  persistStopTx(botId: string, input: PersistTransitionInput, expectedActualState: BotActualState, forceStopReason?: string): Promise<boolean>;
   updateStatus(botId: string, status: string): Promise<void>;
   recordForceStopReason(botId: string, reason: string): Promise<void>;
   insertBotInstance(
@@ -155,6 +157,8 @@ export interface ILifecycleRepository {
     tx: LifecycleTx,
     exchangeAccountId: string
   ): Promise<{ id: string } | null>;
+  /** Must be called after lockAccountRowTx; detects unresolved venue exposure. */
+  findUnresolvedExposureTx(tx: LifecycleTx, exchangeAccountId: string): Promise<{ id: string } | null>;
   findEditBlockersTx(
     tx: LifecycleTx,
     strategyId: string
