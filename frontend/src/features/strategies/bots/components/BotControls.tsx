@@ -735,6 +735,8 @@ export const BotControls: React.FC<BotControlsProps> = ({
           forceStopReason={bot.forceStopReason}
           exchangeAccountId={bot.exchange_account_id}
           symbol={strategySymbol}
+          residualAbandonedAt={bot.residualAbandonedAt}
+          residualNormalizationHistory={bot.residualNormalizationHistory ?? null}
         />
         {/* Restarting creates a fresh bound bot, so the account is picked here. */}
         <AccountSizePicker
