@@ -5,12 +5,17 @@
 -- The migration runner executes each statement in autocommit mode; DDL blocks
 -- set a bounded lock_timeout locally. All statements are idempotent.
 
-ALTER TABLE bot_instances
-  ADD COLUMN IF NOT EXISTS residual_abandoned_at TIMESTAMPTZ,
-  ADD COLUMN IF NOT EXISTS residual_abandoned_by UUID,
-  ADD COLUMN IF NOT EXISTS residual_abandon_reason TEXT,
-  ADD COLUMN IF NOT EXISTS residual_accepted_quantity NUMERIC(38, 18),
-  ADD COLUMN IF NOT EXISTS residual_accepted_symbol TEXT;
+DO $migration$
+BEGIN
+  PERFORM set_config('lock_timeout', '3s', true);
+  ALTER TABLE bot_instances
+    ADD COLUMN IF NOT EXISTS residual_abandoned_at TIMESTAMPTZ,
+    ADD COLUMN IF NOT EXISTS residual_abandoned_by UUID,
+    ADD COLUMN IF NOT EXISTS residual_abandon_reason TEXT,
+    ADD COLUMN IF NOT EXISTS residual_accepted_quantity NUMERIC(38, 18),
+    ADD COLUMN IF NOT EXISTS residual_accepted_symbol TEXT;
+END
+$migration$;
 
 CREATE TABLE IF NOT EXISTS residual_normalization_log (
   id BIGSERIAL PRIMARY KEY,
