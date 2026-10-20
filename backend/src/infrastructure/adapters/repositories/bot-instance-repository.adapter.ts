@@ -41,6 +41,9 @@ export class BotInstanceRepositoryAdapter implements IBotInstanceRepository {
                        CASE WHEN tail.event_type = 'RECONCILE_NEEDS_USER_ACTION'
                             THEN tail.metadata->>'reason'
                        END AS needs_user_action_reason,
+                       -- Preserve forensic visibility after migration 028 clears
+                       -- partial resolution columns: this comes from the append-only log.
+                       normalization.history AS residual_normalization_history,
                        -- D2 sessions: runs attached to this session, oldest
                        -- first (empty array for pre-D bots whose runs row
                        -- has not been attached yet).
