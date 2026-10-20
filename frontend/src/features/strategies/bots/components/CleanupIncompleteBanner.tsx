@@ -37,6 +37,19 @@ interface CleanupIncompleteBannerProps {
   exchangeAccountId?: string | null;
   /** The bot's symbol, when known — narrows the re-check to this market. */
   symbol?: string;
+  /** A persisted operator resolution hides the unresolved-residual banner. */
+  residualAbandonedAt?: string | null;
+  /** Forensic record from migration 028 when historical partial fields were normalized. */
+  residualNormalizationHistory?: {
+    pattern: string;
+    migrationId: string;
+    actor: string;
+    loggedAt: string;
+    reason: string;
+    originalResidualAbandonReason: string | null;
+    originalAcceptedQuantity: string | null;
+    originalAcceptedSymbol: string | null;
+  } | null;
 }
 
 interface VenueCheck {
