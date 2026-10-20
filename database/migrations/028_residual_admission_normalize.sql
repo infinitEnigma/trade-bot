@@ -6,6 +6,30 @@
 -- statement, so they commit or roll back together.
 -- Rerun safety: the predicate excludes all-null rows, so after a successful
 -- run a repeat yields zero inserted log rows and zero updated sessions.
+--
+-- Fail closed if any prior abandonment event lacks a self-contained audit
+-- payload. Reconcile those events against the restored snapshot before
+-- retrying; do not silently treat legacy metadata as a preservation record.
+DO $audit_gate$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM bot_lifecycle_events
+    WHERE event_type = 'RESIDUAL_ABANDONED'
+      AND (
+        metadata->>'operator' IS NULL
+        OR metadata->>'acceptedQuantity' IS NULL
+        OR metadata->>'symbol' IS NULL
+        OR metadata->>'reason' IS NULL
+        OR metadata->>'residualAbandonedAt' IS NULL
+        OR metadata->>'rawParserInput' IS NULL
+      )
+  ) THEN
+    RAISE EXCEPTION
+      'Migration 028 halted: RESIDUAL_ABANDONED events lack required self-contained metadata; reconcile and approve before normalization';
+  END IF;
+END
+$audit_gate$;
 
 WITH partial_rows AS MATERIALIZED (
   SELECT id, residual_abandoned_at, residual_abandoned_by,
