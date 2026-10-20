@@ -121,7 +121,16 @@ export const CleanupIncompleteBanner: React.FC<
           <p className="text-sm font-semibold text-red-300">
             Stop incomplete — venue state not verified
           </p>
-          <p className="break-words text-xs text-red-200/90">{detail}</p>
+          {detail ? <p className="break-words text-xs text-red-200/90">{detail}</p> : null}
+          {residualNormalizationHistory ? (
+            <div className="mt-2 rounded border border-red-500/20 p-2 text-xs text-red-100/80" data-testid="residual-normalization-history">
+              <p className="font-semibold">Historical resolution fields were normalized to unresolved</p>
+              <p>Migration {residualNormalizationHistory.migrationId} · {residualNormalizationHistory.pattern} · {new Date(residualNormalizationHistory.loggedAt).toLocaleString()}</p>
+              {residualNormalizationHistory.originalResidualAbandonReason ? <p>Prior reason: {residualNormalizationHistory.originalResidualAbandonReason}</p> : null}
+              {residualNormalizationHistory.originalAcceptedQuantity !== null || residualNormalizationHistory.originalAcceptedSymbol !== null ? <p>Prior accepted value: {residualNormalizationHistory.originalAcceptedQuantity ?? "unknown"} {residualNormalizationHistory.originalAcceptedSymbol ?? ""}</p> : null}
+              <p>{residualNormalizationHistory.reason}</p>
+            </div>
+          ) : null}
         </div>
       </div>
       <div className="flex flex-wrap items-center gap-2">
