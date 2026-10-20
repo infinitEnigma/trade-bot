@@ -770,6 +770,11 @@ export const BotControls: React.FC<BotControlsProps> = ({
           notionalAmount={notionalAmount}
           onNotionalChange={setNotionalAmount}
         />
+        {unresolvedExposureMessage ? (
+          <p className="text-xs text-red-300" role="alert" data-testid="unresolved-account-exposure">
+            {unresolvedExposureMessage}
+          </p>
+        ) : null}
         <ActionButton
           icon={<Play className="w-4 h-4" />}
           label="Resume Trading"
