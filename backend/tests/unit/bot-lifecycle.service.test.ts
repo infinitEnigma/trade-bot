@@ -317,6 +317,67 @@ describe("BotLifecycleService", () => {
       toggle.mockRestore();
     });
 
+    it("blocks start/resume when the account has unresolved venue exposure", async () => {
+      mockQuery.mockImplementation((sql: string) => {
+        const text = String(sql);
+        if (text.startsWith("SELECT id, user_id")) {
+          return Promise.resolve({ rows: [botRow] });
+        }
+        if (text.includes("SUM(notional_amount)")) {
+          return Promise.resolve({ rows: [{ total: "0" }] });
+        }
+        if (text.includes("residual_abandoned_at IS NULL")) {
+          return Promise.resolve({ rows: [{ id: "residual-session" }] });
+        }
+        return okResult();
+      });
+
+      await expect(service.start("bot-1", "user-1")).rejects.toMatchObject({
+        statusCode: 409,
+        message:
+          "Account has unresolved venue exposure from session residual-session. Close it or abandon the residual before starting.",
+      });
+
+      expect(
+        mockQuery.mock.calls.some(call =>
+          String(call[0]).includes("UPDATE bot_instances")
+        )
+      ).toBe(false);
+      expect(engineProtocol.sendCommand).not.toHaveBeenCalled();
+
+      const calls = mockQuery.mock.calls.map(call => String(call[0]));
+      const lockIndex = calls.findIndex(sql =>
+        sql.includes("FROM exchange_accounts") && sql.includes("FOR UPDATE")
+      );
+      const unresolvedIndex = calls.findIndex(sql =>
+        sql.includes("residual_abandoned_at IS NULL")
+      );
+      expect(lockIndex).toBeGreaterThanOrEqual(0);
+      expect(unresolvedIndex).toBeGreaterThan(lockIndex);
+    });
+
+    it("allows start/resume after the residual has been abandoned", async () => {
+      mockStartFlow({
+        ...botRow,
+        force_stop_reason:
+          "cleanup_incomplete: position 0.1 ETH not flattened",
+        residual_abandoned_at: "2026-10-20T12:00:00.000Z",
+      } as typeof botRow);
+
+      const result = await service.start("bot-1", "user-1");
+
+      expect(result).toMatchObject({
+        botId: "bot-1",
+        desiredState: "RUNNING",
+        actualState: "STARTING",
+      });
+      expect(engineProtocol.sendCommand).toHaveBeenCalledWith(
+        "BOT_START",
+        expect.objectContaining({ botId: "bot-1" }),
+        expect.any(String)
+      );
+    });
+
     it("is idempotent for an already STARTING/RUNNING bot", async () => {
       mockQuery.mockResolvedValue({
         rows: [
