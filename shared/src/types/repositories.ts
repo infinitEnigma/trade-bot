@@ -481,6 +481,22 @@ export interface BotInstanceRecord {
    * marker inside the value is the engine/backend `CLEANUP_INCOMPLETE_MARKER`.
    */
   force_stop_reason?: string | null;
+  /** Operator's persisted residual abandonment timestamp; null means unresolved. */
+  residual_abandoned_at?: Date | string | null;
+  /** Latest migration-027 forensic record, if a partial legacy resolution was normalized. */
+  residual_normalization_history?: {
+    sessionId: string;
+    pattern: string;
+    migrationId: string;
+    actor: string;
+    loggedAt: string;
+    reason: string;
+    originalResidualAbandonedAt: string | null;
+    originalResidualAbandonedBy: string | null;
+    originalResidualAbandonReason: string | null;
+    originalAcceptedQuantity: string | null;
+    originalAcceptedSymbol: string | null;
+  } | null;
   /**
    * Runs attached to this session, oldest first (plan §D, 022 shim-drop).
    * Present on the list query; THE strategy resolution path — the

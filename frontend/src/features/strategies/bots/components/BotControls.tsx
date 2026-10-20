@@ -40,6 +40,7 @@ import { OperationToasts } from "../../../../shared/utils/toast";
 import { useWalletProof } from "../../../../shared/hooks/useWalletProof";
 import {
   useBotState,
+  useBotsList,
   BOT_INSTANCES_QUERY_KEY,
 } from "../../../bots/hooks/useBotLifecycle";
 import { useStrategyPerformance } from "../../hooks/useStrategyPerformance";
@@ -322,6 +323,7 @@ export const BotControls: React.FC<BotControlsProps> = ({
   const { actualState, isTransitional, isConnectionLost } = useBotState(
     bot?.id ?? strategyId
   );
+  const { bots: allBotSessions } = useBotsList();
 
   // Phase 1 (strategy-page PnL): the RUNNING line's trades/PnL come from the
   // LIFETIME ledger aggregate — restart-safe (the session's bot.total_pnl
@@ -375,6 +377,20 @@ export const BotControls: React.FC<BotControlsProps> = ({
     account => account.id === effectiveAccountId
   );
 
+  // Admission is account-scoped, not strategy-scoped: a different strategy's
+  // unresolved residual blocks this account too, until explicitly abandoned.
+  const unresolvedExposureSession = allBotSessions.find(
+    session =>
+      session.exchange_account_id === effectiveAccountId &&
+      !session.residualAbandonedAt &&
+      (session.status === "STOPPING" ||
+        (session.status === "STOPPED" &&
+          !!session.forceStopReason?.includes("cleanup_incomplete")))
+  );
+  const unresolvedExposureMessage = unresolvedExposureSession
+    ? `Account has unresolved venue exposure from session ${unresolvedExposureSession.id}. Close it or abandon the residual before starting.`
+    : null;
+
   // X2: venue-aware symbol guidance. Once an account is chosen, ask the backend
   // what that venue lists and compare against the strategy's symbol — so the
   // user sees a warning BEFORE start instead of the backend's start-time 400.
@@ -415,6 +431,7 @@ export const BotControls: React.FC<BotControlsProps> = ({
       selectedAccount?.environment === strategyEnvironment);
   const canStart =
     !!effectiveAccountId &&
+    !unresolvedExposureSession &&
     Number.isFinite(parsedAmount) &&
     parsedAmount >= MIN_NOTIONAL_AMOUNT &&
     !symbolMismatch &&
@@ -607,12 +624,22 @@ export const BotControls: React.FC<BotControlsProps> = ({
           disabled={!canStart}
           onClick={() => startMutation.mutate()}
         />
-        <div className="text-xs text-textMuted text-center">
-          <Zap className="w-3 h-3 inline mr-1" />
-          {canStart
-            ? `Trades ${parsedAmount} USDC on the selected account`
-            : "Select an account and size to begin"}
-        </div>
+        {unresolvedExposureMessage ? (
+          <p
+            className="text-xs text-red-300"
+            role="alert"
+            data-testid="unresolved-account-exposure"
+          >
+            {unresolvedExposureMessage}
+          </p>
+        ) : (
+          <div className="text-xs text-textMuted text-center">
+            <Zap className="w-3 h-3 inline mr-1" />
+            {canStart
+              ? `Trades ${parsedAmount} USDC on the selected account`
+              : "Select an account and size to begin"}
+          </div>
+        )}
         {/* X4: wallet-owner proof gate (D1). */}
         <div className="text-xs text-textMuted text-center">
           Requires a wallet signature.
@@ -735,6 +762,10 @@ export const BotControls: React.FC<BotControlsProps> = ({
           forceStopReason={bot.forceStopReason}
           exchangeAccountId={bot.exchange_account_id}
           symbol={strategySymbol}
+          residualAbandonedAt={bot.residualAbandonedAt}
+          residualNormalizationHistory={
+            bot.residualNormalizationHistory ?? null
+          }
         />
         {/* Restarting creates a fresh bound bot, so the account is picked here. */}
         <AccountSizePicker
@@ -745,6 +776,15 @@ export const BotControls: React.FC<BotControlsProps> = ({
           notionalAmount={notionalAmount}
           onNotionalChange={setNotionalAmount}
         />
+        {unresolvedExposureMessage ? (
+          <p
+            className="text-xs text-red-300"
+            role="alert"
+            data-testid="unresolved-account-exposure"
+          >
+            {unresolvedExposureMessage}
+          </p>
+        ) : null}
         <ActionButton
           icon={<Play className="w-4 h-4" />}
           label="Resume Trading"

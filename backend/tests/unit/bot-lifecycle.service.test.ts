@@ -317,6 +317,67 @@ describe("BotLifecycleService", () => {
       toggle.mockRestore();
     });
 
+    it("blocks start/resume when the account has unresolved venue exposure", async () => {
+      mockQuery.mockImplementation((sql: string) => {
+        const text = String(sql);
+        if (text.startsWith("SELECT id, user_id")) {
+          return Promise.resolve({ rows: [botRow] });
+        }
+        if (text.includes("SUM(notional_amount)")) {
+          return Promise.resolve({ rows: [{ total: "0" }] });
+        }
+        if (text.includes("residual_abandoned_at IS NULL")) {
+          return Promise.resolve({ rows: [{ id: "residual-session" }] });
+        }
+        return okResult();
+      });
+
+      await expect(service.start("bot-1", "user-1")).rejects.toMatchObject({
+        statusCode: 409,
+        message:
+          "Account has unresolved venue exposure from session residual-session. Close it or abandon the residual before starting.",
+      });
+
+      expect(
+        mockQuery.mock.calls.some(call =>
+          String(call[0]).includes("UPDATE bot_instances")
+        )
+      ).toBe(false);
+      expect(engineProtocol.sendCommand).not.toHaveBeenCalled();
+
+      const calls = mockQuery.mock.calls.map(call => String(call[0]));
+      const lockIndex = calls.findIndex(sql =>
+        sql.includes("FROM exchange_accounts") && sql.includes("FOR UPDATE")
+      );
+      const unresolvedIndex = calls.findIndex(sql =>
+        sql.includes("residual_abandoned_at IS NULL")
+      );
+      expect(lockIndex).toBeGreaterThanOrEqual(0);
+      expect(unresolvedIndex).toBeGreaterThan(lockIndex);
+    });
+
+    it("allows start/resume after the residual has been abandoned", async () => {
+      mockStartFlow({
+        ...botRow,
+        force_stop_reason:
+          "cleanup_incomplete: position 0.1 ETH not flattened",
+        residual_abandoned_at: "2026-10-20T12:00:00.000Z",
+      } as typeof botRow);
+
+      const result = await service.start("bot-1", "user-1");
+
+      expect(result).toMatchObject({
+        botId: "bot-1",
+        desiredState: "RUNNING",
+        actualState: "STARTING",
+      });
+      expect(engineProtocol.sendCommand).toHaveBeenCalledWith(
+        "BOT_START",
+        expect.objectContaining({ botId: "bot-1" }),
+        expect.any(String)
+      );
+    });
+
     it("is idempotent for an already STARTING/RUNNING bot", async () => {
       mockQuery.mockResolvedValue({
         rows: [
@@ -737,9 +798,12 @@ describe("BotLifecycleService", () => {
         String(call[0]).includes("force_stop_reason")
       );
       expect(writes).toHaveLength(1);
-      expect(writes[0][1][1]).toBe("bot-1");
-      expect(String(writes[0][1][0])).toContain("cleanup_incomplete");
-      expect(String(writes[0][1][0])).toContain("not flattened");
+      // persistStopTx now writes the marker inside the same UPDATE as the
+      // stop transition; botId is the first param ($1) and the cleanup reason
+      // is the marker param ($11) of that UPDATE.
+      expect(writes[0][1][0]).toBe("bot-1");
+      expect(String(writes[0][1][10])).toContain("cleanup_incomplete");
+      expect(String(writes[0][1][10])).toContain("not flattened");
     });
 
     it("leaves force_stop_reason alone for a clean stop", async () => {
@@ -2167,6 +2231,11 @@ describe("BotLifecycleService F1 notional admission", () => {
           const client = {
             query: (text: string, params: unknown[] = []) => {
               const t = String(text);
+              // findUnresolvedExposureTx reports no unresolved exposure in
+              // this test scenario (clean account).
+              if (t.includes("residual_abandoned_at")) {
+                return Promise.resolve({ rows: [], rowCount: 1 });
+              }
               if (t.includes("SELECT id FROM bot_instances")) {
                 return Promise.resolve({ rows: [{ id: "bot-1" }] });
               }
@@ -2646,7 +2715,10 @@ describe("BotLifecycleService F1 notional admission", () => {
 
       const isSessionGuard = (t: string) =>
         t.includes("FROM bot_instances") &&
-        t.includes("WHERE exchange_account_id");
+        t.includes("WHERE exchange_account_id") &&
+        // findUnresolvedExposureTx also matches the two predicates above but
+        // is the residual-admission guard, not the live-session guard.
+        !t.includes("residual_abandoned_at");
       // Pool guard reads are counted via mockQuery.mock.calls below; the tx
       // channel is captured here directly by the transaction client mock.
       const txQueries: string[] = [];
@@ -2798,5 +2870,726 @@ describe("BotLifecycleService F1 notional admission", () => {
       expect(sumParams).toEqual(["acc-1"]);
       toggle.mockRestore();
     });
+  });
+});
+
+// ============================================================
+// RESIDUAL EXPOSURE ADMISSION (PLATFORM_REVIEW Priority 1)
+// ============================================================
+
+describe("residual exposure admission (Priority 1)", () => {
+  let service: BotLifecycleService;
+  let engineProtocol: { sendCommand: jest.Mock };
+
+  const kodiakAccount = {
+    id: "acc-1",
+    userId: "user-1",
+    exchange: "kodiak",
+    environment: "testnet",
+    accountRef: "kodiak-account-id",
+    status: "ACTIVE",
+    verifiedAt: null,
+    lastVerifiedAt: null,
+    meta: {},
+    createdAt: new Date("2026-01-01T00:00:00.000Z"),
+    updatedAt: new Date("2026-01-02T00:00:00.000Z"),
+    credentialsEncrypted: "sealed",
+    encryptionVersion: 3,
+  };
+
+  const stoppableBotRow = {
+    id: "bot-1",
+    user_id: "user-1",
+    status: "STOPPED",
+    desired_state: "STOPPED",
+    actual_state: "STOPPED",
+    exchange_account_id: "acc-1",
+  };
+
+  const runningBotRow = {
+    id: "bot-1",
+    user_id: "user-1",
+    status: "RUNNING",
+    desired_state: "RUNNING",
+    actual_state: "RUNNING",
+    exchange_account_id: "acc-1",
+  };
+
+  /** The admission message the API must preserve verbatim (never "conflict"). */
+  const admissionMsg = (sessionId: string) =>
+    `Account has unresolved venue exposure from session ${sessionId}. Close it or abandon the residual before starting.`;
+
+  const MARKER_REASON =
+    "emergency_stop:FULL_SHUTDOWN; cleanup_incomplete: position 2.5 BTC not flattened: lighter create UNRESOLVED for 123";
+
+  /** Restore the module-level routing transaction mock (see jest.mock above). */
+  const restoreDefaultTransaction = () =>
+    mockTransaction.mockImplementation(
+      async (cb: (client: { query: unknown }) => unknown) =>
+        cb({
+          query: (text: string, params?: unknown[]) => mockQuery(text, params),
+        })
+    );
+
+  interface RouteOptions {
+    /** Row findUnresolvedExposureTx returns; null = clean account. */
+    unresolvedId?: string | null;
+    /** findBot row (ownership + binding). */
+    ownedRow?: Record<string, unknown>;
+    /** findResidualAbandonContextTx first-query row; null = not found. */
+    context?: Record<string, unknown> | null;
+    /** Symbols on the session's runs (abandon's unparsed-evidence gate). */
+    runSymbols?: string[];
+  }
+
+  /**
+   * One traffic router for createAndStart / attachStrategyRun / abandon flows.
+   * Order matters: the guard branch must precede the generic bot_instances
+   * branch, and SUM before the generic strategy_runs branch.
+   */
+  const routeAll = ({
+    unresolvedId = null,
+    ownedRow = stoppableBotRow as Record<string, unknown>,
+    context = null,
+    runSymbols = [],
+  }: RouteOptions = {}) => {
+    // The insert returns "bot-new"; later findBot reads must resolve that id
+    // so start()'s dispatch payload carries the created session, not the
+    // fixture's id.
+    let insertedId: string | null = null;
+    return mockQuery.mockImplementation(
+      (sql: string, params: unknown[] = []) => {
+        const text = String(sql);
+        if (
+          text.startsWith(
+            "SELECT exchange, environment, config FROM strategies"
+          )
+        ) {
+          return {
+            rows: [{ exchange: null, environment: null, config: {} }],
+          };
+        }
+        if (text.startsWith("SELECT id FROM strategies")) {
+          return { rows: [{ id: params[0] }] };
+        }
+        // persistStopTx's binding read (pool or tx, depending on caller).
+        if (text.startsWith("SELECT exchange_account_id FROM bot_instances")) {
+          return { rows: [{ exchange_account_id: "acc-1" }] };
+        }
+        // findBot (getOwnedBot) — note the space after "id,".
+        if (text.startsWith("SELECT id, user_id")) {
+          return { rows: [{ ...ownedRow, id: insertedId ?? ownedRow.id }] };
+        }
+        if (text.includes("SUM(notional_amount)")) {
+          return { rows: [{ total: "0" }] };
+        }
+        // Account row lock (FOR UPDATE).
+        if (text.startsWith("SELECT id FROM exchange_accounts")) {
+          return { rows: [{ id: params[0] }] };
+        }
+        // Abandon context (tx) — no space after commas, distinct from findBot.
+        if (text.startsWith("SELECT id,user_id,exchange_account_id")) {
+          return { rows: context ? [context] : [] };
+        }
+        // Session run symbols (abandon's unparsed-evidence gate).
+        if (text.startsWith("SELECT DISTINCT COALESCE(config")) {
+          return { rows: runSymbols.map(s => ({ symbol: s })) };
+        }
+        // Residual admission guard (findUnresolvedExposureTx).
+        if (
+          text.startsWith("SELECT id FROM bot_instances") &&
+          text.includes("residual_abandoned_at")
+        ) {
+          return { rows: unresolvedId ? [{ id: unresolvedId }] : [] };
+        }
+        // Live-session guards (no residual predicate).
+        if (text.startsWith("SELECT id FROM bot_instances")) {
+          return { rows: [] };
+        }
+        if (text.startsWith("INSERT INTO bot_instances")) {
+          insertedId = "bot-new";
+          return { rows: [{ id: insertedId }], rowCount: 1 };
+        }
+        if (text.startsWith("INSERT INTO strategy_runs")) {
+          return { rows: [{ id: "run-1" }], rowCount: 1 };
+        }
+        if (text.startsWith("INSERT INTO bot_lifecycle_events")) {
+          return { rows: [], rowCount: 1 };
+        }
+        // Abandon resolution write.
+        if (
+          text.startsWith("UPDATE bot_instances") &&
+          text.includes("residual_abandoned_at = CURRENT_TIMESTAMP")
+        ) {
+          return {
+            rows: [{ residual_abandoned_at: "2026-01-05T00:00:00.000Z" }],
+            rowCount: 1,
+          };
+        }
+        if (text.startsWith("UPDATE bot_instances")) {
+          return { rows: [], rowCount: 1 };
+        }
+        if (text.includes("FROM strategy_runs")) {
+          return { rows: [] };
+        }
+        return okResult();
+      }
+    );
+  };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    engineProtocol = {
+      sendCommand: jest.fn().mockResolvedValue({
+        success: true,
+        messageId: "m1",
+        correlationId: "c1",
+      }),
+    };
+    service = createWiredService(
+      engineProtocol as unknown as EngineProtocolService
+    );
+    service.setAuthorityChecker(async () => true);
+    mockAccountAdapter.getAccountWithSecret.mockResolvedValue(kodiakAccount);
+    service.setSessionCapProvider({
+      getAdmissionSnapshot: async () => ({
+        cap: 5000,
+        existingExposure: 0,
+      }),
+    });
+    restoreDefaultTransaction();
+  });
+
+  afterEach(() => {
+    restoreDefaultTransaction();
+    jest.restoreAllMocks();
+  });
+
+  // ---------------------------------------------------------
+  // The admission guard (createAndStart + attachStrategyRun)
+  // ---------------------------------------------------------
+
+  it("createAndStart 409s with the exact admission message and inserts no session when the account is dirty", async () => {
+    routeAll({ unresolvedId: "bot-dirty" });
+
+    await expect(
+      service.createAndStart("user-1", "strat-1", 250, "acc-1")
+    ).rejects.toMatchObject({
+      statusCode: 409,
+      message: admissionMsg("bot-dirty"),
+    });
+
+    const inserts = mockQuery.mock.calls.filter(([sql]) =>
+      String(sql).startsWith("INSERT INTO bot_instances")
+    );
+    expect(inserts).toHaveLength(0);
+    expect(engineProtocol.sendCommand).not.toHaveBeenCalled();
+  });
+
+  it("runs the guard inside the tx: account FOR UPDATE first, unresolved select second, no insert after the hit", async () => {
+    routeAll({ unresolvedId: "bot-dirty" });
+    const txQueries: string[] = [];
+    mockTransaction.mockImplementation(
+      async (cb: (client: { query: unknown }) => unknown) =>
+        cb({
+          query: (text: string, params: unknown[] = []) => {
+            txQueries.push(String(text));
+            return mockQuery(text, params);
+          },
+        })
+    );
+
+    await expect(
+      service.createAndStart("user-1", "strat-1", 250, "acc-1")
+    ).rejects.toMatchObject({ statusCode: 409 });
+
+    const lockIdx = txQueries.findIndex(q =>
+      q.startsWith("SELECT id FROM exchange_accounts")
+    );
+    const guardIdx = txQueries.findIndex(q =>
+      q.includes("residual_abandoned_at")
+    );
+    expect(lockIdx).toBeGreaterThanOrEqual(0);
+    expect(guardIdx).toBeGreaterThan(lockIdx);
+    expect(
+      txQueries.filter(q => q.startsWith("INSERT INTO bot_instances"))
+    ).toHaveLength(0);
+  });
+
+  it("createAndStart 409s while a sibling session is still STOPPING (the marker window)", async () => {
+    routeAll({ unresolvedId: "bot-stopping" });
+
+    await expect(
+      service.createAndStart("user-1", "strat-1", 250, "acc-1")
+    ).rejects.toMatchObject({
+      statusCode: 409,
+      message: admissionMsg("bot-stopping"),
+    });
+  });
+
+  it("attachStrategyRun 409s with the same message when another session on the account is unresolved", async () => {
+    routeAll({
+      unresolvedId: "bot-other",
+      ownedRow: runningBotRow as Record<string, unknown>,
+    });
+
+    await expect(
+      service.attachStrategyRun("bot-1", "user-1", "strat-2", 250)
+    ).rejects.toMatchObject({
+      statusCode: 409,
+      message: admissionMsg("bot-other"),
+    });
+
+    const inserts = mockQuery.mock.calls.filter(([sql]) =>
+      String(sql).startsWith("INSERT INTO strategy_runs")
+    );
+    expect(inserts).toHaveLength(0);
+  });
+
+  it("after the residual is abandoned the account is clean: createAndStart proceeds and dispatches", async () => {
+    routeAll({ unresolvedId: null }); // residual_abandoned_at set → guard misses
+    const toggle = jest
+      .spyOn(strategyRepositoryAdapter, "toggleStrategy")
+      .mockResolvedValue(undefined);
+
+    const result = await service.createAndStart(
+      "user-1",
+      "strat-1",
+      250,
+      "acc-1"
+    );
+
+    expect(result.actualState).toBe("STARTING");
+    expect(
+      mockQuery.mock.calls.filter(([sql]) =>
+        String(sql).startsWith("INSERT INTO bot_instances")
+      )
+    ).toHaveLength(1);
+    expect(engineProtocol.sendCommand).toHaveBeenCalledWith(
+      "BOT_START",
+      expect.objectContaining({ botId: "bot-new" }),
+      expect.any(String)
+    );
+    toggle.mockRestore();
+  });
+
+  // ---------------------------------------------------------
+  // abandonResidual
+  // ---------------------------------------------------------
+
+  const dirtyContext = (
+    overrides: Record<string, unknown> = {}
+  ): Record<string, unknown> => ({
+    id: "bot-1",
+    user_id: "user-1",
+    exchange_account_id: "acc-1",
+    actual_state: "STOPPED",
+    force_stop_reason: MARKER_REASON,
+    residual_abandoned_at: null,
+    ...overrides,
+  });
+
+  const abandonInput = (overrides: Record<string, unknown> = {}) => ({
+    reason: "ops ack",
+    acceptedQuantity: "2.5",
+    symbol: "BTC",
+    ...overrides,
+  });
+
+  const abandonUpdates = () =>
+    mockQuery.mock.calls.filter(
+      ([sql]) =>
+        String(sql).startsWith("UPDATE bot_instances") &&
+        String(sql).includes("residual_abandoned_at = CURRENT_TIMESTAMP")
+    );
+
+  it("abandonResidual 409s when the session is STOPPED without the cleanup_incomplete marker", async () => {
+    routeAll({
+      context: dirtyContext({
+        force_stop_reason: "emergency_stop:FULL_SHUTDOWN",
+      }),
+    });
+
+    await expect(
+      service.abandonResidual("bot-1", "user-1", abandonInput())
+    ).rejects.toMatchObject({
+      statusCode: 409,
+      message:
+        "Residual abandonment requires a STOPPED session with cleanup_incomplete evidence",
+    });
+    expect(abandonUpdates()).toHaveLength(0);
+  });
+
+  it("abandonResidual 409s a second abandon (residual_abandoned_at already set)", async () => {
+    routeAll({
+      context: dirtyContext({
+        residual_abandoned_at: "2026-01-04T00:00:00.000Z",
+      }),
+    });
+
+    await expect(
+      service.abandonResidual("bot-1", "user-1", abandonInput())
+    ).rejects.toMatchObject({
+      statusCode: 409,
+      message: "Residual has already been abandoned",
+    });
+    expect(abandonUpdates()).toHaveLength(0);
+  });
+
+  it("abandonResidual 400s a parsed quantity that is not the exact token (2.50 vs 2.5)", async () => {
+    routeAll({ context: dirtyContext() });
+
+    await expect(
+      service.abandonResidual(
+        "bot-1",
+        "user-1",
+        abandonInput({ acceptedQuantity: "2.50" })
+      )
+    ).rejects.toMatchObject({
+      statusCode: 400,
+      message:
+        "Accepted quantity and symbol must exactly match the cleanup evidence",
+    });
+    expect(abandonUpdates()).toHaveLength(0);
+  });
+
+  it("abandonResidual 400s a parsed symbol that does not match the evidence", async () => {
+    routeAll({ context: dirtyContext() });
+
+    await expect(
+      service.abandonResidual(
+        "bot-1",
+        "user-1",
+        abandonInput({ symbol: "ETH" })
+      )
+    ).rejects.toMatchObject({
+      statusCode: 400,
+      message:
+        "Accepted quantity and symbol must exactly match the cleanup evidence",
+    });
+  });
+
+  it("abandonResidual stores an exact parsed match in one tx: resolution write + RESIDUAL_ABANDONED event, marker untouched", async () => {
+    routeAll({ context: dirtyContext() });
+    const txQueries: string[] = [];
+    mockTransaction.mockImplementation(
+      async (cb: (client: { query: unknown }) => unknown) =>
+        cb({
+          query: (text: string, params: unknown[] = []) => {
+            txQueries.push(String(text));
+            return mockQuery(text, params);
+          },
+        })
+    );
+
+    await service.abandonResidual(
+      "bot-1",
+      "user-1",
+      abandonInput({ reason: "  ops ack  " })
+    );
+
+    // Resolution write: exact params, marker/state untouched by the SET list.
+    const updates = abandonUpdates();
+    expect(updates).toHaveLength(1);
+    const [updateSql, updateParams] = updates[0] as [string, unknown[]];
+    expect(updateParams).toEqual([
+      "bot-1",
+      "user-1",
+      "user-1",
+      "ops ack", // trimmed
+      "2.5",
+      "BTC",
+    ]);
+    expect(String(updateSql)).not.toContain("force_stop_reason =");
+    // Only the SET clause may not assign these — the WHERE predicate
+    // legitimately reads actual_state = 'STOPPED' and force_stop_reason LIKE.
+    const setClause = String(updateSql).slice(
+      String(updateSql).indexOf("SET"),
+      String(updateSql).indexOf("WHERE")
+    );
+    expect(setClause).not.toContain("actual_state =");
+    expect(setClause).not.toContain("force_stop_reason =");
+
+    // Event: self-contained audit payload, same tx. The adapter inlines the
+    // event_type literal in the SQL rather than binding it as a param.
+    const events = mockQuery.mock.calls.filter(([sql]) =>
+      String(sql).includes("'RESIDUAL_ABANDONED'")
+    );
+    expect(events).toHaveLength(1);
+    const eventJson = String((events[0][1] as unknown[])[1]);
+    expect(eventJson).toContain('"resolution":"parsed"');
+    expect(eventJson).toContain('"acceptedQuantity":"2.5"');
+    expect(eventJson).toContain('"rawParserInput"');
+    expect(eventJson).toContain('"residualAbandonedAt"');
+
+    // Tx query order: account lock → context read → symbols → write → event.
+    expect(txQueries[0]).toMatch(/^SELECT id FROM exchange_accounts/);
+    expect(txQueries[1]).toMatch(/^SELECT id,user_id,exchange_account_id/);
+    expect(txQueries[2]).toMatch(/^SELECT DISTINCT COALESCE\(config/);
+    expect(txQueries[3]).toMatch(/^UPDATE bot_instances/);
+    expect(txQueries[4]).toMatch(/^INSERT INTO bot_lifecycle_events/);
+  });
+
+  it("abandonResidual 400s an unparsed-evidence symbol that is not on the session's runs", async () => {
+    routeAll({
+      context: dirtyContext({
+        force_stop_reason: "cleanup_incomplete: exposure unknown",
+      }),
+      runSymbols: ["BTC"],
+    });
+
+    await expect(
+      service.abandonResidual(
+        "bot-1",
+        "user-1",
+        abandonInput({ symbol: "ETH" })
+      )
+    ).rejects.toMatchObject({
+      statusCode: 400,
+      message:
+        "For unparsed cleanup evidence, symbol must match a strategy symbol from this session",
+    });
+    expect(abandonUpdates()).toHaveLength(0);
+  });
+
+  it("abandonResidual stores operator-accepted values for unparsed evidence (never a parser-implied zero)", async () => {
+    routeAll({
+      context: dirtyContext({
+        force_stop_reason: "cleanup_incomplete: exposure unknown",
+      }),
+      runSymbols: ["BTC"],
+    });
+
+    await service.abandonResidual(
+      "bot-1",
+      "user-1",
+      abandonInput({ reason: "ops ack", acceptedQuantity: "0" })
+    );
+
+    const events = mockQuery.mock.calls.filter(([sql]) =>
+      String(sql).includes("'RESIDUAL_ABANDONED'")
+    );
+    expect(events).toHaveLength(1);
+    const eventJson = String((events[0][1] as unknown[])[1]);
+    expect(eventJson).toContain('"resolution":"operator"');
+    expect(eventJson).toContain('"acceptedQuantity":"0"');
+    expect(eventJson).toContain('"operatorFallback"');
+    expect(eventJson).toContain('"rawParserInput"');
+  });
+
+  it("abandonResidual 409s a legacy bot with no bound exchange account", async () => {
+    routeAll({
+      ownedRow: {
+        ...stoppableBotRow,
+        exchange_account_id: null,
+      } as Record<string, unknown>,
+    });
+
+    await expect(
+      service.abandonResidual("bot-1", "user-1", abandonInput())
+    ).rejects.toMatchObject({
+      statusCode: 409,
+      message: "Bot is not bound to an exchange account",
+    });
+  });
+
+  it("abandonResidual 404s a bot the caller does not own", async () => {
+    routeAll({
+      ownedRow: { ...stoppableBotRow, user_id: "someone-else" } as Record<
+        string,
+        unknown
+      >,
+    });
+
+    await expect(
+      service.abandonResidual("bot-1", "user-1", abandonInput())
+    ).rejects.toMatchObject({ statusCode: 404, message: "Bot not found" });
+  });
+
+  // ---------------------------------------------------------
+  // Deterministic two-connection concurrency
+  // ---------------------------------------------------------
+
+  it("two concurrent createAndStart against one dirty account: neither is admitted, no session row appears", async () => {
+    routeAll({ unresolvedId: "bot-dirty" });
+
+    // Lock chain serializes the two txs like FOR UPDATE does (READ COMMITTED:
+    // each tx sees the dirty row after the other rolls back — the row never
+    // disappears, so the loser is refused too).
+    let lockChain: Promise<unknown> = Promise.resolve();
+    mockTransaction.mockImplementation(
+      (cb: (client: { query: unknown }) => unknown) => {
+        const run = lockChain.then(() =>
+          cb({
+            query: (text: string, params: unknown[] = []) =>
+              mockQuery(text, params),
+          })
+        );
+        lockChain = run.catch(() => undefined);
+        return run;
+      }
+    );
+
+    const results = await Promise.allSettled([
+      service.createAndStart("user-1", "strat-1", 250, "acc-1"),
+      service.createAndStart("user-1", "strat-2", 250, "acc-1"),
+    ]);
+
+    expect(results.every(r => r.status === "rejected")).toBe(true);
+    for (const r of results) {
+      expect((r as PromiseRejectedResult).reason).toMatchObject({
+        statusCode: 409,
+        message: admissionMsg("bot-dirty"),
+      });
+    }
+    expect(
+      mockQuery.mock.calls.filter(([sql]) =>
+        String(sql).startsWith("INSERT INTO bot_instances")
+      )
+    ).toHaveLength(0);
+  });
+
+  it("abandon vs the STOPPED transition: abandon waits for the committed marker, then resolves without touching it", async () => {
+    // Honest state model shared by both connections.
+    const state = {
+      actual: "STOPPING",
+      reason: null as string | null,
+      abandonedAt: null as string | null,
+    };
+    const routeStateful = (sql: string, params: unknown[] = []) => {
+      const text = String(sql);
+      if (text.startsWith("SELECT id, user_id")) {
+        return { rows: [{ ...stoppableBotRow, actual_state: state.actual }] };
+      }
+      if (text.startsWith("SELECT exchange_account_id FROM bot_instances")) {
+        return { rows: [{ exchange_account_id: "acc-1" }] };
+      }
+      if (text.startsWith("SELECT id FROM exchange_accounts")) {
+        return { rows: [{ id: params[0] }] };
+      }
+      if (text.startsWith("SELECT id,user_id,exchange_account_id")) {
+        return {
+          rows: [
+            {
+              id: "bot-1",
+              user_id: "user-1",
+              exchange_account_id: "acc-1",
+              actual_state: state.actual,
+              force_stop_reason: state.reason,
+              residual_abandoned_at: state.abandonedAt,
+            },
+          ],
+        };
+      }
+      if (text.startsWith("SELECT DISTINCT COALESCE(config")) {
+        return { rows: [{ symbol: "BTC" }] };
+      }
+      // persistStopTx: CAS on the last param ($12 with the marker present).
+      if (
+        text.startsWith("UPDATE bot_instances") &&
+        text.includes("desired_state = $2")
+      ) {
+        const expected = params[params.length - 1];
+        if (state.actual !== expected) return { rows: [], rowCount: 0 };
+        state.actual = String(params[2]);
+        if (params.length === 12) state.reason = String(params[10]);
+        return { rows: [], rowCount: 1 };
+      }
+      // Abandon resolution write.
+      if (
+        text.startsWith("UPDATE bot_instances") &&
+        text.includes("residual_abandoned_at = CURRENT_TIMESTAMP")
+      ) {
+        state.abandonedAt = "2026-01-05T00:00:00.000Z";
+        return {
+          rows: [{ residual_abandoned_at: state.abandonedAt }],
+          rowCount: 1,
+        };
+      }
+      if (text.startsWith("INSERT INTO bot_lifecycle_events")) {
+        return { rows: [], rowCount: 1 };
+      }
+      return okResult();
+    };
+    mockQuery.mockImplementation(routeStateful);
+
+    // FIFO lock chain; ONLY the first tx (the stop transition) waits on the
+    // gate, so the abandon tx queues behind the in-flight stop exactly like a
+    // second connection waiting on the account row lock.
+    let releaseStop!: () => void;
+    const stopGate = new Promise<void>(r => {
+      releaseStop = r;
+    });
+    let lockChain: Promise<unknown> = Promise.resolve();
+    let firstTx = true;
+    const txQueries: string[] = [];
+    mockTransaction.mockImplementation(
+      (cb: (client: { query: unknown }) => unknown) => {
+        const run = lockChain.then(async () => {
+          if (firstTx) {
+            firstTx = false;
+            await stopGate;
+          }
+          return cb({
+            query: (text: string, params: unknown[] = []) => {
+              txQueries.push(String(text));
+              return routeStateful(text, params);
+            },
+          });
+        });
+        lockChain = run.catch(() => undefined);
+        return run;
+      }
+    );
+
+    const adapter = new BotLifecycleRepositoryAdapter();
+    const transitionInput = {
+      desiredState: "STOPPED",
+      actualState: "STOPPED",
+      engineId: "engine-1",
+      startedAt: null,
+      stoppedAt: new Date(),
+      errorCode: null,
+      errorMessage: null,
+    } as Parameters<typeof adapter.persistStopTx>[1];
+
+    // Connection A: engine writes STOPPED + marker atomically (held mid-tx).
+    const stopP = adapter.persistStopTx(
+      "bot-1",
+      transitionInput,
+      "STOPPING" as Parameters<typeof adapter.persistStopTx>[2],
+      MARKER_REASON
+    );
+    // Connection B: operator abandon — queues behind A on the account lock.
+    const abandonP = service.abandonResidual("bot-1", "user-1", {
+      reason: "ops ack",
+      acceptedQuantity: "2.5",
+      symbol: "BTC",
+    });
+    // Let B reach the lock queue, then let A commit.
+    await new Promise(r => setTimeout(r, 0));
+    releaseStop();
+
+    await expect(stopP).resolves.toBe(true);
+    await expect(abandonP).resolves.toBeUndefined();
+
+    // Final state: STOPPED + marker preserved; only the abandon stamp added.
+    expect(state.actual).toBe("STOPPED");
+    expect(state.reason).toBe(MARKER_REASON);
+    expect(state.abandonedAt).not.toBeNull();
+
+    // Interleaving evidence: stop's UPDATE committed before B's tx began, and
+    // B's tx order is lock → context → symbols → resolution write → event.
+    const stopUpdateIdx = txQueries.findIndex(
+      q =>
+        q.startsWith("UPDATE bot_instances") && q.includes("desired_state = $2")
+    );
+    expect(stopUpdateIdx).toBeGreaterThanOrEqual(0);
+    const afterStop = txQueries.slice(stopUpdateIdx + 1);
+    expect(afterStop[0]).toMatch(/^SELECT id FROM exchange_accounts/);
+    expect(afterStop[1]).toMatch(/^SELECT id,user_id,exchange_account_id/);
+    expect(afterStop[2]).toMatch(/^SELECT DISTINCT COALESCE\(config/);
+    expect(afterStop[3]).toMatch(/^UPDATE bot_instances/);
+    expect(afterStop[4]).toMatch(/^INSERT INTO bot_lifecycle_events/);
   });
 });

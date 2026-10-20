@@ -128,6 +128,8 @@ export function useBotLifecycle(botId?: string) {
           needs_user_action_reason?: string | null;
           exchange_account_id?: string | null;
           force_stop_reason?: string | null;
+          residual_abandoned_at?: string | null;
+          residual_normalization_history?: BotInstance["residualNormalizationHistory"];
           runs?: BotInstance["runs"];
         }) => ({
           // L19: `id` is the session id, never a strategy id — stop,
@@ -163,6 +165,11 @@ export function useBotLifecycle(botId?: string) {
           // could not confirm the venue flat. Surfaced by the banner; never
           // dropped here, or the STOPPED row reads clean by omission.
           forceStopReason: bot.force_stop_reason ?? null,
+          residualAbandonedAt: bot.residual_abandoned_at ?? null,
+          // Migration 028 keeps a forensic fallback when partial historical
+          // resolution fields are cleared; never infer resolved state from it.
+          residualNormalizationHistory:
+            bot.residual_normalization_history ?? null,
           // D4 sessions: runs attached to this session (backend list query).
           runs: bot.runs,
           config: bot.config || {

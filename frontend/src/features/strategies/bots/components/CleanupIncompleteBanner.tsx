@@ -37,6 +37,19 @@ interface CleanupIncompleteBannerProps {
   exchangeAccountId?: string | null;
   /** The bot's symbol, when known — narrows the re-check to this market. */
   symbol?: string;
+  /** A persisted operator resolution hides the unresolved-residual banner. */
+  residualAbandonedAt?: string | null;
+  /** Forensic record from migration 028 when historical partial fields were normalized. */
+  residualNormalizationHistory?: {
+    pattern: string;
+    migrationId: string;
+    actor: string;
+    loggedAt: string;
+    reason: string;
+    originalResidualAbandonReason: string | null;
+    originalAcceptedQuantity: string | null;
+    originalAcceptedSymbol: string | null;
+  } | null;
 }
 
 interface VenueCheck {
@@ -47,13 +60,20 @@ interface VenueCheck {
 
 export const CleanupIncompleteBanner: React.FC<
   CleanupIncompleteBannerProps
-> = ({ forceStopReason, exchangeAccountId, symbol }) => {
+> = ({
+  forceStopReason,
+  exchangeAccountId,
+  symbol,
+  residualAbandonedAt,
+  residualNormalizationHistory,
+}) => {
   const detail = cleanupIncompleteDetail(forceStopReason);
   const [checking, setChecking] = useState(false);
   const [checkError, setCheckError] = useState<string | null>(null);
   const [venueCheck, setVenueCheck] = useState<VenueCheck | null>(null);
 
-  if (!detail) return null;
+  if (residualAbandonedAt || (!detail && !residualNormalizationHistory))
+    return null;
 
   const recheckVenue = async () => {
     setChecking(true);
@@ -108,7 +128,42 @@ export const CleanupIncompleteBanner: React.FC<
           <p className="text-sm font-semibold text-red-300">
             Stop incomplete — venue state not verified
           </p>
-          <p className="break-words text-xs text-red-200/90">{detail}</p>
+          {detail ? (
+            <p className="break-words text-xs text-red-200/90">{detail}</p>
+          ) : null}
+          {residualNormalizationHistory ? (
+            <div
+              className="mt-2 rounded border border-red-500/20 p-2 text-xs text-red-100/80"
+              data-testid="residual-normalization-history"
+            >
+              <p className="font-semibold">
+                Historical resolution fields were normalized to unresolved
+              </p>
+              <p>
+                Migration {residualNormalizationHistory.migrationId} ·{" "}
+                {residualNormalizationHistory.pattern} ·{" "}
+                {new Date(
+                  residualNormalizationHistory.loggedAt
+                ).toLocaleString()}
+              </p>
+              {residualNormalizationHistory.originalResidualAbandonReason ? (
+                <p>
+                  Prior reason:{" "}
+                  {residualNormalizationHistory.originalResidualAbandonReason}
+                </p>
+              ) : null}
+              {residualNormalizationHistory.originalAcceptedQuantity !== null ||
+              residualNormalizationHistory.originalAcceptedSymbol !== null ? (
+                <p>
+                  Prior accepted value:{" "}
+                  {residualNormalizationHistory.originalAcceptedQuantity ??
+                    "unknown"}{" "}
+                  {residualNormalizationHistory.originalAcceptedSymbol ?? ""}
+                </p>
+              ) : null}
+              <p>{residualNormalizationHistory.reason}</p>
+            </div>
+          ) : null}
         </div>
       </div>
       <div className="flex flex-wrap items-center gap-2">

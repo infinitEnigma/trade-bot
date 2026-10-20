@@ -73,6 +73,16 @@ export interface EditBlockers {
   reason: string;
 }
 
+export interface ResidualAbandonContext {
+  id: string;
+  user_id: string;
+  exchange_account_id: string | null;
+  actual_state: string;
+  force_stop_reason: string | null;
+  residual_abandoned_at: string | null;
+  run_symbols: string[];
+}
+
 export interface ILifecycleRepository {
   // --- session reads / CAS writes ---
   findBot(botId: string): Promise<BotRow | null>;
@@ -81,6 +91,26 @@ export interface ILifecycleRepository {
     input: PersistTransitionInput,
     expectedActualState?: BotActualState
   ): Promise<boolean>;
+  /** Atomically lock the bound account and persist STOPPED plus its cleanup marker. */
+  persistStopTx(
+    botId: string,
+    input: PersistTransitionInput,
+    expectedActualState: BotActualState,
+    forceStopReason?: string
+  ): Promise<boolean>;
+  /**
+   * Start transition guarded by the account's unresolved-exposure invariant.
+   * Account lock, unresolved check, CAS transition, and START_REQUESTED audit
+   * write share one transaction so a concurrent cleanup marker cannot slip
+   * between the guard and the state change.
+   */
+  persistStartTx(
+    botId: string,
+    exchangeAccountId: string | null,
+    input: PersistTransitionInput,
+    expectedActualState: BotActualState,
+    event: LifecycleEventInput
+  ): Promise<{ persisted: boolean; unresolvedExposureId?: string }>;
   updateStatus(botId: string, status: string): Promise<void>;
   recordForceStopReason(botId: string, reason: string): Promise<void>;
   insertBotInstance(
@@ -155,6 +185,29 @@ export interface ILifecycleRepository {
     tx: LifecycleTx,
     exchangeAccountId: string
   ): Promise<{ id: string } | null>;
+  /** Must be called after lockAccountRowTx; detects unresolved venue exposure. */
+  findUnresolvedExposureTx(
+    tx: LifecycleTx,
+    exchangeAccountId: string
+  ): Promise<{ id: string } | null>;
+  findResidualAbandonContextTx(
+    tx: LifecycleTx,
+    botId: string,
+    userId: string
+  ): Promise<ResidualAbandonContext | null>;
+  completeResidualAbandonTx(
+    tx: LifecycleTx,
+    botId: string,
+    userId: string,
+    input: {
+      reason: string;
+      quantity: string;
+      symbol: string;
+      operator: string;
+      forceStopReason: string;
+      resolution: "parsed" | "operator";
+    }
+  ): Promise<void>;
   findEditBlockersTx(
     tx: LifecycleTx,
     strategyId: string

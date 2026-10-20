@@ -41,6 +41,9 @@ export class BotInstanceRepositoryAdapter implements IBotInstanceRepository {
                        CASE WHEN tail.event_type = 'RECONCILE_NEEDS_USER_ACTION'
                             THEN tail.metadata->>'reason'
                        END AS needs_user_action_reason,
+                       -- Preserve forensic visibility after migration 028 clears
+                       -- partial resolution columns: this comes from the append-only log.
+                       normalization.history AS residual_normalization_history,
                        -- D2 sessions: runs attached to this session, oldest
                        -- first (empty array for pre-D bots whose runs row
                        -- has not been attached yet).
@@ -87,6 +90,25 @@ export class BotInstanceRepositoryAdapter implements IBotInstanceRepository {
                     ORDER BY e.created_at DESC
                     LIMIT 1
                 ) tail ON TRUE
+                LEFT JOIN LATERAL (
+                    SELECT json_build_object(
+                      'sessionId', n.session_id,
+                      'pattern', n.pattern,
+                      'migrationId', n.migration_id,
+                      'actor', n.actor,
+                      'loggedAt', n.logged_at,
+                      'reason', n.reason,
+                      'originalResidualAbandonedAt', n.residual_abandoned_at,
+                      'originalResidualAbandonedBy', n.residual_abandoned_by,
+                      'originalResidualAbandonReason', n.residual_abandon_reason,
+                      'originalAcceptedQuantity', n.residual_accepted_quantity::text,
+                      'originalAcceptedSymbol', n.residual_accepted_symbol
+                    ) AS history
+                    FROM residual_normalization_log n
+                    WHERE n.session_id = bi.id
+                    ORDER BY n.logged_at DESC, n.id DESC
+                    LIMIT 1
+                ) normalization ON TRUE
                 WHERE bi.user_id = $1
                 ORDER BY bi.created_at DESC
             `,

@@ -101,6 +101,21 @@ export interface BotInstance {
    * `CleanupIncompleteBanner`; null/absent = the stop verified clean.
    */
   forceStopReason?: string | null;
+  residualAbandonedAt?: string | null;
+  /** Forensic record retained when migration 028 normalizes partial resolution columns. */
+  residualNormalizationHistory?: {
+    sessionId: string;
+    pattern: string;
+    migrationId: string;
+    actor: string;
+    loggedAt: string;
+    reason: string;
+    originalResidualAbandonedAt: string | null;
+    originalResidualAbandonedBy: string | null;
+    originalResidualAbandonReason: string | null;
+    originalAcceptedQuantity: string | null;
+    originalAcceptedSymbol: string | null;
+  } | null;
 }
 
 /**

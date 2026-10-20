@@ -1,0 +1,49 @@
+Residual admission preflight — trade_bot on localhost:5432 (user bot_trader_y71)
+Source: database/ops/residual-admission-preflight.sql (read-only)
+Branch renumbered the stage files to avoid the 028_ledger_integrity_alerts.sql
+collision: 027_residual_admission.sql → 029_residual_admission_normalize.sql →
+030_residual_admission_validate.sql.
+
+GATE RUN — after 027 only, BEFORE normalization (migration 029)
+Migration state on THIS dev database: 027/029/030 ALL already applied
+(post-migration state shown below for reference only).
+
+--- Row-pattern counts (bot_instances) ---
+all_null                          : 7
+all_set                           : 2
+all_set_zero                      : 1   (valid zero-quantity rows — preserved)
+partial                           : 0
+negative_qty_all_set              : 1   (from test fixture, pre-027 legacy data)
+empty_reason_all_set              : 0
+empty_symbol_all_set              : 0
+invalid_reason_length_all_set     : 0
+invalid_symbol_length_all_set     : 0
+
+--- Abandonment audit evidence ---
+abandonment_events_missing_required_metadata : 0
+residual_abandoned_event_count               : 0
+existing_residual_normalization_log_count    : 1
+
+Interpretation: this dev snapshot carries test fixture data from migration
+verification (one PARTIAL row normalized → logged, one all-set qty=-1 row
+preserved since value constraints remain NOT VALID). It is NOT a restored
+production-like snapshot, so these counts CANNOT serve as the release gate.
+
+POST-MIGRATION VERIFICATION (fixture-driven, same database)
+- pg_constraint after 030: bot_instances_residual_abandon_complete
+  convalidated=t; the three value-level constraints convalidated=f (NOT VALID).
+- Rerun safety: re-executing 029 and 030 via --through= is a no-op
+  ("Nothing to do" — ledger-skipped), zero rows touched.
+- PARTIAL rows cleared + originals logged; all_set_zero (qty=0) rows preserved.
+
+===> RELEASE GATE REQUIRED (team member with DB access) <=====
+Restore a production-like snapshot. Then:
+  1. Apply migration 027 ONLY:  npm run db:migrate -- --through=027_residual_admission.sql
+  2. Run preflight:  psql -f database/ops/residual-admission-preflight.sql
+  3. Attach all four result sets to PR #12.
+  4. Approve the counts (abandonment_events_missing_required_metadata must be 0
+     or reconciled; partial count indicates rows 029 will normalize).
+  5. Then apply 029 and 030 (both rerun-safe).
+
+Value-level constraints remain NOT VALID until historical invalid values
+(negative_qty_all_set, etc.) are adjudicated by the team.
