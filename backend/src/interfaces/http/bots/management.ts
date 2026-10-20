@@ -720,6 +720,14 @@ router.post(
   }
 );
 
+
+router.post("/:botId/abandon-residual",authMiddleware,(req:AuthenticatedRequest,res:Response,next:NextFunction)=>{
+ if(req.user?.userLevel!=="VERIFIED")return res.status(403).json({success:false,error:"Bot functions require VERIFIED user level. Please connect and verify an exchange account."});next();
+},validators.abandonResidual,requireWalletProof("bot:stop",{resolveAccountId:(userId,req)=>botBoundAccountId(userId,String(req.params.botId??""))}),async(req:AuthenticatedRequest,res:Response)=>{
+ try{const botId=String(req.params.botId??"");await botLifecycleService.abandonResidual(botId,getUserId(req),{reason:req.body.reason,acceptedQuantity:req.body.acceptedQuantity,symbol:req.body.symbol});res.json({success:true,data:{botId,abandoned:true},timestamp:Date.now()});}
+ catch(err){const statusCode=(err as Error & {statusCode?:number}).statusCode??500;res.status(statusCode).json({success:false,error:statusCode<500?(err as Error).message:"Failed to abandon residual",timestamp:Date.now()});}
+});
+
 // POST /api/bot/management/engine/journal/recover
 //
 // F4: explicit, admin-authorized, reconciliation-attested recovery of an engine
