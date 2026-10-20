@@ -66,7 +66,7 @@ export const CleanupIncompleteBanner: React.FC<
   const [checkError, setCheckError] = useState<string | null>(null);
   const [venueCheck, setVenueCheck] = useState<VenueCheck | null>(null);
 
-  if (!detail) return null;
+  if (residualAbandonedAt || (!detail && !residualNormalizationHistory)) return null;
 
   const recheckVenue = async () => {
     setChecking(true);
