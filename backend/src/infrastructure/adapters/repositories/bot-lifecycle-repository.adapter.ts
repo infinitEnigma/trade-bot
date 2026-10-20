@@ -633,7 +633,9 @@ export class BotLifecycleRepositoryAdapter implements ILifecycleRepository {
     }
     const cleanup = await client.query<{ id: string }>(
       `SELECT b.id FROM bot_instances b JOIN strategy_runs r ON r.bot_id = b.id
-        WHERE r.strategy_id = $1 AND b.force_stop_reason LIKE '%cleanup_incomplete%'`,
+        WHERE r.strategy_id = $1
+          AND b.force_stop_reason LIKE '%cleanup_incomplete%'
+          AND b.residual_abandoned_at IS NULL`,
       [strategyId]
     );
     if (cleanup.rows.length > 0) {
