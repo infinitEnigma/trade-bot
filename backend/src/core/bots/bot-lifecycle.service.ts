@@ -51,6 +51,7 @@ import { ExchangeAccountLookup } from "./lifecycle/exchange-account-lookup.port"
 import { IVenueSymbolCatalog } from "./lifecycle/venue-symbol-catalog.port";
 import { revalidateSymbolAgainstCatalog } from "../market/venue-catalog.policy";
 import { syncSessionStrategiesActive } from "./lifecycle/strategy-active-sync";
+import { parseResidualEvidence } from "./lifecycle/residual-evidence";
 import {
   BotLifecycleResult,
   BotRow,
@@ -901,6 +902,23 @@ export class BotLifecycleService {
       (error as Error & { code?: string }).code = "SESSION_CAP_UNAVAILABLE";
       throw error;
     }
+  }
+
+  async abandonResidual(botId:string,userId:string,input:{reason:string;acceptedQuantity:string;symbol:string}):Promise<void>{
+    const owned=await this.getOwnedBot(botId,userId);
+    if(!owned.exchange_account_id){const e=new Error("Bot is not bound to an exchange account");(e as Error & {statusCode?:number}).statusCode=409;throw e;}
+    await this.repository.inTransaction(async tx=>{
+      await this.repository.lockAccountRowTx(tx,owned.exchange_account_id as string);
+      const row=await this.repository.findResidualAbandonContextTx(tx,botId,userId);
+      if(!row){const e=new Error("Bot not found");(e as Error & {statusCode?:number}).statusCode=404;throw e;}
+      if(row.actual_state!=="STOPPED"||!row.force_stop_reason?.includes("cleanup_incomplete")){const e=new Error("Residual abandonment requires a STOPPED session with cleanup_incomplete evidence");(e as Error & {statusCode?:number}).statusCode=409;throw e;}
+      if(row.residual_abandoned_at){const e=new Error("Residual has already been abandoned");(e as Error & {statusCode?:number}).statusCode=409;throw e;}
+      const evidence=parseResidualEvidence(row.force_stop_reason);
+      if(evidence.kind==="parsed"){
+        if(input.acceptedQuantity!==evidence.quantity||input.symbol.toLowerCase()!==evidence.symbol.toLowerCase()){const e=new Error("Accepted quantity and symbol must exactly match the cleanup evidence");(e as Error & {statusCode?:number}).statusCode=400;throw e;}
+      }else if(row.run_symbols.length&&!row.run_symbols.some(x=>x.toLowerCase()===input.symbol.toLowerCase())){const e=new Error("For unparsed cleanup evidence, symbol must match a strategy symbol from this session");(e as Error & {statusCode?:number}).statusCode=400;throw e;}
+      await this.repository.completeResidualAbandonTx(tx,botId,userId,{reason:input.reason.trim(),quantity:input.acceptedQuantity,symbol:input.symbol,operator:userId,forceStopReason:row.force_stop_reason});
+    });
   }
 
   // ===========================================

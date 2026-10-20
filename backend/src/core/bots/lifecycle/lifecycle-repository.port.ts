@@ -73,6 +73,8 @@ export interface EditBlockers {
   reason: string;
 }
 
+export interface ResidualAbandonContext { id:string; user_id:string; exchange_account_id:string|null; actual_state:string; force_stop_reason:string|null; residual_abandoned_at:string|null; run_symbols:string[]; }
+
 export interface ILifecycleRepository {
   // --- session reads / CAS writes ---
   findBot(botId: string): Promise<BotRow | null>;
@@ -159,6 +161,8 @@ export interface ILifecycleRepository {
   ): Promise<{ id: string } | null>;
   /** Must be called after lockAccountRowTx; detects unresolved venue exposure. */
   findUnresolvedExposureTx(tx: LifecycleTx, exchangeAccountId: string): Promise<{ id: string } | null>;
+  findResidualAbandonContextTx(tx: LifecycleTx, botId: string, userId: string): Promise<ResidualAbandonContext | null>;
+  completeResidualAbandonTx(tx: LifecycleTx, botId: string, userId: string, input: { reason:string; quantity:string; symbol:string; operator:string; forceStopReason:string }): Promise<void>;
   findEditBlockersTx(
     tx: LifecycleTx,
     strategyId: string
