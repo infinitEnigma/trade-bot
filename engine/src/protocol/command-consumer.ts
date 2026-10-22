@@ -9,12 +9,14 @@
  */
 
 import {
+  AuthorizeBotCommandPayload,
   BotCommand,
   EmergencyStopCommandPayload,
   isBotCommand,
   isBotEmergencyStopCommand,
   isBotStartCommand,
   isBotStopCommand,
+  isBotAuthorizeCommand,
   isStatusRequestCommand,
 } from "@trade-bot/shared";
 import {
@@ -266,6 +268,29 @@ async function handleCommand(
       streamOps,
       command.payload.botId,
       command.correlationId
+    );
+  } else if (isBotAuthorizeCommand(command)) {
+    // BOT_AUTHORIZE transitions a prepared run to execution. The engine only
+    // authorizes if a matching preparation exists (bound by runId + version).
+    //
+    // `command` narrows to `never` here for the same reason as the status
+    // branch above, so read the fields off the captured payload — the guard
+    // has already validated botId, userId, strategyId, runId and version.
+    const authorize = payload as AuthorizeBotCommandPayload;
+    await botManager.publishAccepted(
+      streamOps,
+      authorize.botId,
+      "BOT_AUTHORIZE",
+      correlationId
+    );
+    await botManager.authorizeStart(
+      streamOps,
+      authorize.botId,
+      authorize.userId,
+      authorize.strategyId,
+      authorize.runId,
+      authorize.preparationVersion,
+      correlationId
     );
   } else if (isBotEmergencyStopCommand(command)) {
     // M1: the panic button publishes a real EMERGENCY_STOP command. ACK it

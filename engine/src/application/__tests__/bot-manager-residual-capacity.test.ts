@@ -29,6 +29,10 @@ jest.mock("../../strategies/grid", () => ({
     start: jest.fn().mockResolvedValue(undefined),
     stop: jest.fn().mockResolvedValue([]),
     tick: jest.fn().mockResolvedValue(undefined),
+    // Report-only exposure estimate (the estimator the engine publishes).
+    estimatedRestingNotional: 0,
+    isLedgerHalted: jest.fn().mockReturnValue(false),
+    ledgerHaltReasonText: jest.fn().mockReturnValue(""),
   })),
 }));
 
@@ -167,16 +171,35 @@ describe("BotManager residual-capacity backstop (engine Model A gate)", () => {
       runsOf(200, 200)
     );
 
-    expect(manager.hasBot("bot-1")).toBe(true);
+    // Pre-admission safety: the backstop admits the PREPARATION, but no run
+    // is registered and no tick runner is armed until BOT_AUTHORIZE.
+    expect(manager.hasBot("bot-1")).toBe(false);
     expect(
       published.filter(
-        e => e.type === "STATE_CHANGED" && e.payload.to === "RUNNING"
+        e => e.type === "STATE_CHANGED" && e.payload.to === "PREPARED"
       )
     ).toHaveLength(1);
     // The backstop ran exactly one account + one positions read.
     expect(fake.count("getAccountInfo")).toBe(1);
     expect(fake.count("getPositions")).toBe(1);
     expect(gridConstructMock).toHaveBeenCalledTimes(2);
+
+    // The matching authorization starts execution.
+    await manager.authorizeStart(
+      ops,
+      "bot-1",
+      "user-1",
+      "strat-1",
+      "run-0",
+      1,
+      "corr-auth"
+    );
+    expect(manager.hasBot("bot-1")).toBe(true);
+    expect(
+      published.filter(
+        e => e.type === "STATE_CHANGED" && e.payload.to === "RUNNING"
+      )
+    ).toHaveLength(1);
   });
 
   it("refuses to start when venue exposure has already eaten the headroom", async () => {
@@ -281,6 +304,17 @@ describe("BotManager residual-capacity backstop (engine Model A gate)", () => {
       RUN_CONFIG,
       "corr-1",
       runsOf(900)
+    );
+    // Preparation only — execution waits for BOT_AUTHORIZE.
+    expect(manager.hasBot("bot-1")).toBe(false);
+    await manager.authorizeStart(
+      ops,
+      "bot-1",
+      "user-1",
+      "strat-1",
+      "run-0",
+      1,
+      "corr-auth"
     );
     expect(manager.hasBot("bot-1")).toBe(true);
   });
@@ -397,6 +431,18 @@ describe("BotManager residual-capacity backstop (engine Model A gate)", () => {
       "strat-1",
       RUN_CONFIG,
       "corr-2"
+    );
+    // Preparation only — execution waits for BOT_AUTHORIZE. A legacy
+    // payload (no runs[]) keys the prepared run by the strategy id.
+    expect(manager.hasBot("bot-2")).toBe(false);
+    await manager.authorizeStart(
+      ops,
+      "bot-2",
+      "user-1",
+      "strat-1",
+      "strat-1",
+      1,
+      "corr-2-auth"
     );
     expect(manager.hasBot("bot-2")).toBe(true);
   });

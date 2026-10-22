@@ -20,7 +20,13 @@
  * UNKNOWN means the engine is unreachable / heartbeat lost (reserved for a later milestone).
  */
 export type BotActualState =
-  "STOPPED" | "STARTING" | "RUNNING" | "STOPPING" | "ERROR" | "UNKNOWN";
+  | "STOPPED"
+  | "STARTING"
+  | "RUNNING"
+  | "STOPPING"
+  | "ERROR"
+  | "UNKNOWN"
+  | "PREPARED";
 
 /**
  * Desired lifecycle state - what the backend/user wants.
@@ -34,6 +40,7 @@ export const BOT_ACTUAL_STATES: readonly BotActualState[] = [
   "STOPPING",
   "ERROR",
   "UNKNOWN",
+  "PREPARED",
 ];
 
 export const BOT_DESIRED_STATES: readonly BotDesiredState[] = [
@@ -65,7 +72,8 @@ export const VALID_TRANSITIONS: Record<
   readonly BotActualState[]
 > = {
   STOPPED: ["STARTING"],
-  STARTING: ["RUNNING", "STOPPED", "ERROR"],
+  STARTING: ["RUNNING", "PREPARED", "STOPPED", "ERROR"],
+  PREPARED: ["RUNNING", "STOPPED", "ERROR"],
   RUNNING: ["STOPPING", "ERROR", "UNKNOWN"],
   STOPPING: ["STOPPED", "ERROR"],
   // "STARTING" is the resume path: a bot parked UNKNOWN by a lost engine is

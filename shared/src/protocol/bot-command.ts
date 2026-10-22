@@ -40,7 +40,11 @@ export interface ProtocolMessage<T> {
 // ===========================================
 
 export type BotCommandType =
-  "BOT_START" | "BOT_STOP" | "BOT_STATUS_REQUEST" | "EMERGENCY_STOP";
+  | "BOT_START"
+  | "BOT_STOP"
+  | "BOT_STATUS_REQUEST"
+  | "EMERGENCY_STOP"
+  | "BOT_AUTHORIZE";
 
 /**
  * Emergency-stop venue cleanup scope. Every action stops the runner and
@@ -100,6 +104,14 @@ export interface StatusRequestCommandPayload {
   botId: string;
 }
 
+export interface AuthorizeBotCommandPayload {
+  botId: string;
+  userId: string;
+  strategyId: string;
+  runId: string;
+  preparationVersion: number;
+}
+
 export interface EmergencyStopCommandPayload {
   botId: string;
   action: EmergencyStopAction;
@@ -109,7 +121,8 @@ export type BotCommandPayload =
   | StartBotCommandPayload
   | StopBotCommandPayload
   | StatusRequestCommandPayload
-  | EmergencyStopCommandPayload;
+  | EmergencyStopCommandPayload
+  | AuthorizeBotCommandPayload;
 
 export type BotCommand = ProtocolMessage<BotCommandPayload>;
 
@@ -170,6 +183,7 @@ export function isBotCommand(obj: unknown): obj is BotCommand {
         "BOT_STOP",
         "BOT_STATUS_REQUEST",
         "EMERGENCY_STOP",
+        "BOT_AUTHORIZE",
       ] as string[]
     ).includes(obj.type)
   );
@@ -202,6 +216,22 @@ export function isStatusRequestCommand(
     isProtocolMessage(obj) &&
     obj.type === "BOT_STATUS_REQUEST" &&
     typeof (obj.payload as StatusRequestCommandPayload)?.botId === "string"
+  );
+}
+
+export function isBotAuthorizeCommand(
+  obj: unknown
+): obj is ProtocolMessage<AuthorizeBotCommandPayload> {
+  return (
+    isProtocolMessage(obj) &&
+    obj.type === "BOT_AUTHORIZE" &&
+    typeof (obj.payload as AuthorizeBotCommandPayload)?.botId === "string" &&
+    typeof (obj.payload as AuthorizeBotCommandPayload)?.runId === "string" &&
+    typeof (obj.payload as AuthorizeBotCommandPayload)?.userId === "string" &&
+    typeof (obj.payload as AuthorizeBotCommandPayload)?.strategyId ===
+      "string" &&
+    typeof (obj.payload as AuthorizeBotCommandPayload)?.preparationVersion ===
+      "number"
   );
 }
 

@@ -152,13 +152,34 @@ describe("BotManager.handleStart credential-contract slice (workstream A)", () =
     expect(fetchCredentialsMock).toHaveBeenCalledWith("bot-1", "corr-1");
     expect(createExchangeClientMock).toHaveBeenCalledWith(kodiak);
     expect(client.getTicker).toHaveBeenCalledWith("S");
-    expect(manager.hasBot("bot-1")).toBe(true);
-    expect(manager.getBotRuntimes().get("bot-1")?.exchangeClient).toBe(client);
+    // Pre-admission safety: BOT_START only PREPARES. The bot is not
+    // registered as RUNNING and no tick runner is armed until a matching
+    // BOT_AUTHORIZE arrives.
+    expect(manager.hasBot("bot-1")).toBe(false);
     expect(published.map(entry => entry.type)).toContain("STATE_CHANGED");
-    // No COMMAND_FAILED on the happy path.
+    // The preparation is reported so the backend can admit it.
+    const estimates = published.filter(
+      entry => entry.type === "ESTIMATE_READY"
+    );
+    expect(estimates).toHaveLength(1);
     expect(
       published.filter(entry => entry.type === "COMMAND_FAILED")
     ).toHaveLength(0);
+
+    // Only the matching authorization starts execution. A legacy payload
+    // (no runs[]) keys the prepared run by the strategy id.
+    await manager.authorizeStart(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ops as any,
+      "bot-1",
+      "user-1",
+      "strategy-1",
+      "strategy-1",
+      1,
+      "corr-auth"
+    );
+    expect(manager.hasBot("bot-1")).toBe(true);
+    expect(manager.getBotRuntimes().get("bot-1")?.exchangeClient).toBe(client);
   });
 
   it("fails cleanly (COMMAND_FAILED + STATE_CHANGED to ERROR) for a lighter envelope until workstream B", async () => {
@@ -301,9 +322,109 @@ describe("BotManager.handleStart credential-contract slice (workstream A)", () =
     // One credential fetch + one client for the whole session.
     expect(fetchCredentialsMock).toHaveBeenCalledTimes(1);
     expect(createExchangeClientMock).toHaveBeenCalledTimes(1);
-    const runtime = manager.getBotRuntimes().get("bot-1");
-    expect(runtime?.runs?.size).toBe(2);
-    expect(runtime?.exchangeClient).toBe(client);
+    // Preparation does not register a RUNNING runtime.
+    expect(manager.getBotRuntimes().get("bot-1")).toBeUndefined();
     expect(client.getTicker).toHaveBeenCalledTimes(2);
+  });
+
+  // Pre-admission safety: an authorization that does not match the prepared
+  // run must never start execution.
+  it("refuses an authorization that does not match the prepared run", async () => {
+    fetchCredentialsMock.mockResolvedValue({
+      exchange: "kodiak",
+      environment: "testnet",
+      accountRef: "0xabc",
+      credentials: {
+        accountId: "0xabc",
+        accessKey: "key",
+        secretKey: "secret",
+      },
+    });
+    const client = {
+      getTicker: jest.fn(async (symbol: string) => ({
+        symbol,
+        price: 100,
+        mark_price: 100,
+      })),
+      ...healthyVenueReads(),
+    };
+    createExchangeClientMock.mockReturnValue(client);
+
+    const manager = makeManager();
+    const { published, ops } = makeStreamOps();
+    await manager.handleStart(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ops as any,
+      "bot-1",
+      "user-1",
+      "strategy-1",
+      { symbol: "S" },
+      "corr-session",
+      [
+        {
+          runId: "run-1",
+          strategyId: "strategy-1",
+          configVersion: 1,
+          config: { symbol: "S" },
+          notionalAmount: 100,
+        },
+      ]
+    );
+
+    // A stale preparation version is refused — no execution.
+    await manager.authorizeStart(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ops as any,
+      "bot-1",
+      "user-1",
+      "strategy-1",
+      "run-1",
+      99,
+      "corr-stale"
+    );
+    expect(manager.hasBot("bot-1")).toBe(false);
+    expect(
+      published.filter(
+        entry =>
+          entry.type === "COMMAND_FAILED" &&
+          entry.payload.errorCode === "STALE_PREPARATION"
+      )
+    ).toHaveLength(1);
+
+    // The matching authorization starts execution.
+    await manager.authorizeStart(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ops as any,
+      "bot-1",
+      "user-1",
+      "strategy-1",
+      "run-1",
+      1,
+      "corr-good"
+    );
+    expect(manager.hasBot("bot-1")).toBe(true);
+  });
+
+  it("refuses an authorization when nothing was prepared", async () => {
+    const manager = makeManager();
+    const { published, ops } = makeStreamOps();
+    await manager.authorizeStart(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ops as any,
+      "bot-1",
+      "user-1",
+      "strategy-1",
+      "run-1",
+      1,
+      "corr-none"
+    );
+    expect(manager.hasBot("bot-1")).toBe(false);
+    expect(
+      published.filter(
+        entry =>
+          entry.type === "COMMAND_FAILED" &&
+          entry.payload.errorCode === "NOT_PREPARED"
+      )
+    ).toHaveLength(1);
   });
 });

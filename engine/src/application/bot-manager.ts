@@ -7,7 +7,12 @@
  * @format
  */
 
-import { BotActualState, EmergencyStopAction } from "@trade-bot/shared";
+import {
+  BotActualState,
+  BotEventPayload,
+  EmergencyStopAction,
+  EstimateReadyEventPayload,
+} from "@trade-bot/shared";
 import { GridTradingStrategy } from "../strategies/grid";
 import { createExchangeClient } from "../exchanges/factory";
 import { isEngineCredentials } from "@trade-bot/shared";
@@ -101,10 +106,45 @@ function accountIdentityOf(runtime: BotRuntime): string | undefined {
   return client.getAccountIdentity();
 }
 
+/**
+ * A grid strategy prepared for execution but awaiting authorization.
+ *
+ * No orders are placed and no tick loop runs while a run sits in this state —
+ * only a matching BOT_AUTHORIZE (same runId + preparationVersion) may start
+ * it. The engine reports the exposure figures; the backend is the authority
+ * that decides whether the run may trade.
+ */
+interface PreparedRun {
+  runId: string;
+  preparationVersion: number;
+  strategy: GridTradingStrategy;
+  exchangeClient: ExchangeClient;
+  tradeReporter: LedgerTradeReporter;
+  symbol: string;
+  gridSize: number;
+  orderQuantity: number;
+  priceUsed: number;
+  estimatedRestingNotional: number;
+  perOrderNotional: number;
+}
+
 export class BotManager {
   private bots: Map<string, BotRuntime> = new Map();
   private initializing: Set<string> = new Set();
   private stopRequested: Set<string> = new Set();
+  /**
+   * Prepared runs awaiting BOT_AUTHORIZE, keyed by botId. A run in this map
+   * has been initialized (grid built, exposure estimated) but NOT started: no
+   * orders placed, no tick runner armed. Execution begins only after a
+   * matching BOT_AUTHORIZE validates this exact preparation.
+   */
+  private prepared: Map<string, PreparedRun> = new Map();
+  /**
+   * Monotonic preparation version per bot. A BOT_AUTHORIZE carrying a stale
+   * version is rejected, so a valid authorization can never execute a
+   * superseded preparation.
+   */
+  private preparationVersions: Map<string, number> = new Map();
   private engineId: string;
   private epoch: number;
 
@@ -265,7 +305,10 @@ export class BotManager {
           notionalAmount: 0,
         },
       ];
-      await this.doStartSession(
+      // Preparation only: the engine resolves the config, prices the grid and
+      // reports the estimate (ESTIMATE_READY). It places NO orders and arms
+      // NO tick runner — execution waits for a matching BOT_AUTHORIZE.
+      await this.doPrepareSession(
         streamOps,
         botId,
         userId,
@@ -809,10 +852,16 @@ export class BotManager {
   }
 
   /**
-   * Core session initialization: ONE credential fetch + ONE exchange client,
-   * then one strategy + tick runner per run (D3, plan §D).
+   * Prepare a session: ONE credential fetch + ONE exchange client, then one
+   * grid initialization per run. NO orders are placed and NO tick runner is
+   * armed — execution only begins after BOT_AUTHORIZE.
+   *
+   * The returned figures are a REPORT, not a decision: the engine knows the
+   * resolved grid geometry and the live venue price, so it can price the
+   * worst-case resting exposure. The backend validates that report (provenance,
+   * freshness, config consistency) and is the authority that admits the run.
    */
-  private async doStartSession(
+  private async doPrepareSession(
     streamOps: RedisStreamOperations,
     botId: string,
     userId: string,
@@ -828,11 +877,8 @@ export class BotManager {
     }>,
     /** False only for legacy payloads (no runs[]) → no declared notional. */
     hasDeclaredNotional: boolean
-  ): Promise<void> {
-    const startedRunners: StrategyRunner[] = [];
-    const stopAllRunners = (): void => {
-      for (const r of startedRunners) r.stop();
-    };
+  ): Promise<PreparedRun[]> {
+    const preparedRuns: PreparedRun[] = [];
 
     try {
       await this.publishStateChanged(
@@ -859,14 +905,8 @@ export class BotManager {
       this.throwIfCancelled(botId);
 
       // 3. Residual-capacity backstop (defense in depth, Model A spirit):
-      // refuse to arm ANY run when the venue account has no residual room
-      // left for this session — `Σ|qty×mark| + Σnotional ≤ total_value ×
-      // SESSION_CAP_LEVERAGE`. Live reads through the session's own client
-      // make the engine independent of the backend admission path (which
-      // stays authoritative for attach concurrency and STOPPED stacks).
-      // Fail-closed by design: an unreadable account/positions, an unknown
-      // notional, or an invalid leverage env all land in the catch below →
-      // COMMAND_FAILED + STARTING→ERROR, with zero runners started.
+      // refuse to prepare ANY run when the venue account has no residual room
+      // left for this session. Fail-closed by design.
       await this.assertResidualCapacity(
         botId,
         exchangeClient,
@@ -875,19 +915,15 @@ export class BotManager {
       );
       this.throwIfCancelled(botId);
 
-      // 4. One strategy + runner per run, sharing the session client.
+      // 4. One strategy per run, sharing the session client. The grid is
+      //    built but NOT started — no orders placed, no tick runner armed.
       const tradeReporter = new LedgerTradeReporter(
         streamOps,
         this.engineId,
         this.epoch
       );
-      // F1: fills journaled during a Redis outage (or a previous crash
-      // mid-publish) are re-delivered before this session trades on. The
-      // backend dedups replays, so this is safe even if one already landed.
-      // Fail-closed gate: a session must NOT trade while fills are still
-      // undelivered — abort the start (retryable) so a quiet journal can
-      // never sit behind a live strategy. UNKNOWN integrity (files exist
-      // but nothing trustworthy recovered) also aborts: it is never "clean".
+      // F1: fills journaled during a Redis outage must be re-delivered before
+      // this session trades on.
       const replay = await tradeReporter.replayPendingFills();
       if (replay.unknown) {
         throw new CommandError(
@@ -901,18 +937,16 @@ export class BotManager {
           `Refusing to start: ${replay.remaining} fill(s) still pending ledger delivery (replayed ${replay.replayed}); retry after Redis recovers`
         );
       }
-      const runs = new Map<string, StrategyRunState>();
-      let primarySymbol = "";
-      let primaryStrategy: GridTradingStrategy | null = null;
-      let primaryStop: () => void = stopAllRunners;
+
+      // Bump the preparation version so a stale BOT_AUTHORIZE cannot execute
+      // a superseded preparation.
+      const preparationVersion = (this.preparationVersions.get(botId) ?? 0) + 1;
+      this.preparationVersions.set(botId, preparationVersion);
 
       for (const spec of runSpecs) {
         const runConfig = spec.config ?? config;
         // Phase 4: one boundary resolver — missing numerics keep historical
-        // defaults, but any explicitly invalid field refuses the start
-        // (non-retryable) instead of trading on a substituted guess. Symbol
-        // support stays the backend's venue-catalog gate; the engine checks
-        // non-empty only, since it is venue-agnostic by design.
+        // defaults, but any explicitly invalid field refuses the start.
         const gridConfig = resolveGridConfig(
           runConfig as Record<string, unknown>
         );
@@ -935,87 +969,75 @@ export class BotManager {
           tradeReporter,
           spec.runId
         );
-        // Co-tenancy (correction #1): the venue position is account × symbol,
-        // not bot-scoped. Tell the stop-loss machine whether another live engine
-        // bot trades this symbol, so CLEARED gates on this run's confirmed
-        // inventory only rather than waiting on a position a co-tenant owns.
+        // Co-tenancy: the venue position is account × symbol, not bot-scoped.
         const symbolShared = Array.from(this.bots.values()).some(
           other => other.botId !== botId && other.symbol === symbol
         );
-        // Guarded: some BotManager tests inject a mocked strategy without the
-        // method; the real strategy always has it.
         gridStrategy.setSymbolShared?.(symbolShared);
         await gridStrategy.initialize(currentPrice);
         this.throwIfCancelled(botId);
-        await gridStrategy.start();
-        this.throwIfCancelled(botId);
 
         const runKey = spec.runId ?? strategyId;
-        const runner = new StrategyRunner(
-          runKey,
-          TICK_INTERVAL_MS,
-          () => gridStrategy.tick(),
-          {
-            onError: error =>
-              logger.error("Strategy tick error", {
-                botId,
-                runId: spec.runId,
-                ledgerHalted: gridStrategy.isLedgerHalted(),
-                ledgerHaltReason: gridStrategy.ledgerHaltReasonText(),
-                error: error instanceof Error ? error.message : String(error),
-              }),
-            onSkip: () =>
-              logger.warn("Previous tick still running, skipping", {
-                botId,
-                runId: spec.runId,
-              }),
-          }
-        );
-        runner.start();
-        startedRunners.push(runner);
-        const stopRunner = (): void => runner.stop();
-        runs.set(runKey, {
+        preparedRuns.push({
           runId: runKey,
-          strategyId: spec.strategyId,
+          preparationVersion,
           strategy: gridStrategy,
-          stopTick: stopRunner,
+          exchangeClient,
+          tradeReporter,
+          symbol,
+          gridSize: gridConfig.gridSize,
+          orderQuantity: gridConfig.orderQuantity,
+          priceUsed: currentPrice,
+          // Report-only figures — the backend enforces.
+          estimatedRestingNotional: gridStrategy.estimatedRestingNotional,
+          perOrderNotional: gridConfig.orderQuantity * currentPrice,
         });
-        if (!primaryStrategy) {
-          primaryStrategy = gridStrategy;
-          primarySymbol = symbol;
-          primaryStop = stopRunner;
-        }
       }
 
-      if (!primaryStrategy) {
+      if (preparedRuns.length === 0) {
         throw new CommandError(false, "Session has no runs to start");
       }
 
-      // Register session (legacy single-strategy fields mirror the primary
-      // run so old readers keep working during the shim).
-      this.bots.set(botId, {
-        botId,
-        strategyId,
-        userId,
-        symbol: primarySymbol,
-        state: "RUNNING",
-        strategy: primaryStrategy,
-        stopTick: primaryStop,
-        exchangeClient,
-        runs,
-      });
+      // Remember the primary preparation so BOT_AUTHORIZE can find it.
+      this.prepared.set(botId, preparedRuns[0]);
 
+      // STARTING → PREPARED. Execution is NOT authorized yet.
       await this.publishStateChanged(
         streamOps,
         botId,
         "STARTING",
-        "RUNNING",
+        "PREPARED",
         correlationId,
-        `started (${runs.size} run${runs.size === 1 ? "" : "s"})`
+        `prepared (${preparedRuns.length} run${preparedRuns.length === 1 ? "" : "s"})`
       );
+
+      // Report the estimate to the backend for admission validation.
+      for (const pr of preparedRuns) {
+        const payload: BotEventPayload = {
+          botId,
+          engineId: this.engineId,
+          engineEpoch: this.epoch,
+          runId: pr.runId,
+          preparationVersion: pr.preparationVersion,
+          symbol: pr.symbol,
+          gridSize: pr.gridSize,
+          orderQuantity: pr.orderQuantity,
+          priceUsed: pr.priceUsed,
+          estimatedRestingNotional: pr.estimatedRestingNotional,
+          perOrderNotional: pr.perOrderNotional,
+        };
+        await publishEvent(
+          streamOps,
+          "ESTIMATE_READY",
+          payload as EstimateReadyEventPayload,
+          correlationId
+        );
+      }
+
+      return preparedRuns;
     } catch (error) {
-      stopAllRunners();
       this.bots.delete(botId);
+      this.prepared.delete(botId);
       const err = error instanceof Error ? error : new Error(String(error));
       await this.publishFailed(
         streamOps,
@@ -1036,6 +1058,144 @@ export class BotManager {
       const reported = new CommandError(false, err.message);
       reported.stack = err.stack ?? reported.stack;
       throw reported;
+    }
+  }
+
+  /**
+   * Authorize a prepared run to begin execution (BOT_AUTHORIZE).
+   *
+   * Fails closed unless a preparation exists that matches BOTH the runId and
+   * the preparationVersion — so an authorization can never execute a
+   * different strategy configuration than the one that was admitted, and a
+   * stale authorization can never execute a newer preparation.
+   */
+  async authorizeStart(
+    streamOps: RedisStreamOperations,
+    botId: string,
+    userId: string,
+    strategyId: string,
+    runId: string,
+    preparationVersion: number,
+    correlationId: string
+  ): Promise<void> {
+    const prepared = this.prepared.get(botId);
+    if (!prepared) {
+      logger.warn("BOT_AUTHORIZE with no prepared run", { botId, runId });
+      await this.publishFailed(
+        streamOps,
+        botId,
+        "BOT_AUTHORIZE",
+        "NOT_PREPARED",
+        `No prepared run for bot ${botId}`,
+        correlationId
+      );
+      return;
+    }
+
+    if (
+      prepared.runId !== runId ||
+      prepared.preparationVersion !== preparationVersion
+    ) {
+      logger.warn("BOT_AUTHORIZE does not match the prepared run", {
+        botId,
+        requestedRunId: runId,
+        preparedRunId: prepared.runId,
+        requestedVersion: preparationVersion,
+        preparedVersion: prepared.preparationVersion,
+      });
+      await this.publishFailed(
+        streamOps,
+        botId,
+        "BOT_AUTHORIZE",
+        "STALE_PREPARATION",
+        "Authorization does not match the current preparation",
+        correlationId
+      );
+      return;
+    }
+
+    // This preparation is consumed by this authorization.
+    this.prepared.delete(botId);
+
+    const startedRunners: StrategyRunner[] = [];
+    try {
+      // Execution begins HERE — start the strategy and arm the tick loop.
+      await prepared.strategy.start();
+
+      const runner = new StrategyRunner(
+        prepared.runId,
+        TICK_INTERVAL_MS,
+        () => prepared.strategy.tick(),
+        {
+          onError: error =>
+            logger.error("Strategy tick error", {
+              botId,
+              runId: prepared.runId,
+              ledgerHalted: prepared.strategy.isLedgerHalted(),
+              ledgerHaltReason: prepared.strategy.ledgerHaltReasonText(),
+              error: error instanceof Error ? error.message : String(error),
+            }),
+          onSkip: () =>
+            logger.warn("Previous tick still running, skipping", {
+              botId,
+              runId: prepared.runId,
+            }),
+        }
+      );
+      runner.start();
+      startedRunners.push(runner);
+
+      const stopRunner = (): void => runner.stop();
+      const runs = new Map<string, StrategyRunState>();
+      runs.set(prepared.runId, {
+        runId: prepared.runId,
+        strategyId,
+        strategy: prepared.strategy,
+        stopTick: stopRunner,
+      });
+
+      this.bots.set(botId, {
+        botId,
+        strategyId,
+        userId,
+        symbol: prepared.symbol,
+        state: "RUNNING",
+        strategy: prepared.strategy,
+        stopTick: stopRunner,
+        exchangeClient: prepared.exchangeClient,
+        runs,
+      });
+
+      // PREPARED → RUNNING — the engine now acknowledges execution.
+      await this.publishStateChanged(
+        streamOps,
+        botId,
+        "PREPARED",
+        "RUNNING",
+        correlationId,
+        `authorized and started (${runs.size} run)`
+      );
+    } catch (error) {
+      for (const r of startedRunners) r.stop();
+      this.bots.delete(botId);
+      const err = error instanceof Error ? error : new Error(String(error));
+      await this.publishFailed(
+        streamOps,
+        botId,
+        "BOT_AUTHORIZE",
+        "EXECUTION_FAILED",
+        err.message,
+        correlationId
+      );
+      await this.publishStateChanged(
+        streamOps,
+        botId,
+        "PREPARED",
+        "ERROR",
+        correlationId,
+        err.message
+      );
+      throw err;
     }
   }
 

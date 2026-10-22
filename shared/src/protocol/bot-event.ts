@@ -32,6 +32,7 @@ export type BotEventType =
   // Engine lifecycle events (registration / heartbeat) - see engine-lifecycle.ts
   | "ENGINE_REGISTER"
   | "ENGINE_HEARTBEAT"
+  | "ESTIMATE_READY"
   // Durable financial-state events (order/fill ledger) - see engine-ledger.ts
   | "ORDER_INTENT"
   | "TRADE_EXECUTED"
@@ -71,10 +72,25 @@ export interface StateChangedEventPayload {
   reason?: string;
 }
 
+export interface EstimateReadyEventPayload {
+  botId: string;
+  engineId: string;
+  engineEpoch: number;
+  runId: string;
+  preparationVersion: number;
+  symbol: string;
+  gridSize: number;
+  orderQuantity: number;
+  priceUsed: number;
+  estimatedRestingNotional: number;
+  perOrderNotional: number;
+}
+
 export type BotEventPayload =
   | CommandAcceptedEventPayload
   | CommandFailedEventPayload
   | StateChangedEventPayload
+  | EstimateReadyEventPayload
   | EngineLifecycleEventPayload
   | EngineLedgerEventPayload;
 
@@ -120,6 +136,7 @@ export function isBotEvent(obj: unknown): obj is BotEvent {
         "STATE_CHANGED",
         "ENGINE_REGISTER",
         "ENGINE_HEARTBEAT",
+        "ESTIMATE_READY",
         "ORDER_INTENT",
         "TRADE_EXECUTED",
         "POSITION_UPDATED",
@@ -156,5 +173,18 @@ export function isStateChangedEvent(
     isProtocolMessage(obj) &&
     obj.type === "STATE_CHANGED" &&
     typeof (obj.payload as StateChangedEventPayload)?.botId === "string"
+  );
+}
+
+export function isEstimateReadyEvent(
+  obj: unknown
+): obj is ProtocolMessage<EstimateReadyEventPayload> {
+  return (
+    isProtocolMessage(obj) &&
+    obj.type === "ESTIMATE_READY" &&
+    typeof (obj.payload as EstimateReadyEventPayload)?.botId === "string" &&
+    typeof (obj.payload as EstimateReadyEventPayload)?.runId === "string" &&
+    typeof (obj.payload as EstimateReadyEventPayload)?.preparationVersion ===
+      "number"
   );
 }

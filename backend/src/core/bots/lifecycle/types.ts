@@ -53,6 +53,11 @@ export const STATUS_BY_ACTUAL: Record<BotActualState, string> = {
   STOPPING: "STOPPING",
   ERROR: "ERROR",
   UNKNOWN: "ERROR",
+  // PREPARED = the engine priced the grid and reported its estimate; the
+  // backend has not admitted it yet, so it is NOT running. The legacy
+  // `status` column has no PREPARED value, so it maps to STARTING (the
+  // session is mid-startup and has not failed).
+  PREPARED: "STARTING",
 };
 
 export interface PersistTransitionInput {
