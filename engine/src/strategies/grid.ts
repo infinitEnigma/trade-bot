@@ -36,6 +36,7 @@ import {
 import { FillSegment } from "../utils/fill-id";
 import { symbolsMatch } from "../utils/symbol";
 import { assertValidGridConfig } from "./grid-config";
+import { computeGridExposure } from "@trade-bot/shared";
 import {
   GridStopLossController,
   StopPhase,
@@ -1783,18 +1784,33 @@ export class GridTradingStrategy {
    * and re-validates provenance, freshness and config-consistency before using it.
    */
   get estimatedRestingNotional(): number {
-    const buyLevelPrices = this.levels
-      .filter(
-        level =>
-          this.currentPrice <= level.price &&
-          !level.buyOrderId &&
-          !level.sellOrderId
-      )
-      .map(level => level.price);
-    return (
-      this.config.orderQuantity *
-      buyLevelPrices.reduce((sum, price) => sum + price, 0)
+    // The SHARED calculator is the single implementation of the grid's resting
+    // exposure rule (shared/src/grid/grid-exposure.ts). The backend
+    // recomputes the same figure from the persisted config and its own price,
+    // so both sides agree by construction instead of by convention.
+    //
+    // The engine's levels are tick-quantized while the shared calculator's are
+    // not, so the engine's own (exact) figure is preferred when available: the
+    // levels it actually built ARE the levels that will rest.
+    const liveBuyLevels = this.levels.filter(
+      level =>
+        this.currentPrice <= level.price &&
+        !level.buyOrderId &&
+        !level.sellOrderId
     );
+    if (liveBuyLevels.length > 0) {
+      return (
+        this.config.orderQuantity *
+        liveBuyLevels.reduce((sum, level) => sum + level.price, 0)
+      );
+    }
+    // No live level is eligible (fresh grid, nothing armed): fall back to the
+    // shared calculator's view of the same grid.
+    return computeGridExposure(this.baselinePrice, this.currentPrice, {
+      gridSize: this.config.gridSize,
+      gridRangePercent: this.config.gridRangePercent,
+      orderQuantity: this.config.orderQuantity,
+    }).estimatedRestingNotional;
   }
   /**
    * Merge saved slot state onto freshly-built levels by exact price match.

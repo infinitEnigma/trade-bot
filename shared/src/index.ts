@@ -293,6 +293,12 @@ export * from "./types/errors";
 export * from "./types/logging";
 
 // ============================================
+// Grid Exposure Calculator (engine reports it; backend enforces it)
+// ============================================
+
+export * from "./grid/grid-exposure";
+
+// ============================================
 // Bot Lifecycle Protocol (Backend ⇄ Engine)
 // ============================================
 
