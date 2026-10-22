@@ -22,20 +22,39 @@
  *
  * The policy is CONFIGURABLE and venue-agnostic: a symbol's cap is looked up
  * by the symbol the strategy stores, and an unmapped symbol falls back to the
- * default cap (fail-closed: an unknown symbol is not exempt).
+ * default cap.
+ *
+ * FAIL CLOSED WHEN UNCONFIGURED: this is a financial risk control, so a
+ * missing policy is NOT "no limit" — it is "cannot decide". An admission with
+ * no configured cap is REJECTED with `POLICY_NOT_CONFIGURED`. Shipping an
+ * effective default would turn an undocumented assumption into an operational
+ * policy, which is exactly how a 1-BTC order reaches the venue.
+ *
+ * Two DISTINCT controls, never conflated:
+ * - the per-order notional limit (this policy), and
+ * - the account-wide exposure cap (F1).
+ * Configuring one does not imply the other is configured or satisfied.
  */
 
 export interface SymbolNotionalPolicyLimits {
   /**
    * The cap applied to a symbol with no explicit entry, in USD.
-   * `null` means "no default cap" — the per-order check is skipped for
-   * unmapped symbols, which is NEVER the default (a missing cap must not
-   * silently disable the control).
+   * `null` means "no default cap" — such a symbol falls through to the
+   * UNCONFIGURED verdict below (fail closed), never to "allowed".
    */
   defaultMaxOrderNotional: number | null;
   /** Per-symbol caps in USD, keyed by the symbol the strategy stores. */
   maxOrderNotionalBySymbol: Record<string, number>;
 }
+
+/** Why an order was refused. */
+export type OrderNotionalRejection =
+  /** The order's notional exceeds the symbol's cap. */
+  | "CAP_EXCEEDED"
+  /** No cap is configured for this symbol — the control cannot decide. */
+  | "POLICY_NOT_CONFIGURED"
+  /** The order's notional is not a usable positive number. */
+  | "INVALID_NOTIONAL";
 
 /** The result of evaluating the policy against one order. */
 export interface OrderNotionalVerdict {
@@ -45,6 +64,8 @@ export interface OrderNotionalVerdict {
   limit: number | null;
   /** The order's notional. */
   notional: number;
+  /** Why the order was refused, when it was. */
+  rejection?: OrderNotionalRejection;
 }
 
 export interface ISymbolNotionalPolicy {
@@ -52,9 +73,9 @@ export interface ISymbolNotionalPolicy {
    * Evaluate ONE order's notional against the symbol's cap.
    *
    * A symbol with no configured cap falls back to `defaultMaxOrderNotional`.
-   * When NEITHER applies the verdict is "allowed" — but the default policy
-   * always configures a default cap, so that path is unreachable in
-   * production (it exists for tests that assert the fallback).
+   * When NEITHER applies the verdict is NOT allowed — it is
+   * `POLICY_NOT_CONFIGURED`, because an admission that cannot evaluate the
+   * control must not pass it.
    */
   evaluateOrder(symbol: string, orderNotional: number): OrderNotionalVerdict;
 
@@ -107,17 +128,32 @@ export function createSymbolNotionalPolicy(
     evaluateOrder(symbol, orderNotional) {
       const limit = limitFor(symbol);
       if (limit === null) {
-        return { allowed: true, limit: null, notional: orderNotional };
+        // No cap is configured for this symbol — the control cannot decide,
+        // so the order is NOT admitted. Fail closed.
+        return {
+          allowed: false,
+          limit: null,
+          notional: orderNotional,
+          rejection: "POLICY_NOT_CONFIGURED",
+        };
       }
       if (!Number.isFinite(orderNotional) || orderNotional <= 0) {
         // A non-positive order notional is a pricing defect, not a policy
         // decision — refuse it.
-        return { allowed: false, limit, notional: orderNotional };
+        return {
+          allowed: false,
+          limit,
+          notional: orderNotional,
+          rejection: "INVALID_NOTIONAL",
+        };
       }
       return {
         allowed: orderNotional <= limit,
         limit,
         notional: orderNotional,
+        ...(orderNotional <= limit
+          ? {}
+          : { rejection: "CAP_EXCEEDED" as const }),
       };
     },
   };

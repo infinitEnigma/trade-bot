@@ -45,6 +45,35 @@ export interface StrategyRunRow {
 /** Run states that occupy a strategy or count toward the session cap. */
 export const LIVE_RUN_STATES = ["STARTING", "RUNNING"] as const;
 
+/**
+ * Run states that count toward the account's PENDING exposure — the grain the
+ * F1 cap invariant is stated at.
+ *
+ * - STOPPED: a prepared-but-not-admitted run (requested, not yet reflected in
+ *   venue exposure).
+ * - STARTING: a run the engine is starting.
+ * - AUTHORIZATION_PENDING: a run the backend has ADMITTED (its
+ *   notional_amount is the backend's validated exposure) but whose execution
+ *   the engine has not yet acknowledged. It carries real exposure that the
+ *   venue positions do not yet reflect, so it MUST be counted — excluding it
+ *   would let two concurrent admissions each pass the cap against the same
+ *   remaining capacity.
+ *
+ * Live RUNNING runs are deliberately NOT here: their filled notional is already
+ * inside the venue exposure read.
+ */
+export const PENDING_EXPOSURE_RUN_STATES = [
+  "STOPPED",
+  "STARTING",
+  "AUTHORIZATION_PENDING",
+] as const;
+
+/**
+ * The state a run holds after the backend admitted it and before the engine
+ * acknowledged execution. It may not place orders.
+ */
+export const AUTHORIZATION_PENDING_RUN_STATE = "AUTHORIZATION_PENDING";
+
 /** Map actual_state to the legacy single `status` column. */
 export const STATUS_BY_ACTUAL: Record<BotActualState, string> = {
   STOPPED: "STOPPED",

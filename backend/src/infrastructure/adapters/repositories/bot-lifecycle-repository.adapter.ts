@@ -960,7 +960,11 @@ export class BotLifecycleRepositoryAdapter implements ILifecycleRepository {
    *   5. insert the STOPPED run.
    *
    * Live RUNNING runs are NOT in the pending sum — their filled notional is
-   * already inside `existingExposure` (venue positions). `cap` and
+   * already inside `existingExposure` (venue positions). An
+   * AUTHORIZATION_PENDING run IS in the pending sum: it has been admitted
+   * (its notional_amount is the backend's validated exposure) but the engine
+   * has not acknowledged execution yet, so its exposure is not yet reflected
+   * in the venue positions. `cap` and
    * `existingExposure` are resolved by the caller OUTSIDE this transaction (the
    * venue balance + positions calls must not hold a DB lock across network
    * I/O); only the pending sum is re-read authoritatively under the lock.
@@ -996,7 +1000,7 @@ export class BotLifecycleRepositoryAdapter implements ILifecycleRepository {
              FROM strategy_runs r
              JOIN bot_instances b ON r.bot_id = b.id
             WHERE b.exchange_account_id = $1
-              AND r.state IN ('STOPPED', 'STARTING')`,
+              AND r.state IN ('STOPPED', 'STARTING', 'AUTHORIZATION_PENDING')`,
       [exchangeAccountId]
     );
     const pendingSum = Number(sumResult.rows[0]?.total ?? 0);
@@ -1046,7 +1050,8 @@ export class BotLifecycleRepositoryAdapter implements ILifecycleRepository {
   }
 
   /**
-   * Σ notional of PENDING runs (STOPPED + STARTING) bound to an ACCOUNT —
+   * Σ notional of PENDING runs (STOPPED + STARTING + AUTHORIZATION_PENDING)
+   * bound to an ACCOUNT —
    * the grain the cap invariant is stated at. Runs are joined through
    * bot_instances.exchange_account_id so the sum captures every session's
    * pending runs on the account, not just one bot's. Live RUNNING runs are
@@ -1061,7 +1066,7 @@ export class BotLifecycleRepositoryAdapter implements ILifecycleRepository {
          FROM strategy_runs r
          JOIN bot_instances b ON r.bot_id = b.id
         WHERE b.exchange_account_id = $1
-          AND r.state IN ('STOPPED', 'STARTING')`,
+          AND r.state IN ('STOPPED', 'STARTING', 'AUTHORIZATION_PENDING')`,
       [exchangeAccountId]
     );
     return Number(result.rows[0]?.total ?? 0);

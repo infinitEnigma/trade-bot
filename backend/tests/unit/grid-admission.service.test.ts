@@ -291,9 +291,33 @@ describe("GridAdmissionService", () => {
     expect(result.maxOrderNotional).toBeCloseTo(102.5, 6);
   });
 
-  it("never lets a missing per-symbol cap disable the control", async () => {
+  it("refuses when the symbol's per-order cap is not configured (fail closed)", async () => {
     const { reader } = readerFor({ price: 100 });
-    // An unmapped symbol falls back to the DEFAULT cap, which is set.
+    // No default and no explicit entry: the control cannot judge the order,
+    // so the admission is REFUSED — never "allowed because unconfigured".
+    await expect(
+      service(reader, POLICY, {
+        defaultMaxOrderNotional: null,
+        maxOrderNotionalBySymbol: {},
+      }).admit(BTC_REQUEST, btcEstimate())
+    ).rejects.toMatchObject({ reason: "POLICY_NOT_CONFIGURED" });
+  });
+
+  it("refuses an unmapped symbol when only the default cap is absent", async () => {
+    const { reader } = readerFor({ price: 100 });
+    await expect(
+      service(reader, POLICY, {
+        defaultMaxOrderNotional: null,
+        maxOrderNotionalBySymbol: { BTC: 5_000 },
+      }).admit(
+        { ...BTC_REQUEST, symbol: "DOGE" },
+        btcEstimate({ symbol: "DOGE" })
+      )
+    ).rejects.toMatchObject({ reason: "POLICY_NOT_CONFIGURED" });
+  });
+
+  it("falls back to the default cap for an unmapped symbol when one is configured", async () => {
+    const { reader } = readerFor({ price: 100 });
     await expect(
       service(reader, POLICY, {
         defaultMaxOrderNotional: 50,
@@ -365,5 +389,25 @@ describe("createSymbolNotionalPolicy", () => {
     });
     expect(policy.evaluateOrder("BTC", 4999).allowed).toBe(true);
     expect(policy.evaluateOrder("BTC", 5001).allowed).toBe(false);
+  });
+
+  it("refuses (not allows) when no cap is configured for the symbol", () => {
+    const policy = createSymbolNotionalPolicy({
+      defaultMaxOrderNotional: null,
+      maxOrderNotionalBySymbol: { BTC: 5000 },
+    });
+    const verdict = policy.evaluateOrder("ETH", 100);
+    expect(verdict.allowed).toBe(false);
+    expect(verdict.rejection).toBe("POLICY_NOT_CONFIGURED");
+  });
+
+  it("reports an invalid order notional as its own rejection", () => {
+    const policy = createSymbolNotionalPolicy({
+      defaultMaxOrderNotional: 1000,
+      maxOrderNotionalBySymbol: { BTC: 5000 },
+    });
+    const verdict = policy.evaluateOrder("BTC", 0);
+    expect(verdict.allowed).toBe(false);
+    expect(verdict.rejection).toBe("INVALID_NOTIONAL");
   });
 });

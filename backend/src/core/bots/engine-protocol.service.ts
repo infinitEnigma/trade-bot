@@ -24,8 +24,14 @@ import {
   createBotCommand,
   isBotEvent,
   isEngineLedgerEventType,
+  isEstimateReadyEvent,
 } from "@trade-bot/shared";
 import { redisLogger as logger } from "../../core/logging/context-aware-logger.service";
+import {
+  EstimateWaiterRegistry,
+  type EstimateWaitKey,
+  type EstimateReadyPayload,
+} from "./lifecycle/estimate-waiter";
 
 // ===========================================
 // STREAM NAMES & CONSUMER GROUPS
@@ -203,6 +209,13 @@ export class EngineProtocolService {
   private processedMessageIds: Set<string> = new Set();
   /** Scope for the durable (Redis-backed) dedup markers. */
   private readonly dedupScope = "backend-engine-events";
+  /**
+   * Waiters for the engine's `ESTIMATE_READY` reports. The service owns the
+   * Redis Streams consumer, so it owns the correlation mechanism for a
+   * preparation request and its response — `BotLifecycleService` asks for a
+   * typed wait here rather than running a second event-correlation path.
+   */
+  private readonly estimateWaiters = new EstimateWaiterRegistry();
 
   constructor(deps: EngineProtocolServiceDependencies = {}) {
     this.deps = deps;
@@ -278,12 +291,41 @@ export class EngineProtocolService {
   }
 
   /**
+   * Wait for the engine's estimate for one prepared run.
+   *
+   * The caller MUST register the wait BEFORE publishing `BOT_START`: a fast
+   * engine response must not arrive before the waiter exists.
+   *
+   * A timeout is an UNKNOWN outcome — the returned promise rejects, and the
+   * caller must not authorize execution on it.
+   */
+  async waitForEstimate(
+    key: EstimateWaitKey,
+    timeoutMs: number
+  ): Promise<EstimateReadyPayload> {
+    return this.estimateWaiters.waitForEstimate(key, timeoutMs);
+  }
+
+  /**
+   * Abandon a pending estimate wait (publication failure, cancellation).
+   * The registry entry is removed so a late estimate cannot resolve it.
+   */
+  cancelEstimateWait(key: EstimateWaitKey, reason: string): void {
+    this.estimateWaiters.cancelWait(key, reason);
+  }
+
+  /**
    * Stop consuming engine events. In-flight messages are left unacked
    * and will be redelivered on the next start.
    */
   stop(): void {
     this.isListening = false;
     this.eventHandler = null;
+    // Pending waits are unknown outcomes once the consumer stops — reject them
+    // rather than leaving their callers hanging.
+    this.estimateWaiters.cancelAll(
+      "Engine protocol service stopped before the estimate arrived"
+    );
     logger.info("Engine protocol service stopped");
   }
 
@@ -480,6 +522,26 @@ export class EngineProtocolService {
     }
 
     try {
+      // A preparation estimate resolves its waiter BEFORE the lifecycle
+      // handler runs: the handler is what performs the admission, and it must
+      // not be able to lose the event it is waiting for.
+      if (isEstimateReadyEvent(data)) {
+        const delivered = this.estimateWaiters.deliverEstimate(
+          data.payload as EstimateReadyPayload
+        );
+        if (!delivered) {
+          // A LATE or SUPERSEDED estimate — the waiter already resolved or
+          // timed out. It must never authorize anything; the lifecycle
+          // handler still sees the event so it can record the outcome.
+          logger.warn("Estimate event did not resolve a waiter", {
+            streamId,
+            messageId: data.messageId,
+            botId: (data.payload as EstimateReadyPayload).botId,
+            runId: (data.payload as EstimateReadyPayload).runId,
+          });
+        }
+      }
+
       if (this.eventHandler) {
         await this.eventHandler(data);
       }

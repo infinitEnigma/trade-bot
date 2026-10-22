@@ -233,12 +233,24 @@ export class GridAdmissionService {
         request.symbol,
         level.orderNotional
       );
-      if (!verdict.allowed) {
+      if (verdict.allowed) continue;
+
+      if (verdict.rejection === "POLICY_NOT_CONFIGURED") {
         throw new GridAdmissionRejectedError(
-          "ORDER_NOTIONAL_CAP_EXCEEDED",
-          `Order at level ${level.index} (${level.price}) is $${level.orderNotional.toFixed(2)}, over the ${request.symbol} per-order cap of $${String(verdict.limit)}`
+          "POLICY_NOT_CONFIGURED",
+          `No per-order notional limit is configured for ${request.symbol} — refusing to admit a grid whose orders this control cannot judge. Configure the symbol's per-order limit before starting it.`
         );
       }
+      if (verdict.rejection === "INVALID_NOTIONAL") {
+        throw new GridAdmissionRejectedError(
+          "INVALID_ORDER_NOTIONAL",
+          `Order at level ${level.index} has a non-positive notional (${level.orderNotional}) — refusing to admit it`
+        );
+      }
+      throw new GridAdmissionRejectedError(
+        "ORDER_NOTIONAL_CAP_EXCEEDED",
+        `Order at level ${level.index} (${level.price}) is $${level.orderNotional.toFixed(2)}, over the ${request.symbol} per-order cap of $${String(verdict.limit)}`
+      );
     }
 
     return {
