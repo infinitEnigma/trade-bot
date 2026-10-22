@@ -289,4 +289,43 @@ describe("GridTradingStrategy order idempotency", () => {
     expect(snap?.botId).toBe("bot-1");
     expect(snap?.levels.length).toBeGreaterThan(0);
   });
+
+  describe("GridTradingStrategy.estimatedRestingNotional (diagnostic/reporting)", () => {
+    it("uses orderQuantity x SUM(buyLevelPrices) for a size-10 grid at baseline 100", async () => {
+      const config: GridStrategyConfig = {
+        symbol: "BTC",
+        gridSize: 10,
+        orderQuantity: 1,
+        gridRangePercent: 5,
+      };
+      const exchange = makeExchange();
+      const strategy = new GridTradingStrategy(
+        "bot-1",
+        config,
+        exchange as unknown as ExchangeClient
+      );
+      await strategy.initialize(100);
+      // 11 levels from 97.5 to 102.5; buys at levels >= baseline 100:
+      // 6 buy levels (100, 100.5, 101, 101.5, 102, 102.5); sum = 607.5
+      expect(strategy.estimatedRestingNotional).toBe(607.5);
+    });
+
+    it("for a size-2 grid equals orderQuantity x (levelAtBaseline + levelAboveBaseline)", async () => {
+      const config: GridStrategyConfig = {
+        symbol: "BTC",
+        gridSize: 2,
+        orderQuantity: 1,
+        gridRangePercent: 5,
+      };
+      const exchange = makeExchange();
+      const strategy = new GridTradingStrategy(
+        "bot-1",
+        config,
+        exchange as unknown as ExchangeClient
+      );
+      await strategy.initialize(100);
+      // levels [97.5, 100, 102.5]; buys at >= baseline => 100 + 102.5 = 202.5
+      expect(strategy.estimatedRestingNotional).toBe(202.5);
+    });
+  });
 });

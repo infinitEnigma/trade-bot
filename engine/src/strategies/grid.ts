@@ -1767,6 +1767,36 @@ export class GridTradingStrategy {
   }
 
   /**
+   * Est.&nbsp;&nbsp;Estimated resting buy-notional (diagnostic/reporting). Using the
+   * audited grid placement semantics: BUY levels are the levels the tick armings
+   * would arm at the current mark price (level price >= currentPrice, no side
+   * order live), each committing `orderQuantity` units at its level price.
+   *
+   * `estimatedRestingNotional = orderQuantity × Σ(buyLevelPrices)`.
+   *
+   * This is a *reporting* estimate only. The engine never enforces account-risk
+   * policy — it reports this figure through the start/admission protocol, and the
+   * backend validates it and passes the validated value into the existing F1
+   * aggregate admission gate as `notionalAmount`. The separate engine backstop
+   * (`assertEngineResidualCapacity`) is a defense-in-depth re-check, not the
+   * primary control. The backend consumes this via the START_STRATEGY command
+   * and re-validates provenance, freshness and config-consistency before using it.
+   */
+  get estimatedRestingNotional(): number {
+    const buyLevelPrices = this.levels
+      .filter(
+        level =>
+          this.currentPrice <= level.price &&
+          !level.buyOrderId &&
+          !level.sellOrderId
+      )
+      .map(level => level.price);
+    return (
+      this.config.orderQuantity *
+      buyLevelPrices.reduce((sum, price) => sum + price, 0)
+    );
+  }
+  /**
    * Merge saved slot state onto freshly-built levels by exact price match.
    * Saved buyOrderId/sellOrderId/filled are carried over only when the level
    * price still exists in the rebuilt grid (guards against config changes).
