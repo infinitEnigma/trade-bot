@@ -352,11 +352,14 @@ export class BotEventProcessor {
         "AUTHORIZATION_PENDING"
       );
       if (!moved) {
-        logger.warn("Authorized run did not transition from AUTHORIZATION_PENDING", {
-          botId: payload.botId,
-          runId: payload.runId,
-          correlationId: event.correlationId,
-        });
+        logger.warn(
+          "Authorized run did not transition from AUTHORIZATION_PENDING",
+          {
+            botId: payload.botId,
+            runId: payload.runId,
+            correlationId: event.correlationId,
+          }
+        );
       }
     }
 
