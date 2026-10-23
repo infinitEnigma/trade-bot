@@ -12,7 +12,7 @@ export default defineConfig(({ mode }) => ({
       { find: "@", replacement: path.resolve(__dirname, "./src") },
       {
         find: "@trade-bot/shared",
-        replacement: path.resolve(__dirname, "../shared/dist/index.js"),
+        replacement: path.resolve(__dirname, "../shared/src/index.ts"),
       },
     ],
   },
