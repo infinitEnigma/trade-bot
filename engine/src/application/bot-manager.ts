@@ -1082,7 +1082,7 @@ export class BotManager {
     runId: string,
     preparationVersion: number,
     correlationId: string
-  ): Promise<void> {
+  ): Promise<boolean> {
     const preparedRuns = this.prepared.get(botId);
     const prepared = preparedRuns?.get(runId);
     if (!prepared) {
@@ -1095,7 +1095,7 @@ export class BotManager {
         `No prepared run ${runId} for bot ${botId}`,
         correlationId
       );
-      return;
+      return false;
     }
 
     if (prepared.preparationVersion !== preparationVersion) {
@@ -1114,7 +1114,7 @@ export class BotManager {
         "Authorization does not match the current preparation",
         correlationId
       );
-      return;
+      return false;
     }
 
     // Consume only this run's preparation. Other runs in the same session
@@ -1195,6 +1195,7 @@ export class BotManager {
           "authorized and started (session run)"
         );
       }
+      return true;
     } catch (error) {
       for (const runner of startedRunners) runner.stop();
 
