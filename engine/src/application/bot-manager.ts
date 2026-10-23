@@ -117,6 +117,7 @@ function accountIdentityOf(runtime: BotRuntime): string | undefined {
 interface PreparedRun {
   runId: string;
   preparationVersion: number;
+  preparationCorrelationId: string;
   strategy: GridTradingStrategy;
   exchangeClient: ExchangeClient;
   tradeReporter: LedgerTradeReporter;
@@ -1017,6 +1018,7 @@ export class BotManager {
         preparedRuns.push({
           runId: runKey,
           preparationVersion,
+          preparationCorrelationId: correlationId,
           strategy: gridStrategy,
           exchangeClient,
           tradeReporter,
@@ -1115,6 +1117,7 @@ export class BotManager {
     strategyId: string,
     runId: string,
     preparationVersion: number,
+    preparationCorrelationId: string,
     correlationId: string
   ): Promise<boolean> {
     const preparedRuns = this.prepared.get(botId);
@@ -1124,7 +1127,10 @@ export class BotManager {
       // was durably published. Re-ack the same run/version without starting a
       // duplicate runner.
       const activeRun = this.bots.get(botId)?.runs?.get(runId);
-      if (activeRun?.preparationVersion === preparationVersion) {
+      if (
+        activeRun?.preparationVersion === preparationVersion &&
+        activeRun.preparationCorrelationId === preparationCorrelationId
+      ) {
         return true;
       }
       logger.warn("BOT_AUTHORIZE with no matching prepared run", { botId, runId });
@@ -1139,13 +1145,18 @@ export class BotManager {
       return false;
     }
 
-    if (prepared.preparationVersion !== preparationVersion) {
+    if (
+      prepared.preparationVersion !== preparationVersion ||
+      prepared.preparationCorrelationId !== preparationCorrelationId
+    ) {
       logger.warn("BOT_AUTHORIZE does not match the prepared run", {
         botId,
         requestedRunId: runId,
         preparedRunId: prepared.runId,
         requestedVersion: preparationVersion,
         preparedVersion: prepared.preparationVersion,
+        requestedPreparationCorrelationId: preparationCorrelationId,
+        preparedPreparationCorrelationId: prepared.preparationCorrelationId,
       });
       await this.publishFailed(
         streamOps,
@@ -1198,6 +1209,7 @@ export class BotManager {
         strategy: prepared.strategy,
         stopTick: stopRunner,
         preparationVersion: prepared.preparationVersion,
+        preparationCorrelationId: prepared.preparationCorrelationId,
       };
 
       if (existingRuntime) {
