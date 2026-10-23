@@ -56,7 +56,7 @@ describe("EstimateWaiterRegistry", () => {
     registries.push(registry);
     const wait = registry.waitForEstimate(KEY, 1000);
     
-    expect(registry.deliverEstimate(payload())).toBe(true);
+    expect(registry.deliverEstimate(payload(), "corr-1")).toBe(true);
     await expect(wait).resolves.toMatchObject({
       runId: "run-1",
       estimatedRestingNotional: 607.5,
@@ -67,7 +67,7 @@ describe("EstimateWaiterRegistry", () => {
     const registry = new EstimateWaiterRegistry();
     const wait = registry.waitForEstimate(KEY, 1000);
     expect(registry.pendingCount).toBe(1);
-    registry.deliverEstimate(payload());
+    registry.deliverEstimate(payload(), "corr-1");
     await wait;
     expect(registry.pendingCount).toBe(0);
   });
@@ -76,31 +76,47 @@ describe("EstimateWaiterRegistry", () => {
     const registry = new EstimateWaiterRegistry();
     const wait = registry.waitForEstimate(KEY, 1000);
 
-    expect(registry.deliverEstimate(payload({ runId: "run-2" }))).toBe(false);
+    expect(registry.deliverEstimate(payload({ runId: "run-2" }), "corr-1")).toBe(false);
     // The waiter is still pending — it was not resolved by the wrong event.
     expect(registry.pendingCount).toBe(1);
 
-    registry.deliverEstimate(payload());
+    registry.deliverEstimate(payload(), "corr-1");
     await expect(wait).resolves.toMatchObject({ runId: "run-1" });
   });
 
   it("ignores an estimate for another bot", async () => {
     const registry = new EstimateWaiterRegistry();
     const wait = registry.waitForEstimate(KEY, 1000);
-    expect(registry.deliverEstimate(payload({ botId: "bot-2" }))).toBe(false);
+    expect(registry.deliverEstimate(payload({ botId: "bot-2" }), "corr-1")).toBe(false);
     expect(registry.pendingCount).toBe(1);
-    registry.deliverEstimate(payload());
+    registry.deliverEstimate(payload(), "corr-1");
     await wait;
+  });
+
+  it("accepts the engine-assigned version when command correlation matches", async () => {
+    const registry = new EstimateWaiterRegistry();
+    const wait = registry.waitForEstimate(
+      { botId: "bot-1", runId: "run-1", correlationId: "corr-1" },
+      1000
+    );
+
+    expect(
+      registry.deliverEstimate(payload({ preparationVersion: 7 }), "corr-2")
+    ).toBe(false);
+    expect(
+      registry.deliverEstimate(payload({ preparationVersion: 7 }), "corr-1")
+    ).toBe(true);
+    await expect(wait).resolves.toMatchObject({ preparationVersion: 7 });
   });
 
   it("ignores a superseded preparation version", async () => {
     const registry = new EstimateWaiterRegistry();
     const wait = registry.waitForEstimate(KEY, 1000);
-    expect(registry.deliverEstimate(payload({ preparationVersion: 0 }))).toBe(
+    expect(registry.deliverEstimate(payload({ preparationVersion: 0 }), "corr-1")).toBe(
       false
     );
     expect(registry.pendingCount).toBe(1);
-    registry.deliverEstimate(payload());
+    registry.deliverEstimate(payload(), "corr-1");
     await wait;
   });
 
@@ -117,7 +133,7 @@ describe("EstimateWaiterRegistry", () => {
     await expect(wait).rejects.toBeInstanceOf(EstimateWaitTimeoutError);
 
     // A late estimate arrives after the timeout: it must resolve nothing.
-    expect(registry.deliverEstimate(payload())).toBe(false);
+    expect(registry.deliverEstimate(payload(), "corr-1")).toBe(false);
     expect(registry.pendingCount).toBe(0);
   });
 
@@ -127,7 +143,7 @@ describe("EstimateWaiterRegistry", () => {
     registry.cancelWait(KEY, "publication failed");
     await expect(wait).rejects.toThrow(/publication failed/);
     expect(registry.pendingCount).toBe(0);
-    expect(registry.deliverEstimate(payload())).toBe(false);
+    expect(registry.deliverEstimate(payload(), "corr-1")).toBe(false);
   });
 
   it("refuses a duplicate waiter for the same preparation", async () => {
@@ -150,11 +166,11 @@ describe("EstimateWaiterRegistry", () => {
     const second = registry.waitForEstimate({ ...KEY, runId: "run-2" }, 1000);
     expect(registry.pendingCount).toBe(2);
 
-    registry.deliverEstimate(payload({ runId: "run-2" }));
+    registry.deliverEstimate(payload({ runId: "run-2" }), "corr-1");
     await expect(second).resolves.toMatchObject({ runId: "run-2" });
     expect(registry.pendingCount).toBe(1);
 
-    registry.deliverEstimate(payload({ runId: "run-1" }));
+    registry.deliverEstimate(payload({ runId: "run-1" }), "corr-1");
     await expect(first).resolves.toMatchObject({ runId: "run-1" });
   });
 
