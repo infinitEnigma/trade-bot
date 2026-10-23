@@ -357,6 +357,40 @@ describe("BotManager residual-capacity backstop (engine Model A gate)", () => {
       event.payload.to === "RUNNING")).toHaveLength(1);
   });
 
+  it("discards prepared-only runs when the session is stopped before authorization", async () => {
+    const fake = makeFake(100000);
+    createExchangeClientMock.mockReturnValue(fake);
+
+    const manager = makeManager();
+    const { published, ops } = makeStreamOps();
+    await manager.handleStart(
+      ops,
+      "bot-1",
+      "user-1",
+      "strat-0",
+      RUN_CONFIG,
+      "corr-start",
+      runsOf(200, 300)
+    );
+
+    await manager.handleStop(ops, "bot-1", "corr-stop");
+
+    expect(manager.hasBot("bot-1")).toBe(false);
+    expect(
+      published.some(
+        event =>
+          event.type === "STATE_CHANGED" &&
+          event.payload.to === "STOPPED" &&
+          event.payload.reason === "preparation_cancelled"
+      )
+    ).toBe(true);
+    expect(
+      await manager.authorizeStart(
+        ops, "bot-1", "user-1", "strat-0", "run-0", 1, "corr-stale"
+      )
+    ).toBe(false);
+  });
+
   it("refuses when an open position carries an invalid mark price", async () => {
     const fake = makeFake(100000);
     fake.positions = [{ symbol: "ETH", position_qty: 1, mark_price: 0 }];
