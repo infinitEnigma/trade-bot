@@ -322,6 +322,7 @@ export class BotEventProcessor {
       commandType: string;
       engineId: string;
       engineEpoch?: number;
+      runId?: string;
     };
 
     if (!(await this.isAuthoritativeRuntimeEvent(event, payload))) {
@@ -339,6 +340,26 @@ export class BotEventProcessor {
       engineId: payload.engineId,
     });
     await this.repository.resolveCommand(event.correlationId, "ACCEPTED");
+
+    // BOT_AUTHORIZE acceptance is emitted only after the engine has started
+    // that exact run. Move its reserved notional out of the pending bucket;
+    // session-level STATE_CHANGED alone cannot identify later runs in a
+    // multi-run session.
+    if (payload.commandType === "BOT_AUTHORIZE" && payload.runId) {
+      const moved = await this.repository.setRunState(
+        payload.runId,
+        "RUNNING",
+        "AUTHORIZATION_PENDING"
+      );
+      if (!moved) {
+        logger.warn("Authorized run did not transition from AUTHORIZATION_PENDING", {
+          botId: payload.botId,
+          runId: payload.runId,
+          correlationId: event.correlationId,
+        });
+      }
+    }
+
     await this.repository.recordLifecycleEvent(payload.botId, {
       eventType: `${payload.commandType}_ACCEPTED`,
       fromState: null,
@@ -577,6 +598,21 @@ export class BotEventProcessor {
         }
       );
       return;
+    }
+
+    // A terminal session event ends live runners. PREPARING runs are safe
+    // to return to STOPPED because preparation is non-trading; retain
+    // AUTHORIZATION_PENDING reservations because publication/ack ambiguity
+    // must not silently release reserved exposure.
+    if (payload.to === "STOPPED" || payload.to === "ERROR") {
+      const runs = await this.repository.getRunsForBot(bot.id);
+      for (const run of runs) {
+        if (run.state === "RUNNING") {
+          await this.repository.setRunState(run.id, "STOPPED", "RUNNING");
+        } else if (run.state === "PREPARING") {
+          await this.repository.setRunState(run.id, "STOPPED", "PREPARING");
+        }
+      }
     }
 
     // Strategy badge (Phase 2, 022 shim-drop): keep strategies.active
