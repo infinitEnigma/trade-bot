@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import {
   extractFreshGridReferencePrice,
   GRID_REFERENCE_PRICE_MAX_AGE_MS,
-} from "../../../../features/strategies/utils/gridExposureEstimate";
+} from "../../../../../features/strategies/utils/gridExposureEstimate";
 
 const nowMs = 1_800_000_000_000;
 const freshResponse = (timestampMs: number, close: number = 100) => ({
