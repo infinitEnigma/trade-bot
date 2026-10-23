@@ -865,11 +865,10 @@ export class BotLifecycleService {
           );
         }
         const failure = new Error(
-          `The engine did not report all grid estimates: ${error instanceof Error ? error.message : String(error)}`
-        ) as Error & {
-          statusCode?: number;
-          code?: string;
-        };
+          `The engine did not report all grid estimates: ${
+            error instanceof Error ? error.message : String(error)
+          }`
+        ) as Error & { statusCode?: number; code?: string };
         failure.statusCode = 503;
         failure.code = "ESTIMATE_UNAVAILABLE";
         throw failure;
