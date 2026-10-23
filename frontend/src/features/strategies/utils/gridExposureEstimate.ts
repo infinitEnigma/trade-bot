@@ -61,27 +61,31 @@ export function extractFreshGridReferencePrice(
   if (!Array.isArray(times) || !Array.isArray(closes)) return null;
 
   let latest: { price: number; timestampMs: number } | null = null;
-  const count = Math.min(times.length, closes.length);
 
-  for (let i = 0; i < count; i += 1) {
+  // Select by timestamp first, then validate that candle's price. Never fall
+  // back to an older valid close if the newest candle is malformed.
+  for (let i = 0; i < times.length; i += 1) {
     const timestampSeconds = Number(times[i]);
-    const price = Number(closes[i]);
-    if (
-      !Number.isFinite(timestampSeconds) ||
-      timestampSeconds <= 0 ||
-      !Number.isFinite(price) ||
-      price <= 0
-    ) {
+    if (!Number.isFinite(timestampSeconds) || timestampSeconds <= 0) {
       continue;
     }
 
     const timestampMs = timestampSeconds * 1000;
     if (!latest || timestampMs > latest.timestampMs) {
-      latest = { price, timestampMs };
+      latest = {
+        price: i < closes.length ? Number(closes[i]) : Number.NaN,
+        timestampMs,
+      };
     }
   }
 
-  if (!latest) return null;
+  if (
+    !latest ||
+    !Number.isFinite(latest.price) ||
+    latest.price <= 0
+  ) {
+    return null;
+  }
   const ageMs = nowMs - latest.timestampMs;
   if (
     ageMs > GRID_REFERENCE_PRICE_MAX_AGE_MS ||
