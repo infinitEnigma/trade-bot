@@ -963,7 +963,8 @@ export class BotLifecycleService {
           userId,
           run.strategyId,
           run.runId,
-          run.estimate.preparationVersion
+          run.estimate.preparationVersion,
+          preparationCorrelationId
         );
         if (!authorize.success) {
           logger.error(
