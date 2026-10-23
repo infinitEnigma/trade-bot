@@ -7,11 +7,42 @@
  * dimmed, and the header states the true bot total.
  */
 
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import type { ReactNode } from "react";
 import type { BotInstance } from "../types/strategies.types";
 import { summarizeBotStates } from "../utils/summarizeBotStates";
 import { StrategyOverview } from "./StrategyOverview";
+
+vi.mock("../../../infrastructure/api", () => ({
+  tradingApi: { getStrategyPerformanceSummary: vi.fn() },
+}));
+
+const authState = { user: { id: "user-1", userLevel: "VERIFIED" } };
+vi.mock("../../../features/auth", () => ({
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  useAuth: () => authState as any,
+}));
+
+import { tradingApi } from "../../../infrastructure/api";
+
+let queryClient: QueryClient;
+const wrapper = ({ children }: { children: ReactNode }) => (
+  <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+);
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  authState.user = { id: "user-1", userLevel: "VERIFIED" };
+  queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  vi.mocked(tradingApi.getStrategyPerformanceSummary).mockResolvedValue({
+    success: true,
+    data: null,
+  } as never);
+});
 
 const bot = (overrides: Partial<BotInstance> = {}): BotInstance =>
   ({
@@ -95,24 +126,26 @@ describe("summarizeBotStates", () => {
 
 describe("StrategyOverview", () => {
   it("renders the header with the real bot total (pluralisation)", () => {
-    render(<StrategyOverview bots={[bot(), bot()]} />);
+    render(<StrategyOverview bots={[bot(), bot()]} />, { wrapper });
     expect(screen.getByText("Overview")).toBeDefined();
     expect(screen.getByText("2 bots total")).toBeDefined();
   });
 
   it("uses singular '1 bot total' for a single bot", () => {
-    render(<StrategyOverview bots={[bot({ status: "RUNNING" })]} />);
+    render(<StrategyOverview bots={[bot({ status: "RUNNING" })]} />, {
+      wrapper,
+    });
     expect(screen.getByText("1 bot total")).toBeDefined();
     expect(screen.getByText("Running")).toBeDefined();
   });
 
   it("shows a zero total with correct pluralisation when there are no bots", () => {
-    render(<StrategyOverview bots={[]} />);
+    render(<StrategyOverview bots={[]} />, { wrapper });
     expect(screen.getByText("0 bots total")).toBeDefined();
   });
 
   it("renders all four tile labels", () => {
-    render(<StrategyOverview bots={[]} />);
+    render(<StrategyOverview bots={[]} />, { wrapper });
     expect(screen.getByText("Running")).toBeDefined();
     expect(screen.getByText("Starting / stopping")).toBeDefined();
     expect(screen.getByText("Needs attention")).toBeDefined();
@@ -127,7 +160,8 @@ describe("StrategyOverview", () => {
           bot({ status: "RUNNING" }),
           bot({ status: "UNKNOWN" }),
         ]}
-      />
+      />,
+      { wrapper }
     );
     // Two running, one needs-attention, none stopped/transitional.
     expect(screen.getByText("Running")).toBeDefined();
