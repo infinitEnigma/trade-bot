@@ -246,10 +246,7 @@ export class BotLifecycleRepositoryAdapter implements ILifecycleRepository {
     if (expectedActualState) {
       params.push(expectedActualState);
     }
-    if (
-      input.actualState !== "ERROR" &&
-      input.actualState !== "UNKNOWN"
-    ) {
+    if (input.actualState !== "ERROR" && input.actualState !== "UNKNOWN") {
       const result = await query(sql, params);
       return (result.rowCount ?? 0) === 1;
     }
