@@ -330,7 +330,8 @@ export class BotLifecycleService {
         correlationId: null,
         messageId: null,
         metadata: { userId },
-      }
+      },
+      this.gridAdmission !== undefined
     );
     if (startTransition.unresolvedExposureId) {
       const error = new Error(
@@ -378,9 +379,13 @@ export class BotLifecycleService {
           bot.exchange_account_id ?? ""
         );
       } catch (error) {
-        // The preparation or admission failed. The run stays non-tradable:
-        // roll the session back to STOPPED so it is not stuck in STARTING, and
-        // record why.
+        // The preparation or admission failed. Runs that never acquired an
+        // exposure reservation can return to STOPPED; AUTHORIZATION_PENDING
+        // runs are retained for reconciliation because they already reserve
+        // notional.
+        for (const run of bootRuns) {
+          await this.repository.setRunState(run.id, "STOPPED", "PREPARING");
+        }
         await this.repository.persistTransition(
           botId,
           { desiredState: "STOPPED", actualState: "STOPPED" },
