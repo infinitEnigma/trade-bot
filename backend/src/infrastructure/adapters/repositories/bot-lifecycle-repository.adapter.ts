@@ -246,21 +246,37 @@ export class BotLifecycleRepositoryAdapter implements ILifecycleRepository {
     if (expectedActualState) {
       params.push(expectedActualState);
     }
+    if (input.actualState !== "ERROR") {
+      const result = await query(sql, params);
+      return (result.rowCount ?? 0) === 1;
+    }
+
+    // ERROR also terminates run rows. Preserve the account -> bot -> run lock
+    // order used by admission and stop transactions to avoid deadlocks.
     return transaction(async client => {
+      const binding = await client.query<{
+        exchange_account_id: string | null;
+      }>("SELECT exchange_account_id FROM bot_instances WHERE id = $1", [botId]);
+      const exchangeAccountId = binding.rows[0]?.exchange_account_id;
+      if (exchangeAccountId) {
+        await client.query(
+          "SELECT id FROM exchange_accounts WHERE id = $1 FOR UPDATE",
+          [exchangeAccountId]
+        );
+      }
+
       const result = await client.query(sql, params);
       if ((result.rowCount ?? 0) !== 1) return false;
 
-      if (input.actualState === "ERROR") {
-        // ERROR terminates active runners, but retains admitted reservations
-        // until they are explicitly reconciled. PREPARING is non-trading and
-        // can safely return to STOPPED.
-        await client.query(
-          `UPDATE strategy_runs
-              SET state = 'STOPPED', updated_at = CURRENT_TIMESTAMP
-            WHERE bot_id = $1 AND state IN ('RUNNING', 'PREPARING')`,
-          [botId]
-        );
-      }
+      // ERROR terminates active runners, but retains admitted reservations
+      // until they are explicitly reconciled. PREPARING is non-trading and
+      // can safely return to STOPPED.
+      await client.query(
+        `UPDATE strategy_runs
+            SET state = 'STOPPED', updated_at = CURRENT_TIMESTAMP
+          WHERE bot_id = $1 AND state IN ('RUNNING', 'PREPARING')`,
+        [botId]
+      );
       return true;
     });
   }
