@@ -63,9 +63,7 @@ function keyOf(key: EstimateWaitKey): string {
   return [
     key.botId,
     key.runId,
-    key.preparationVersion === undefined
-      ? "*"
-      : String(key.preparationVersion),
+    key.preparationVersion === undefined ? "*" : String(key.preparationVersion),
     key.correlationId,
   ].join("|");
 }
