@@ -1039,7 +1039,9 @@ export class BotManager {
       // Remember the primary preparation so BOT_AUTHORIZE can find it.
       this.prepared.set(
         botId,
-        new Map(preparedRuns.map(prepared => [prepared.runId, prepared]))
+        new Map(
+          preparedRuns.map(prepared => [prepared.runId, prepared] as const)
+        )
       );
 
       // STARTING → PREPARED. Execution is NOT authorized yet.
