@@ -79,18 +79,11 @@ export function extractFreshGridReferencePrice(
     }
   }
 
-  if (
-    !latest ||
-    !Number.isFinite(latest.price) ||
-    latest.price <= 0
-  ) {
+  if (!latest || !Number.isFinite(latest.price) || latest.price <= 0) {
     return null;
   }
   const ageMs = nowMs - latest.timestampMs;
-  if (
-    ageMs > GRID_REFERENCE_PRICE_MAX_AGE_MS ||
-    ageMs < -60_000
-  ) {
+  if (ageMs > GRID_REFERENCE_PRICE_MAX_AGE_MS || ageMs < -60_000) {
     return null;
   }
 
