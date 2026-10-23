@@ -185,11 +185,13 @@ describe("BotManager residual-capacity backstop (engine Model A gate)", () => {
     expect(gridConstructMock).toHaveBeenCalledTimes(2);
 
     // The matching authorization starts execution.
+    // run-0 was prepared with strat-0 — authorizing with strat-0 keeps the
+    // stale-preparation correlation/version/strategy check green.
     await manager.authorizeStart(
       ops,
       "bot-1",
       "user-1",
-      "strat-1",
+      "strat-0",
       "run-0",
       1,
       "corr-1",
@@ -312,7 +314,7 @@ describe("BotManager residual-capacity backstop (engine Model A gate)", () => {
       ops,
       "bot-1",
       "user-1",
-      "strat-1",
+      "strat-0",
       "run-0",
       1,
       "corr-1",
