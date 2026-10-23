@@ -338,32 +338,59 @@ describe("BotManager residual-capacity backstop (engine Model A gate)", () => {
     );
 
     expect(manager.hasBot("bot-1")).toBe(false);
-    const estimates = published.filter(event => event.type === "ESTIMATE_READY");
+    const estimates = published.filter(
+      event => event.type === "ESTIMATE_READY"
+    );
     expect(estimates).toHaveLength(2);
 
     expect(
       await manager.authorizeStart(
-        ops, "bot-1", "user-1", "strat-0", "run-0", 1, "corr-start", "corr-auth-0"
+        ops,
+        "bot-1",
+        "user-1",
+        "strat-0",
+        "run-0",
+        1,
+        "corr-start",
+        "corr-auth-0"
       )
     ).toBe(true);
     expect(
       await manager.authorizeStart(
-        ops, "bot-1", "user-1", "strat-0", "run-0", 1, "corr-start", "corr-auth-0-retry"
+        ops,
+        "bot-1",
+        "user-1",
+        "strat-0",
+        "run-0",
+        1,
+        "corr-start",
+        "corr-auth-0-retry"
       )
     ).toBe(true);
     expect(manager.getBotRuntimes().get("bot-1")?.runs?.size).toBe(1);
 
     expect(
       await manager.authorizeStart(
-        ops, "bot-1", "user-1", "strat-1", "run-1", 1, "corr-start", "corr-auth-1"
+        ops,
+        "bot-1",
+        "user-1",
+        "strat-1",
+        "run-1",
+        1,
+        "corr-start",
+        "corr-auth-1"
       )
     ).toBe(true);
 
     const runtime = manager.getBotRuntimes().get("bot-1");
     expect(runtime?.runs?.size).toBe(2);
     expect(Array.from(runtime?.runs?.keys() ?? [])).toEqual(["run-0", "run-1"]);
-    expect(published.filter(event => event.type === "STATE_CHANGED" &&
-      event.payload.to === "RUNNING")).toHaveLength(1);
+    expect(
+      published.filter(
+        event =>
+          event.type === "STATE_CHANGED" && event.payload.to === "RUNNING"
+      )
+    ).toHaveLength(1);
   });
 
   it("discards prepared-only runs when the session is stopped before authorization", async () => {
@@ -395,7 +422,14 @@ describe("BotManager residual-capacity backstop (engine Model A gate)", () => {
     ).toBe(true);
     expect(
       await manager.authorizeStart(
-        ops, "bot-1", "user-1", "strat-0", "run-0", 1, "corr-start", "corr-stale"
+        ops,
+        "bot-1",
+        "user-1",
+        "strat-0",
+        "run-0",
+        1,
+        "corr-start",
+        "corr-stale"
       )
     ).toBe(false);
   });
