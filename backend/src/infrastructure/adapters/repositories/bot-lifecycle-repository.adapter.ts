@@ -246,13 +246,17 @@ export class BotLifecycleRepositoryAdapter implements ILifecycleRepository {
     if (expectedActualState) {
       params.push(expectedActualState);
     }
-    if (input.actualState !== "ERROR") {
+    if (
+      input.actualState !== "ERROR" &&
+      input.actualState !== "UNKNOWN"
+    ) {
       const result = await query(sql, params);
       return (result.rowCount ?? 0) === 1;
     }
 
-    // ERROR also terminates run rows. Preserve the account -> bot -> run lock
-    // order used by admission and stop transactions to avoid deadlocks.
+    // ERROR/UNKNOWN also affect run reservations. Preserve the account -> bot
+    // -> run lock order used by admission and stop transactions to avoid
+    // deadlocks.
     return transaction(async client => {
       const binding = await client.query<{
         exchange_account_id: string | null;
@@ -270,15 +274,26 @@ export class BotLifecycleRepositoryAdapter implements ILifecycleRepository {
       const result = await client.query(sql, params);
       if ((result.rowCount ?? 0) !== 1) return false;
 
-      // ERROR terminates active runners, but retains admitted reservations
-      // until they are explicitly reconciled. PREPARING is non-trading and
-      // can safely return to STOPPED.
-      await client.query(
-        `UPDATE strategy_runs
-            SET state = 'STOPPED', updated_at = CURRENT_TIMESTAMP
-          WHERE bot_id = $1 AND state IN ('RUNNING', 'PREPARING')`,
-        [botId]
-      );
+      if (input.actualState === "UNKNOWN") {
+        // Engine authority was lost while the run was live. Keep its notional
+        // reserved and prevent an automatic restart until reconciliation.
+        await client.query(
+          `UPDATE strategy_runs
+              SET state = 'AUTHORIZATION_PENDING', updated_at = CURRENT_TIMESTAMP
+            WHERE bot_id = $1 AND state = 'RUNNING'`,
+          [botId]
+        );
+      } else {
+        // ERROR terminates active runners. Keep admitted reservations until
+        // they are explicitly reconciled; PREPARING is non-trading and can
+        // safely return to STOPPED.
+        await client.query(
+          `UPDATE strategy_runs
+              SET state = 'STOPPED', updated_at = CURRENT_TIMESTAMP
+            WHERE bot_id = $1 AND state IN ('RUNNING', 'PREPARING')`,
+          [botId]
+        );
+      }
       return true;
     });
   }
