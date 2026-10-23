@@ -966,6 +966,7 @@ export class BotLifecycleService {
           error.code = "AUTHORIZATION_FAILED";
           throw error;
         }
+      }
     } catch (error) {
       try {
         await this.dispatcher.sendStopCommand(botId);
