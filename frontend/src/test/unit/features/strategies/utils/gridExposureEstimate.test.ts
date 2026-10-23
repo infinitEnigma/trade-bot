@@ -70,7 +70,7 @@ describe("extractFreshGridReferencePrice", () => {
     ).toBeNull();
   });
 
-  it("uses the newest timestamp and does not fall back to an older candle", () => {
+  it("does not fall back when the newest candle has an invalid close", () => {
     expect(
       extractFreshGridReferencePrice(
         {
@@ -78,12 +78,10 @@ describe("extractFreshGridReferencePrice", () => {
           freshness: { isStale: false },
           data: {
             t: [
-              Math.floor(
-                (nowMs - GRID_REFERENCE_PRICE_MAX_AGE_MS - 10_000) / 1000
-              ),
+              Math.floor((nowMs - 20_000) / 1000),
               Math.floor((nowMs - 10_000) / 1000),
             ],
-            c: [101, 99],
+            c: [101, 0],
           },
         },
         nowMs
