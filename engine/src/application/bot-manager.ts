@@ -1295,7 +1295,9 @@ export class BotManager {
         correlationId,
         err.message
       );
-      throw err;
+      // The failure has been reported durably. Return false so the command
+      // consumer ACKs it instead of retrying a preparation we just discarded.
+      return false;
     }
   }
 
