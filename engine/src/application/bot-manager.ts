@@ -1231,7 +1231,7 @@ export class BotManager {
               "Failed to stop a run after authorization failure",
               stopError as Error,
               {
-              botId,
+                botId,
                 runId: activeRun.runId,
               }
             );
