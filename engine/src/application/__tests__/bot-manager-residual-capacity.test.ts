@@ -319,6 +319,44 @@ describe("BotManager residual-capacity backstop (engine Model A gate)", () => {
     expect(manager.hasBot("bot-1")).toBe(true);
   });
 
+  it("authorizes every prepared run in a multi-run session independently", async () => {
+    const fake = makeFake(100000);
+    createExchangeClientMock.mockReturnValue(fake);
+
+    const manager = makeManager();
+    const { published, ops } = makeStreamOps();
+    await manager.handleStart(
+      ops,
+      "bot-1",
+      "user-1",
+      "strat-0",
+      RUN_CONFIG,
+      "corr-start",
+      runsOf(200, 300)
+    );
+
+    expect(manager.hasBot("bot-1")).toBe(false);
+    const estimates = published.filter(event => event.type === "ESTIMATE_READY");
+    expect(estimates).toHaveLength(2);
+
+    expect(
+      await manager.authorizeStart(
+        ops, "bot-1", "user-1", "strat-0", "run-0", 1, "corr-auth-0"
+      )
+    ).toBe(true);
+    expect(
+      await manager.authorizeStart(
+        ops, "bot-1", "user-1", "strat-1", "run-1", 1, "corr-auth-1"
+      )
+    ).toBe(true);
+
+    const runtime = manager.getBotRuntimes().get("bot-1");
+    expect(runtime?.runs?.size).toBe(2);
+    expect(Array.from(runtime?.runs?.keys() ?? [])).toEqual(["run-0", "run-1"]);
+    expect(published.filter(event => event.type === "STATE_CHANGED" &&
+      event.payload.to === "RUNNING")).toHaveLength(1);
+  });
+
   it("refuses when an open position carries an invalid mark price", async () => {
     const fake = makeFake(100000);
     fake.positions = [{ symbol: "ETH", position_qty: 1, mark_price: 0 }];
