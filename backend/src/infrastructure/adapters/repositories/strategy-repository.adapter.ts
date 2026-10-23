@@ -386,7 +386,7 @@ export class StrategyRepositoryAdapter implements IStrategyRepository {
            s.id                              AS strategy_id,
            COUNT(f.*)                        AS total_fills,
            COUNT(f.pnl)                      AS known_pnl_fills,
-           COUNT(*) FILTER (WHERE f.pnl IS NULL) AS unknown_pnl_fills,
+           COUNT(f.id) FILTER (WHERE f.pnl IS NULL) AS unknown_pnl_fills,
            COALESCE(SUM(f.pnl), 0)           AS realized_pnl,
            COUNT(*) FILTER (WHERE f.pnl > 0) AS winning_fills,
            COUNT(*) FILTER (WHERE f.pnl < 0) AS losing_fills,
@@ -394,7 +394,7 @@ export class StrategyRepositoryAdapter implements IStrategyRepository {
            MIN(f.pnl)                        AS worst_fill,
            COALESCE(SUM(f.fee), 0)           AS total_fees,
            COUNT(f.fee)                      AS known_fee_fills,
-           COUNT(*) FILTER (WHERE f.fee IS NULL) AS unknown_fee_fills,
+           COUNT(f.id) FILTER (WHERE f.fee IS NULL) AS unknown_fee_fills,
            MIN(f.executed_at)                AS first_fill_at,
            MAX(f.executed_at)                AS last_fill_at
          FROM strategies s
