@@ -34,7 +34,7 @@ import { contextLogger as logger } from "../../logging/context-aware-logger.serv
 export interface EstimateWaitKey {
   botId: string;
   runId: string;
-  preparationVersion: number;
+  preparationVersion?: number;
   correlationId: string;
 }
 
@@ -62,7 +62,7 @@ function keyOf(key: EstimateWaitKey): string {
   return [
     key.botId,
     key.runId,
-    String(key.preparationVersion),
+    key.preparationVersion === undefined ? "*" : String(key.preparationVersion),
     key.correlationId,
   ].join("|");
 }
@@ -71,7 +71,7 @@ function keyOf(key: EstimateWaitKey): string {
 export class EstimateWaitTimeoutError extends Error {
   constructor(key: EstimateWaitKey, timeoutMs: number) {
     super(
-      `Timed out after ${timeoutMs}ms waiting for the engine's estimate for run ${key.runId} (preparation ${key.preparationVersion})`
+      `Timed out after ${timeoutMs}ms waiting for the engine's estimate for run ${key.runId} (preparation ${key.preparationVersion ?? "not yet known"})`
     );
     this.name = "EstimateWaitTimeoutError";
   }
@@ -118,20 +118,17 @@ export class EstimateWaiterRegistry {
    * timed out) or one for a superseded preparation. Such an event is ignored:
    * it must never authorize anything.
    */
-  deliverEstimate(payload: EstimateReadyPayload): boolean {
-    // Try the exact key first.
-    const exactId = keyOf({
-      botId: payload.botId,
-      runId: payload.runId,
-      preparationVersion: payload.preparationVersion,
-      // The correlation id is not part of the payload, so match on the rest.
-      correlationId: "",
-    });
+  deliverEstimate(
+    payload: EstimateReadyPayload,
+    correlationId: string
+  ): boolean {
     for (const [id, waiter] of this.waiters) {
       if (
         waiter.key.botId !== payload.botId ||
         waiter.key.runId !== payload.runId ||
-        waiter.key.preparationVersion !== payload.preparationVersion
+        waiter.key.correlationId !== correlationId ||
+        (waiter.key.preparationVersion !== undefined &&
+          waiter.key.preparationVersion !== payload.preparationVersion)
       ) {
         continue;
       }
@@ -144,8 +141,8 @@ export class EstimateWaiterRegistry {
       botId: payload.botId,
       runId: payload.runId,
       preparationVersion: payload.preparationVersion,
+      correlationId,
     });
-    void exactId;
     return false;
   }
 
