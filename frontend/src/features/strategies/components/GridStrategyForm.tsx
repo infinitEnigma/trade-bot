@@ -857,7 +857,6 @@ function readErrorMessage(error: unknown, fallback: string): string {
   return fallback;
 }
 
-
 /** Format USD estimates without implying precision beyond the source data. */
 function formatUsd(value: number, maximumFractionDigits = 2): string {
   return new Intl.NumberFormat("en-US", {
