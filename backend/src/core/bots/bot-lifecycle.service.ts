@@ -386,21 +386,31 @@ export class BotLifecycleService {
         for (const run of bootRuns) {
           await this.repository.setRunState(run.id, "STOPPED", "PREPARING");
         }
-        await this.repository.persistTransition(
-          botId,
-          { desiredState: "STOPPED", actualState: "STOPPED" },
-          nextState
-        );
-        await this.repository.recordLifecycleEvent(botId, {
-          eventType: "START_FAILED",
-          fromState: nextState,
-          toState: "STOPPED",
-          correlationId: null,
-          messageId: null,
-          metadata: {
-            reason: error instanceof Error ? error.message : String(error),
-          },
-        });
+        // The engine emits PREPARED before estimates, so the session may
+        // already have advanced beyond STARTING when admission fails. Re-read
+        // and CAS from the state that actually persisted; never leave a
+        // prepared-but-non-trading session stranded in PREPARED.
+        const currentBot = await this.repository.findBot(botId);
+        const currentState = currentBot?.actual_state;
+        if (currentState === nextState || currentState === "PREPARED") {
+          const reset = await this.repository.persistTransition(
+            botId,
+            { desiredState: "STOPPED", actualState: "STOPPED" },
+            currentState
+          );
+          if (reset) {
+            await this.repository.recordLifecycleEvent(botId, {
+              eventType: "START_FAILED",
+              fromState: currentState,
+              toState: "STOPPED",
+              correlationId: null,
+              messageId: null,
+              metadata: {
+                reason: error instanceof Error ? error.message : String(error),
+              },
+            });
+          }
+        }
         throw error;
       }
     } else {
