@@ -1105,10 +1105,10 @@ export class BotManager {
   /**
    * Authorize a prepared run to begin execution (BOT_AUTHORIZE).
    *
-   * Fails closed unless a preparation exists that matches BOTH the runId and
-   * the preparationVersion — so an authorization can never execute a
-   * different strategy configuration than the one that was admitted, and a
-   * stale authorization can never execute a newer preparation.
+   * Fails closed unless the prepared run, engine-assigned version, and
+   * originating BOT_START correlation all match. The correlation also
+   * prevents an old authorization from matching a reset version after an
+   * engine process restart.
    */
   async authorizeStart(
     streamOps: RedisStreamOperations,
