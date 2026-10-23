@@ -52,16 +52,19 @@ describe("command-consumer processMessage", () => {
     handleStart: jest.Mock;
     handleStop: jest.Mock;
     handleEmergencyStop: jest.Mock;
+    authorizeStart: jest.Mock;
   } {
     const publishAccepted = jest.fn().mockResolvedValue(undefined);
     const handleStart = jest.fn().mockResolvedValue(undefined);
     const handleStop = jest.fn().mockResolvedValue(undefined);
     const handleEmergencyStop = jest.fn().mockResolvedValue(undefined);
+    const authorizeStart = jest.fn().mockResolvedValue(true);
     const manager = {
       publishAccepted,
       handleStart,
       handleStop,
       handleEmergencyStop,
+      authorizeStart,
     };
     return {
       manager: manager as unknown as BotManager,
@@ -69,12 +72,64 @@ describe("command-consumer processMessage", () => {
       handleStart,
       handleStop,
       handleEmergencyStop,
+      authorizeStart,
     };
   }
 
   function msg(id: string, data: unknown): StreamMessage {
     return { id, data: data as StreamMessage["data"] };
   }
+
+  it("acknowledges BOT_AUTHORIZE only after the engine starts the matching run", async () => {
+    const { acks, ops } = makeStreamOps();
+    const { manager, publishAccepted, authorizeStart } = makeManager();
+    const command = createBotCommand(
+      "BOT_AUTHORIZE",
+      {
+        botId: "bot-1",
+        userId: "user-1",
+        strategyId: "strategy-1",
+        runId: "run-1",
+        preparationVersion: 3,
+      },
+      "corr-authorize"
+    );
+
+    await processMessage(ops, manager, msg("2-0", command), new Set());
+
+    expect(authorizeStart).toHaveBeenCalledWith(
+      ops, "bot-1", "user-1", "strategy-1", "run-1", 3, "corr-authorize"
+    );
+    expect(publishAccepted).toHaveBeenCalledWith(
+      ops, "bot-1", "BOT_AUTHORIZE", "corr-authorize", "run-1"
+    );
+    expect(authorizeStart.mock.invocationCallOrder[0]).toBeLessThan(
+      publishAccepted.mock.invocationCallOrder[0]
+    );
+    expect(acks).toEqual(["2-0"]);
+  });
+
+  it("does not emit COMMAND_ACCEPTED when BOT_AUTHORIZE rejects a stale preparation", async () => {
+    const { acks, ops } = makeStreamOps();
+    const { manager, publishAccepted, authorizeStart } = makeManager();
+    authorizeStart.mockResolvedValue(false);
+    const command = createBotCommand(
+      "BOT_AUTHORIZE",
+      {
+        botId: "bot-1",
+        userId: "user-1",
+        strategyId: "strategy-1",
+        runId: "run-1",
+        preparationVersion: 3,
+      },
+      "corr-stale"
+    );
+
+    await processMessage(ops, manager, msg("3-0", command), new Set());
+
+    expect(publishAccepted).not.toHaveBeenCalled();
+    expect(acks).toEqual(["3-0"]);
+  });
 
   it("dispatches a protocol BOT_START envelope (publishAccepted + handleStart) and ACKs", async () => {
     const { acks, ops } = makeStreamOps();
