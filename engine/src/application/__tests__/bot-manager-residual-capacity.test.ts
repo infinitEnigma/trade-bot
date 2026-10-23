@@ -346,6 +346,13 @@ describe("BotManager residual-capacity backstop (engine Model A gate)", () => {
     ).toBe(true);
     expect(
       await manager.authorizeStart(
+        ops, "bot-1", "user-1", "strat-0", "run-0", 1, "corr-auth-0-retry"
+      )
+    ).toBe(true);
+    expect(manager.getBotRuntimes().get("bot-1")?.runs?.size).toBe(1);
+
+    expect(
+      await manager.authorizeStart(
         ops, "bot-1", "user-1", "strat-1", "run-1", 1, "corr-auth-1"
       )
     ).toBe(true);
