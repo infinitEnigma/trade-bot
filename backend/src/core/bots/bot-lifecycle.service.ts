@@ -844,7 +844,10 @@ export class BotLifecycleService {
         }
         const failure = new Error(
           `The engine did not report all grid estimates: ${error instanceof Error ? error.message : String(error)}`
-        ) as Error & { statusCode?: number; code?: string };
+        ) as Error & {
+          statusCode?: number;
+          code?: string;
+        };
         failure.statusCode = 503;
         failure.code = "ESTIMATE_UNAVAILABLE";
         throw failure;
@@ -857,7 +860,11 @@ export class BotLifecycleService {
         runId: string;
         strategyId: string;
         venue: Awaited<ReturnType<ILifecycleRepository["findStrategyVenue"]>>;
-        gridConfig: { gridSize: number; gridRangePercent: number; orderQuantity: number };
+        gridConfig: {
+          gridSize: number;
+          gridRangePercent: number;
+          orderQuantity: number;
+        };
         estimate: GridEstimateReport;
         authorizedNotional: number;
       }> = [];
