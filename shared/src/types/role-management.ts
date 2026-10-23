@@ -1,6 +1,6 @@
 /** @format */
 
-import { UserRole } from "../index";
+import { UserRole } from "./user-role";
 import { ICacheService, ILogger } from "./infrastructure";
 
 // ===========================================
