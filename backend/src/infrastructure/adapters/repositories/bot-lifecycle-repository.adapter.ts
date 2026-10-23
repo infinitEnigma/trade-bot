@@ -128,7 +128,8 @@ export class BotLifecycleRepositoryAdapter implements ILifecycleRepository {
     exchangeAccountId: string | null,
     input: PersistTransitionInput,
     expectedActualState: BotActualState,
-    event: LifecycleEventInput
+    event: LifecycleEventInput,
+    prepareRunsForAdmission = false
   ): Promise<{ persisted: boolean; unresolvedExposureId?: string }> {
     return transaction(async client => {
       const tx = client as unknown as LifecycleTx;
@@ -169,6 +170,18 @@ export class BotLifecycleRepositoryAdapter implements ILifecycleRepository {
       );
       if ((result.rowCount ?? 0) !== 1) {
         return { persisted: false };
+      }
+
+      if (prepareRunsForAdmission) {
+        // A cleanly stopped run must re-enter PREPARING before the engine
+        // can produce a fresh estimate. Runs still AUTHORIZATION_PENDING are
+        // deliberately untouched: their reservation needs reconciliation.
+        await client.query(
+          `UPDATE strategy_runs
+              SET state = 'PREPARING', updated_at = CURRENT_TIMESTAMP
+            WHERE bot_id = $1 AND state = 'STOPPED'`,
+          [botId]
+        );
       }
 
       await this.recordLifecycleEventTx(tx, botId, event);
