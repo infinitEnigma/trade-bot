@@ -76,6 +76,11 @@ jobs:
       - name: Install (npm workspaces)
         run: npm ci
 
+      - name: "Temporary formatter diagnostic"
+        run: |
+          npx prettier --write backend/src/core/bots/bot-lifecycle.service.ts backend/src/infrastructure/adapters/repositories/bot-lifecycle-repository.adapter.ts
+          git diff -- backend/src/core/bots/bot-lifecycle.service.ts backend/src/infrastructure/adapters/repositories/bot-lifecycle-repository.adapter.ts
+
       - name: "Gate 1 — format"
         run: npm run format:check
 
