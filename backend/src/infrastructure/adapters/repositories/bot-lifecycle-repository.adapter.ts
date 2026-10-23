@@ -256,10 +256,9 @@ export class BotLifecycleRepositoryAdapter implements ILifecycleRepository {
     return transaction(async client => {
       const binding = await client.query<{
         exchange_account_id: string | null;
-      }>(
-        "SELECT exchange_account_id FROM bot_instances WHERE id = $1",
-        [botId]
-      );
+      }>("SELECT exchange_account_id FROM bot_instances WHERE id = $1", [
+        botId,
+      ]);
       const exchangeAccountId = binding.rows[0]?.exchange_account_id;
       if (exchangeAccountId) {
         await client.query(
