@@ -32,6 +32,7 @@ import { z } from "zod";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
+import { computeGridExposure } from "@trade-bot/shared";
 import { tradingApi } from "../../../infrastructure/api";
 import { marketApi } from "../../../infrastructure/api/market";
 import { accountsApi } from "../../../infrastructure/api/accounts";
@@ -43,6 +44,10 @@ import {
   buildChartSymbolGroups,
   type ChartSymbolGroup,
 } from "../utils/chartSymbolPicker";
+import {
+  extractFreshGridReferencePrice,
+  GRID_REFERENCE_PRICE_MAX_AGE_MS,
+} from "../utils/gridExposureEstimate";
 
 // RHF `valueAsNumber` yields NaN for a left-empty number input; zod must see
 // undefined (absent optional), never NaN ("expected number, received NaN" —
@@ -247,6 +252,43 @@ export const GridStrategyForm: React.FC<GridStrategyFormProps> = ({
   );
   const venueOptions = useMemo(() => flattenGroups(venueGroups), [venueGroups]);
   const [selectedOption, setSelectedOption] = useState<string>("");
+  const selectedVenue = useMemo(
+    () => (selectedOption ? decodeVenueOption(selectedOption) : null),
+    [selectedOption]
+  );
+
+  // The generic ticker endpoint is Kodiak-only. Use venue-aware history so
+  // Lighter estimates cannot accidentally use a Kodiak reference price.
+  const exposurePriceQuery = useQuery({
+    queryKey: [
+      "grid-exposure-reference-price",
+      selectedVenue?.exchange ?? null,
+      selectedVenue?.environment ?? null,
+      selectedVenue?.symbol ?? null,
+    ],
+    enabled: selectedVenue !== null,
+    staleTime: 15_000,
+    refetchInterval: 30_000,
+    refetchOnWindowFocus: true,
+    retry: 1,
+    queryFn: async () => {
+      if (!selectedVenue) throw new Error("Choose a venue and symbol first");
+      const to = Math.floor(Date.now() / 1000);
+      const response = await marketApi.getTvHistory({
+        symbol: selectedVenue.symbol,
+        resolution: "1",
+        from: to - 10 * 60,
+        to,
+        exchange: selectedVenue.exchange,
+        environment: selectedVenue.environment,
+      });
+      const reference = extractFreshGridReferencePrice(response);
+      if (!reference) {
+        throw new Error("A fresh venue reference price is unavailable");
+      }
+      return reference;
+    },
+  });
 
   // Default the venue+symbol from the strategy (edit) or the first catalog
   // option (create) once catalogs resolve.
@@ -293,10 +335,65 @@ export const GridStrategyForm: React.FC<GridStrategyFormProps> = ({
   // F5: publish the live grid geometry so the chart beside this form can draw
   // the band while the operator types. The venue travels with the preview
   // (026) — the panel withholds the band when it differs from the chart.
-  const [previewGridSize, previewGridRange] = useWatch({
+  const [
+    previewGridSize,
+    previewGridRange,
+    previewOrderQuantity,
+  ] = useWatch({
     control,
-    name: ["gridSize", "gridRange"],
+    name: ["gridSize", "gridRange", "orderQuantity"],
   });
+
+  const hasValidExposureConfig =
+    typeof previewGridSize === "number" &&
+    Number.isInteger(previewGridSize) &&
+    previewGridSize >= 2 &&
+    previewGridSize <= 100 &&
+    typeof previewGridRange === "number" &&
+    Number.isFinite(previewGridRange) &&
+    previewGridRange >= 1 &&
+    previewGridRange <= 50 &&
+    typeof previewOrderQuantity === "number" &&
+    Number.isFinite(previewOrderQuantity) &&
+    previewOrderQuantity > 0;
+
+  const exposureEstimate = useMemo(() => {
+    const reference = exposurePriceQuery.data;
+    if (
+      !reference ||
+      exposurePriceQuery.isError ||
+      !hasValidExposureConfig
+    ) {
+      return null;
+    }
+
+    const ageMs = Date.now() - reference.timestampMs;
+    if (
+      ageMs > GRID_REFERENCE_PRICE_MAX_AGE_MS ||
+      ageMs < -60_000 ||
+      !Number.isFinite(reference.price) ||
+      reference.price <= 0
+    ) {
+      return null;
+    }
+
+    try {
+      return computeGridExposure(reference.price, reference.price, {
+        gridSize: previewGridSize,
+        gridRangePercent: previewGridRange,
+        orderQuantity: previewOrderQuantity,
+      });
+    } catch {
+      return null;
+    }
+  }, [
+    exposurePriceQuery.data,
+    exposurePriceQuery.isError,
+    hasValidExposureConfig,
+    previewGridSize,
+    previewGridRange,
+    previewOrderQuantity,
+  ]);
   useEffect(() => {
     const decoded = selectedOption ? decodeVenueOption(selectedOption) : null;
     if (!decoded) {
@@ -547,6 +644,120 @@ export const GridStrategyForm: React.FC<GridStrategyFormProps> = ({
         </div>
       </div>
 
+      {/* Advisory only: backend admission independently validates price and exposure. */}
+      <section
+        aria-label="Grid exposure estimate"
+        className="rounded-lg border border-border-light p-4 space-y-3"
+      >
+        <div className="flex items-center justify-between gap-3">
+          <h3 className="text-lg font-medium text-text-primary">
+            Estimated grid exposure
+          </h3>
+          <span className="text-xs text-text-tertiary">Estimate only</span>
+        </div>
+        <p className="text-xs text-text-tertiary">
+          Uses the selected venue's latest one-minute candle and the shared
+          grid calculator before venue-specific tick quantization. Actual orders
+          and live exposure can differ.
+        </p>
+
+        {!selectedVenue ? (
+          <p className="text-sm text-text-secondary">
+            Choose a venue and symbol to estimate exposure.
+          </p>
+        ) : !hasValidExposureConfig ? (
+          <p className="text-sm text-text-secondary">
+            Enter a valid grid size, range, and positive order size to calculate
+            an estimate.
+          </p>
+        ) : exposurePriceQuery.isPending ||
+          (exposurePriceQuery.isFetching && !exposurePriceQuery.data) ? (
+          <p className="text-sm text-text-secondary">
+            Loading fresh market data for {selectedVenue.exchange}{" "}
+            {selectedVenue.environment}…
+          </p>
+        ) : !exposureEstimate ? (
+          <p role="status" className="text-sm text-warning">
+            Exposure estimate unavailable: a fresh, valid reference price could
+            not be verified. This is not approval to start trading.
+          </p>
+        ) : (
+          <>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="rounded-md bg-surface-secondary p-3">
+                <p className="text-xs text-text-tertiary">
+                  Reference price
+                </p>
+                <p className="font-semibold text-text-primary">
+                  {formatUsd(exposurePriceQuery.data!.price, 8)}
+                </p>
+                <p className="text-xs text-text-tertiary">
+                  Candle{" "}
+                  {new Date(
+                    exposurePriceQuery.data!.timestampMs
+                  ).toLocaleTimeString()}
+                </p>
+              </div>
+              <div className="rounded-md bg-surface-secondary p-3">
+                <p className="text-xs text-text-tertiary">
+                  Estimated resting buy notional
+                </p>
+                <p className="font-semibold text-text-primary">
+                  {formatUsd(exposureEstimate.estimatedRestingNotional)}
+                </p>
+                <p className="text-xs text-text-tertiary">
+                  {exposureEstimate.buyLevels.length} eligible buy levels
+                </p>
+              </div>
+              <div className="rounded-md bg-surface-secondary p-3">
+                <p className="text-xs text-text-tertiary">
+                  Largest eligible buy order
+                </p>
+                <p className="font-semibold text-text-primary">
+                  {formatUsd(exposureEstimate.maxOrderNotional)}
+                </p>
+              </div>
+            </div>
+
+            <details className="text-sm">
+              <summary className="cursor-pointer text-text-secondary">
+                Per-level notional ({exposureEstimate.buyLevels.length} eligible
+                buy levels)
+              </summary>
+              <div className="mt-2 max-h-48 overflow-y-auto rounded-md border border-border-light">
+                <div className="grid grid-cols-[1fr_1fr_1fr] gap-2 px-3 py-2 text-xs font-medium text-text-tertiary">
+                  <span>Level</span>
+                  <span className="text-right">Price</span>
+                  <span className="text-right">Order notional</span>
+                </div>
+                {exposureEstimate.buyLevels.map(level => (
+                  <div
+                    key={level.index}
+                    className="grid grid-cols-[1fr_1fr_1fr] gap-2 border-t border-border-light px-3 py-2 text-xs"
+                  >
+                    <span className="text-text-secondary">
+                      {level.index + 1}
+                    </span>
+                    <span className="text-right text-text-primary">
+                      {formatUsd(level.price, 8)}
+                    </span>
+                    <span className="text-right text-text-primary">
+                      {formatUsd(level.orderNotional)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </details>
+          </>
+        )}
+
+        <p className="text-xs text-text-tertiary">
+          Guidance only — backend admission revalidates venue price and grid
+          exposure before authorization. Missing or stale data is never treated
+          as zero exposure.
+        </p>
+      </section>
+
       {/* Exit */}
       <div className="space-y-4">
         <h3 className="text-lg font-medium text-text-primary">Exit</h3>
@@ -644,4 +855,14 @@ function readErrorMessage(error: unknown, fallback: string): string {
     }
   }
   return fallback;
+}
+
+
+/** Format USD estimates without implying precision beyond the source data. */
+function formatUsd(value: number, maximumFractionDigits = 2): string {
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    maximumFractionDigits,
+  }).format(value);
 }
