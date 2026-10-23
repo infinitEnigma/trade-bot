@@ -828,9 +828,13 @@ export class BotLifecycleService {
       throw error;
     }
 
-    let estimates: GridEstimateReport[];
+    // Once BOT_START is published, any later validation/admission failure
+    // must cancel the engine's prepared-only session. The engine handles
+    // BOT_STOP both before and after a runtime exists.
     try {
-      estimates = await Promise.all(contexts.map(context => context.wait));
+      let estimates: GridEstimateReport[];
+      try {
+        estimates = await Promise.all(contexts.map(context => context.wait));
     } catch (error) {
       for (const context of contexts) {
         this.engineProtocol.cancelEstimateWait(
@@ -948,15 +952,6 @@ export class BotLifecycleService {
           undefined,
           { botId, runId: run.runId, reservedNotional: run.authorizedNotional }
         );
-        try {
-          await this.dispatcher.sendStopCommand(botId);
-        } catch (stopError) {
-          logger.error(
-            "Failed to dispatch stop after partial authorization",
-            stopError as Error,
-            { botId }
-          );
-        }
         const error = new Error(
           "The session was admitted but not every run could be authorized; all reservations remain until reconciliation"
         ) as Error & { statusCode?: number; code?: string };
@@ -964,6 +959,17 @@ export class BotLifecycleService {
         error.code = "AUTHORIZATION_FAILED";
         throw error;
       }
+    } catch (error) {
+      try {
+        await this.dispatcher.sendStopCommand(botId);
+      } catch (stopError) {
+        logger.error(
+          "Failed to cancel prepared session after admission failure",
+          stopError as Error,
+          { botId }
+        );
+      }
+      throw error;
     }
   }
 
