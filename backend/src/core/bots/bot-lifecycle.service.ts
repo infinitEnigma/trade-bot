@@ -395,11 +395,7 @@ export class BotLifecycleService {
         // notional.
         for (const run of bootRuns) {
           try {
-            await this.repository.setRunState(
-              run.id,
-              "STOPPED",
-              "PREPARING"
-            );
+            await this.repository.setRunState(run.id, "STOPPED", "PREPARING");
           } catch (runResetError) {
             logger.error(
               "Failed to reset an unadmitted run after start failure",
