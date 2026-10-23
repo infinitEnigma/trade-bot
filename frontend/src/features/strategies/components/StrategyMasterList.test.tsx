@@ -7,11 +7,42 @@
  * through the hosting session (D4).
  */
 
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import type { ReactNode } from "react";
 import { Strategy, StrategyType } from "../../../shared/types";
 import type { BotInstance } from "../types/strategies.types";
 import { StrategyMasterList } from "./StrategyMasterList";
+
+vi.mock("../../../infrastructure/api", () => ({
+  tradingApi: { getStrategyPerformanceSummary: vi.fn() },
+}));
+
+const authState = { user: { id: "user-1", userLevel: "VERIFIED" } };
+vi.mock("../../../features/auth", () => ({
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  useAuth: () => authState as any,
+}));
+
+import { tradingApi } from "../../../infrastructure/api";
+
+let queryClient: QueryClient;
+const wrapper = ({ children }: { children: ReactNode }) => (
+  <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+);
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  authState.user = { id: "user-1", userLevel: "VERIFIED" };
+  queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  vi.mocked(tradingApi.getStrategyPerformanceSummary).mockResolvedValue({
+    success: true,
+    data: null,
+  } as never);
+});
 
 const strategy = (id: string, name: string): Strategy =>
   ({
@@ -55,7 +86,8 @@ describe("StrategyMasterList", () => {
         ]}
         bots={[]}
         onSelect={vi.fn()}
-      />
+      />,
+      { wrapper }
     );
 
     expect(screen.getByText("Grid Alpha")).toBeDefined();
@@ -74,7 +106,8 @@ describe("StrategyMasterList", () => {
         bots={[]}
         selectedId="s1"
         onSelect={onSelect}
-      />
+      />,
+      { wrapper }
     );
 
     expect(
@@ -101,7 +134,8 @@ describe("StrategyMasterList", () => {
         strategies={[strategy("s1", "Grid Alpha")]}
         bots={[HOSTED_BOT]}
         onSelect={vi.fn()}
-      />
+      />,
+      { wrapper }
     );
 
     expect(screen.getByText("Running")).toBeDefined();
