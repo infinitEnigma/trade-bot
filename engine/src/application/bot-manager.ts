@@ -416,10 +416,26 @@ export class BotManager {
       existing.stopTick();
       if (existing.runs) {
         for (const [, run] of existing.runs) {
-          if (run.stopTick !== existing.stopTick) run.stopTick();
+          run.stopTick();
+          try {
+            await run.strategy.stop();
+          } catch (runStopError) {
+            logger.error(
+              "Strategy stop cleanup failed",
+              {
+                botId,
+                runId: run.runId,
+                error:
+                  runStopError instanceof Error
+                    ? runStopError.message
+                    : String(runStopError),
+              }
+            );
+          }
         }
       }
       this.bots.delete(botId);
+      this.prepared.delete(botId);
       logger.error("Strategy stop error", {
         botId,
         error: error instanceof Error ? error.message : String(error),
