@@ -10,10 +10,8 @@ export enum UserLevel {
   VERIFIED = "VERIFIED",
 }
 
-export enum UserRole {
-  QUALIFIED_ALPHA = "QUALIFIED_ALPHA",
-  SYSTEM_ADMIN = "SYSTEM_ADMIN",
-}
+import type { UserRole } from "./types/user-role";
+export { UserRole } from "./types/user-role";
 
 export interface User {
   id: string;
