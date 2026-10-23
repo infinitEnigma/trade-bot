@@ -315,6 +315,7 @@ describe("BotManager residual-capacity backstop (engine Model A gate)", () => {
       "strat-1",
       "run-0",
       1,
+      "corr-1",
       "corr-auth"
     );
     expect(manager.hasBot("bot-1")).toBe(true);
