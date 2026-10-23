@@ -110,6 +110,8 @@ export interface AuthorizeBotCommandPayload {
   strategyId: string;
   runId: string;
   preparationVersion: number;
+  /** Correlation ID of the BOT_START that produced this preparation. */
+  preparationCorrelationId: string;
 }
 
 export interface EmergencyStopCommandPayload {
@@ -231,7 +233,9 @@ export function isBotAuthorizeCommand(
     typeof (obj.payload as AuthorizeBotCommandPayload)?.strategyId ===
       "string" &&
     typeof (obj.payload as AuthorizeBotCommandPayload)?.preparationVersion ===
-      "number"
+      "number" &&
+    typeof (obj.payload as AuthorizeBotCommandPayload)
+      ?.preparationCorrelationId === "string"
   );
 }
 
