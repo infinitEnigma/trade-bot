@@ -751,7 +751,9 @@ export class BotLifecycleService {
       throw error;
     }
     if (runs.length === 0) {
-      const error = new Error("Cannot start a session without an attached strategy run") as Error & { statusCode?: number };
+      const error = new Error(
+        "Cannot start a session without an attached strategy run"
+      ) as Error & { statusCode?: number };
       error.statusCode = 409;
       throw error;
     }
@@ -866,12 +868,20 @@ export class BotLifecycleService {
             preparationVersion: estimate.preparationVersion,
             config: context.gridConfig,
             symbol: context.venue.symbol,
-            venue: (context.venue.exchange ?? "lighter") as "kodiak" | "lighter",
-            environment: (context.venue.environment ?? "testnet") as "testnet" | "mainnet",
+            venue: (context.venue.exchange ?? "lighter") as
+              | "kodiak"
+              | "lighter",
+            environment: (context.venue.environment ?? "testnet") as
+              | "testnet"
+              | "mainnet",
           },
           estimate
         );
-        admitted.push({ ...context, estimate, authorizedNotional: result.authorizedNotional });
+        admitted.push({
+          ...context,
+          estimate,
+          authorizedNotional: result.authorizedNotional,
+        });
       } catch (error) {
         if (error instanceof GridAdmissionRejectedError) {
           logger.warn("Grid admission rejected", {
@@ -880,7 +890,10 @@ export class BotLifecycleService {
             reason: error.reason,
             message: error.message,
           });
-          const failure = new Error(error.message) as Error & { statusCode?: number; code?: string };
+          const failure = new Error(error.message) as Error & {
+            statusCode?: number;
+            code?: string;
+          };
           failure.statusCode = 409;
           failure.code = error.reason;
           throw failure;
@@ -892,7 +905,10 @@ export class BotLifecycleService {
     // One account-locked transaction reserves every run or none. The cap
     // check inside the repository sees earlier reservations from this same
     // transaction, so a multi-run session cannot oversubscribe the account.
-    const { cap, existingExposure } = await this.computeAdmission(userId, exchangeAccountId);
+    const { cap, existingExposure } = await this.computeAdmission(
+      userId,
+      exchangeAccountId
+    );
     await this.repository.inTransaction(async tx => {
       await this.repository.lockAccountRowTx(tx, exchangeAccountId);
       for (const run of admitted) {
@@ -935,7 +951,11 @@ export class BotLifecycleService {
         try {
           await this.dispatcher.sendStopCommand(botId);
         } catch (stopError) {
-          logger.error("Failed to dispatch stop after partial authorization", stopError as Error, { botId });
+          logger.error(
+            "Failed to dispatch stop after partial authorization",
+            stopError as Error,
+            { botId }
+          );
         }
         const error = new Error(
           "The session was admitted but not every run could be authorized; all reservations remain until reconciliation"
