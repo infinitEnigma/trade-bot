@@ -3652,10 +3652,14 @@ describe("residual exposure admission (Priority 1)", () => {
     );
     expect(stopUpdateIdx).toBeGreaterThanOrEqual(0);
     const afterStop = txQueries.slice(stopUpdateIdx + 1);
-    expect(afterStop[0]).toMatch(/^SELECT id FROM exchange_accounts/);
-    expect(afterStop[1]).toMatch(/^SELECT id,user_id,exchange_account_id/);
-    expect(afterStop[2]).toMatch(/^SELECT DISTINCT COALESCE\(config/);
-    expect(afterStop[3]).toMatch(/^UPDATE bot_instances/);
-    expect(afterStop[4]).toMatch(/^INSERT INTO bot_lifecycle_events/);
+    // persistStopTx now updates strategy_runs in the same transaction after
+    // the session CAS. The abandon transaction then acquires the account lock
+    // and reads the committed residual context before writing its resolution.
+    expect(afterStop[0]).toMatch(/^UPDATE strategy_runs/);
+    expect(afterStop[1]).toMatch(/^SELECT id FROM exchange_accounts/);
+    expect(afterStop[2]).toMatch(/^SELECT id,user_id,exchange_account_id/);
+    expect(afterStop[3]).toMatch(/^SELECT DISTINCT COALESCE\(config/);
+    expect(afterStop[4]).toMatch(/^UPDATE bot_instances/);
+    expect(afterStop[5]).toMatch(/^INSERT INTO bot_lifecycle_events/);
   });
 });
