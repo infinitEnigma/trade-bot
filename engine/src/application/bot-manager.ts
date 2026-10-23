@@ -1120,6 +1120,13 @@ export class BotManager {
     const preparedRuns = this.prepared.get(botId);
     const prepared = preparedRuns?.get(runId);
     if (!prepared) {
+      // A retry may arrive after the strategy started but before COMMAND_ACCEPTED
+      // was durably published. Re-ack the same run/version without starting a
+      // duplicate runner.
+      const activeRun = this.bots.get(botId)?.runs?.get(runId);
+      if (activeRun?.preparationVersion === preparationVersion) {
+        return true;
+      }
       logger.warn("BOT_AUTHORIZE with no matching prepared run", { botId, runId });
       await this.publishFailed(
         streamOps,
@@ -1190,6 +1197,7 @@ export class BotManager {
         strategyId,
         strategy: prepared.strategy,
         stopTick: stopRunner,
+        preparationVersion: prepared.preparationVersion,
       };
 
       if (existingRuntime) {
