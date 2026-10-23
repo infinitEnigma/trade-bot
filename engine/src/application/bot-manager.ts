@@ -335,6 +335,23 @@ export class BotManager {
   ): Promise<void> {
     const existing = this.bots.get(botId);
     if (!existing) {
+      const preparedRuns = this.prepared.get(botId);
+      if (preparedRuns && preparedRuns.size > 0) {
+        // A prepared-only session has no BotRuntime yet, but it still owns
+        // in-memory strategy objects. A stop must discard them so no stale
+        // BOT_AUTHORIZE can start a run after admission was rejected.
+        this.prepared.delete(botId);
+        this.stopRequested.delete(botId);
+        await this.publishStateChanged(
+          streamOps,
+          botId,
+          "PREPARED",
+          "STOPPED",
+          correlationId,
+          "preparation_cancelled"
+        );
+        return;
+      }
       logger.warn("Bot not found for stop", { botId });
       await this.publishFailed(
         streamOps,
@@ -374,6 +391,7 @@ export class BotManager {
         }
       }
       this.bots.delete(botId);
+      this.prepared.delete(botId);
 
       // A clean STOPPED must never hide orders a cancel could not confirm (N5):
       // carry the problems in the terminal reason, exactly like the panic path.
@@ -1230,7 +1248,7 @@ export class BotManager {
       await this.publishStateChanged(
         streamOps,
         botId,
-        "PREPARED",
+        existingRuntime ? "RUNNING" : "PREPARED",
         "ERROR",
         correlationId,
         err.message
