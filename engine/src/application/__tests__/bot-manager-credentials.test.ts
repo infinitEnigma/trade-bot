@@ -393,6 +393,28 @@ describe("BotManager.handleStart credential-contract slice (workstream A)", () =
       )
     ).toHaveLength(1);
 
+    // The version alone is insufficient: a stale command from a different
+    // BOT_START must not authorize this preparation even if the version matches.
+    await manager.authorizeStart(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ops as any,
+      "bot-1",
+      "user-1",
+      "strategy-1",
+      "run-1",
+      1,
+      "different-start",
+      "corr-stale-correlation"
+    );
+    expect(manager.hasBot("bot-1")).toBe(false);
+    expect(
+      published.filter(
+        entry =>
+          entry.type === "COMMAND_FAILED" &&
+          entry.payload.errorCode === "STALE_PREPARATION"
+      )
+    ).toHaveLength(2);
+
     // The matching authorization starts execution.
     await manager.authorizeStart(
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
