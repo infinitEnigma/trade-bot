@@ -366,16 +366,15 @@ export class BotLifecycleService {
         `[DEBUG] start() taking grid admission path; gridAdmission set for bot ${botId}`
       );
       const bootRuns = await this.repository.getRunsForBot(botId);
-      const bootRun = bootRuns[0];
-      const bootStrategyId = bootRun?.strategy_id ?? "";
 
       try {
-        await this.admitPreparedRun(
+        await this.admitPreparedRuns(
           botId,
           userId,
-          bootStrategyId,
-          bootRun?.id ?? "",
-          "",
+          bootRuns.map(run => ({
+            runId: run.id,
+            strategyId: run.strategy_id,
+          })),
           bot.exchange_account_id ?? ""
         );
       } catch (error) {
@@ -721,17 +720,12 @@ export class BotLifecycleService {
    * happens OUTSIDE it, so the account lock is never held across a network
    * wait.
    */
-  private async admitPreparedRun(
+  private async admitPreparedRuns(
     botId: string,
     userId: string,
-    strategyId: string,
-    runId: string,
-    correlationId: string,
+    runs: Array<{ runId: string; strategyId: string }>,
     exchangeAccountId: string
   ): Promise<void> {
-    logger.warn?.(
-      `[DEBUG] admitPreparedRun called; gridAdmission=${this.gridAdmission !== undefined}, engineProtocol=${this.engineProtocol?.constructor?.name}`
-    );
     const admission = this.gridAdmission;
     if (!admission) {
       const error = new Error(
@@ -741,65 +735,64 @@ export class BotLifecycleService {
       error.code = "ADMISSION_UNAVAILABLE";
       throw error;
     }
+    if (runs.length === 0) {
+      const error = new Error("Cannot start a session without an attached strategy run") as Error & { statusCode?: number };
+      error.statusCode = 409;
+      throw error;
+    }
 
-    // The persisted config + venue identity — never the estimate's own
-    // metadata. The estimate is validated against these.
-    const venue = await this.repository.findStrategyVenue(strategyId);
-    const strategyConfig = await this.repository.findStrategyConfig(strategyId);
-    const symbol = venue.symbol;
-    const gridConfig = {
-      gridSize: Number(strategyConfig.gridSize ?? 10),
-      gridRangePercent: Number(strategyConfig.gridRange ?? 5),
-      orderQuantity: Number(strategyConfig.orderQuantity ?? 1),
-    };
-
-    // The engine assigns the monotonic preparation version. Correlate this
-    // request by the command envelope's unique ID and accept the version from
-    // the matching estimate; never assume a restarted/re-prepared bot is v1.
+    // The command correlation is known before dispatch and shared by every
+    // estimate emitted for this preparation batch. Each run's preparation
+    // version remains engine-assigned and is taken from its matching report.
     const preparationCorrelationId = crypto.randomUUID();
-    const waitKey: EstimateWaitKey = {
-      botId,
-      runId,
-      correlationId: preparationCorrelationId,
-    };
+    const contexts = await Promise.all(runs.map(async run => {
+      const venue = await this.repository.findStrategyVenue(run.strategyId);
+      const strategyConfig = await this.repository.findStrategyConfig(run.strategyId);
+      const waitKey: EstimateWaitKey = {
+        botId,
+        runId: run.runId,
+        correlationId: preparationCorrelationId,
+      };
+      return {
+        ...run,
+        venue,
+        gridConfig: {
+          gridSize: Number(strategyConfig.gridSize ?? 10),
+          gridRangePercent: Number(strategyConfig.gridRange ?? 5),
+          orderQuantity: Number(strategyConfig.orderQuantity ?? 1),
+        },
+        waitKey,
+        wait: this.engineProtocol.waitForEstimate(waitKey, this.estimateWaitTimeoutMs),
+      };
+    }));
+    // Observe cancellation rejections immediately; all waits are registered
+    // before BOT_START can publish estimates for any run.
+    for (const context of contexts) void context.wait.catch(() => undefined);
 
-    // 1. REGISTER THE WAIT BEFORE PUBLISHING.
-    const wait = this.engineProtocol.waitForEstimate(
-      waitKey,
-      this.estimateWaitTimeoutMs
-    );
-    // Cancellation rejects the wait. Observe that rejection immediately so a
-    // dispatcher exception cannot leave an unhandled rejection before the
-    // normal await below is reached.
-    void wait.catch(() => undefined);
-
-    // 2. PUBLISH — the engine prepares and reports.
     let sendResult;
     try {
       sendResult = await this.dispatcher.sendStartCommand(
         botId,
         userId,
-        strategyId,
+        runs[0].strategyId,
         preparationCorrelationId
       );
     } catch (error) {
-      // Dispatch may throw before returning a SendCommandResult (e.g. pending
-      // command persistence or Redis publication throws). Never leak the
-      // registered waiter on that path.
-      this.engineProtocol.cancelEstimateWait(
-        waitKey,
-        "BOT_START dispatch threw before preparation was confirmed"
-      );
+      for (const context of contexts) {
+        this.engineProtocol.cancelEstimateWait(
+          context.waitKey,
+          "BOT_START dispatch threw before preparation was confirmed"
+        );
+      }
       throw error;
     }
-
     if (!sendResult.success) {
-      // Publication failed: abandon the wait so a late estimate cannot
-      // resolve it, and fail closed.
-      this.engineProtocol.cancelEstimateWait(
-        waitKey,
-        "BOT_START publication failed"
-      );
+      for (const context of contexts) {
+        this.engineProtocol.cancelEstimateWait(
+          context.waitKey,
+          "BOT_START publication failed"
+        );
+      }
       const error = new Error(
         "Failed to deliver the preparation command to the engine"
       ) as Error & { statusCode?: number };
@@ -807,108 +800,117 @@ export class BotLifecycleService {
       throw error;
     }
 
-    // 3. WAIT for the estimate — bounded; a timeout is an UNKNOWN outcome.
-    let estimate: GridEstimateReport;
+    let estimates: GridEstimateReport[];
     try {
-      estimate = await wait;
+      estimates = await Promise.all(contexts.map(context => context.wait));
     } catch (error) {
+      for (const context of contexts) {
+        this.engineProtocol.cancelEstimateWait(
+          context.waitKey,
+          "Another run's preparation estimate failed"
+        );
+      }
       const failure = new Error(
-        `The engine did not report a grid estimate: ${
-          error instanceof Error ? error.message : String(error)
-        }`
+        `The engine did not report all grid estimates: ${error instanceof Error ? error.message : String(error)}`
       ) as Error & { statusCode?: number; code?: string };
       failure.statusCode = 503;
       failure.code = "ESTIMATE_UNAVAILABLE";
       throw failure;
     }
 
-    // 4. VALIDATE — the backend's authoritative recomputation.
-    let authorizedNotional: number;
-    try {
-      const result = await admission.admit(
-        {
-          botId,
-          runId,
-          preparationVersion: estimate.preparationVersion,
-          config: gridConfig,
-          symbol,
-          venue: (venue.exchange ?? "lighter") as "kodiak" | "lighter",
-          environment: (venue.environment ?? "testnet") as
-            "testnet" | "mainnet",
-        },
-        estimate
-      );
-      authorizedNotional = result.authorizedNotional;
-    } catch (error) {
-      if (error instanceof GridAdmissionRejectedError) {
-        logger.warn("Grid admission rejected", {
-          botId,
-          runId,
-          reason: error.reason,
-          message: error.message,
-        });
-        const failure = new Error(error.message);
-        (failure as Error & { statusCode?: number; code?: string }).statusCode =
-          409;
-        (failure as Error & { code?: string }).code = error.reason;
-        throw failure;
-      }
-      throw error;
-    }
-
-    // 5. ADMIT — the authoritative F1 transaction under the account lock.
-    const { cap, existingExposure } = await this.computeAdmission(
-      userId,
-      exchangeAccountId
-    );
-    await this.repository.inTransaction(async tx => {
-      await this.repository.lockAccountRowTx(tx, exchangeAccountId);
+    // Validate every run before reserving any notional or authorizing any
+    // execution. A single rejected estimate prevents the whole session from
+    // partially starting.
+    const admitted = [];
+    for (let index = 0; index < contexts.length; index++) {
+      const context = contexts[index];
+      const estimate = estimates[index];
       try {
-        await this.repository.admitPreparedRunWithCapGuardTx(
-          tx,
-          runId,
-          authorizedNotional,
-          cap,
-          existingExposure,
-          exchangeAccountId
+        const result = await admission.admit(
+          {
+            botId,
+            runId: context.runId,
+            preparationVersion: estimate.preparationVersion,
+            config: context.gridConfig,
+            symbol: context.venue.symbol,
+            venue: (context.venue.exchange ?? "lighter") as "kodiak" | "lighter",
+            environment: (context.venue.environment ?? "testnet") as "testnet" | "mainnet",
+          },
+          estimate
         );
+        admitted.push({ ...context, estimate, authorizedNotional: result.authorizedNotional });
       } catch (error) {
-        if (error instanceof RunNotionalCapExceededError) {
-          (error as Error & { statusCode?: number }).statusCode = 409;
-          throw error;
+        if (error instanceof GridAdmissionRejectedError) {
+          logger.warn("Grid admission rejected", {
+            botId,
+            runId: context.runId,
+            reason: error.reason,
+            message: error.message,
+          });
+          const failure = new Error(error.message) as Error & { statusCode?: number; code?: string };
+          failure.statusCode = 409;
+          failure.code = error.reason;
+          throw failure;
         }
         throw error;
       }
+    }
+
+    // One account-locked transaction reserves every run or none. The cap
+    // check inside the repository sees earlier reservations from this same
+    // transaction, so a multi-run session cannot oversubscribe the account.
+    const { cap, existingExposure } = await this.computeAdmission(userId, exchangeAccountId);
+    await this.repository.inTransaction(async tx => {
+      await this.repository.lockAccountRowTx(tx, exchangeAccountId);
+      for (const run of admitted) {
+        try {
+          await this.repository.admitPreparedRunWithCapGuardTx(
+            tx,
+            run.runId,
+            run.authorizedNotional,
+            cap,
+            existingExposure,
+            exchangeAccountId
+          );
+        } catch (error) {
+          if (error instanceof RunNotionalCapExceededError) {
+            (error as Error & { statusCode?: number }).statusCode = 409;
+          }
+          throw error;
+        }
+      }
     });
 
-    // 6. AUTHORIZE — only after the reservation committed.
-    const authorize = await this.dispatcher.sendAuthorizeCommand(
-      botId,
-      userId,
-      strategyId,
-      runId,
-      estimate.preparationVersion
-    );
-    if (!authorize.success) {
-      // The reservation is committed. It is NOT re-admitted and the engine is
-      // NOT assumed to be running: recovery re-publishes the authorization
-      // for the SAME preparation (idempotent), and the reserved exposure keeps
-      // counting until the run is reconciled.
-      logger.error(
-        "Authorization publication failed after the admission committed",
-        undefined,
-        {
-          botId,
-          runId,
-          reservedNotional: authorizedNotional,
-        }
+    // Authorization is issued only after all reservations commit. If any
+    // publication fails, retain all reservations and request a session stop;
+    // recovery must reconcile the already-committed exposure rather than
+    // re-admit it.
+    for (const run of admitted) {
+      const authorize = await this.dispatcher.sendAuthorizeCommand(
+        botId,
+        userId,
+        run.strategyId,
+        run.runId,
+        run.estimate.preparationVersion
       );
-      const error = new Error(
-        "The grid was admitted but the authorization could not be delivered — the run stays reserved and must be reconciled"
-      ) as Error & { statusCode?: number; code?: string };
-      error.statusCode = 503;
-      error.code = "AUTHORIZATION_FAILED";
-      throw error;
+      if (!authorize.success) {
+        logger.error(
+          "Authorization publication failed after multi-run admission committed",
+          undefined,
+          { botId, runId: run.runId, reservedNotional: run.authorizedNotional }
+        );
+        try {
+          await this.dispatcher.sendStopCommand(botId);
+        } catch (stopError) {
+          logger.error("Failed to dispatch stop after partial authorization", stopError as Error, { botId });
+        }
+        const error = new Error(
+          "The session was admitted but not every run could be authorized; all reservations remain until reconciliation"
+        ) as Error & { statusCode?: number; code?: string };
+        error.statusCode = 503;
+        error.code = "AUTHORIZATION_FAILED";
+        throw error;
+      }
     }
   }
 
