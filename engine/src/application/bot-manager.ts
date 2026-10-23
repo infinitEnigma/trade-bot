@@ -1157,20 +1157,15 @@ export class BotManager {
       };
 
       if (existingRuntime) {
-        existingRuntime.runs ??= new Map([
-          [
-            existingRuntime.runs?.values().next().value?.runId ??
-              existingRuntime.strategyId,
-            {
-              runId:
-                existingRuntime.runs?.values().next().value?.runId ??
-                existingRuntime.strategyId,
-              strategyId: existingRuntime.strategyId,
-              strategy: existingRuntime.strategy,
-              stopTick: existingRuntime.stopTick,
-            },
-          ],
-        ]);
+        if (!existingRuntime.runs) {
+          existingRuntime.runs = new Map();
+          existingRuntime.runs.set(existingRuntime.strategyId, {
+            runId: existingRuntime.strategyId,
+            strategyId: existingRuntime.strategyId,
+            strategy: existingRuntime.strategy,
+            stopTick: existingRuntime.stopTick,
+          });
+        }
         existingRuntime.runs.set(prepared.runId, runState);
       } else {
         const runs = new Map<string, StrategyRunState>();
