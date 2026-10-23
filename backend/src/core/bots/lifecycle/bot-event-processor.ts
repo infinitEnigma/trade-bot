@@ -600,21 +600,6 @@ export class BotEventProcessor {
       return;
     }
 
-    // A terminal session event ends live runners. PREPARING runs are safe
-    // to return to STOPPED because preparation is non-trading; retain
-    // AUTHORIZATION_PENDING reservations because publication/ack ambiguity
-    // must not silently release reserved exposure.
-    if (payload.to === "STOPPED" || payload.to === "ERROR") {
-      const runs = await this.repository.getRunsForBot(bot.id);
-      for (const run of runs) {
-        if (run.state === "RUNNING") {
-          await this.repository.setRunState(run.id, "STOPPED", "RUNNING");
-        } else if (run.state === "PREPARING") {
-          await this.repository.setRunState(run.id, "STOPPED", "PREPARING");
-        }
-      }
-    }
-
     // Strategy badge (Phase 2, 022 shim-drop): keep strategies.active
     // mirroring the bot — RUNNING proves the runs are executing,
     // STOPPED/ERROR ends them. Badge follows the runs.
