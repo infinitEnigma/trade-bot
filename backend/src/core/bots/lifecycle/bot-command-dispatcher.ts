@@ -39,7 +39,8 @@ export class BotCommandDispatcher {
   async sendStartCommand(
     botId: string,
     userId: string,
-    strategyId: string
+    strategyId: string,
+    correlationId?: string
   ): Promise<SendCommandResult> {
     const config = await this.repository.findStrategyConfig(strategyId);
     const runs = await this.repository.getRunsForBot(botId);
@@ -59,7 +60,7 @@ export class BotCommandDispatcher {
         config: run.config,
         notionalAmount: Number(run.notional_amount),
       })),
-    });
+    }, correlationId);
   }
 
   /**
@@ -111,9 +112,10 @@ export class BotCommandDispatcher {
    */
   private async publishTrackedCommand(
     type: "BOT_START" | "BOT_STOP" | "EMERGENCY_STOP" | "BOT_AUTHORIZE",
-    payload: unknown
+    payload: unknown,
+    suppliedCorrelationId?: string
   ): Promise<SendCommandResult> {
-    const correlationId = crypto.randomUUID();
+    const correlationId = suppliedCorrelationId ?? crypto.randomUUID();
     const commandType = type;
 
     // Track BEFORE publishing so the engine's (possibly already-processed)
