@@ -1180,8 +1180,8 @@ export class BotManager {
 
     // Consume only this run's preparation. Other runs in the same session
     // remain independently authorizable.
-    preparedRuns!.delete(runId);
-    if (preparedRuns!.size === 0) this.prepared.delete(botId);
+    preparedRuns.delete(runId);
+    if (preparedRuns.size === 0) this.prepared.delete(botId);
 
     const existingRuntime = this.bots.get(botId);
     const startedRunners: StrategyRunner[] = [];
