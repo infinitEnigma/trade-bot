@@ -527,7 +527,8 @@ export class EngineProtocolService {
       // not be able to lose the event it is waiting for.
       if (isEstimateReadyEvent(data)) {
         const delivered = this.estimateWaiters.deliverEstimate(
-          data.payload as EstimateReadyPayload
+          data.payload as EstimateReadyPayload,
+          data.correlationId
         );
         if (!delivered) {
           // A LATE or SUPERSEDED estimate — the waiter already resolved or
