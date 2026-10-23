@@ -284,6 +284,7 @@ async function handleCommand(
       authorize.strategyId,
       authorize.runId,
       authorize.preparationVersion,
+      authorize.preparationCorrelationId,
       correlationId
     );
     // For BOT_AUTHORIZE, acceptance is emitted only after the matching run
