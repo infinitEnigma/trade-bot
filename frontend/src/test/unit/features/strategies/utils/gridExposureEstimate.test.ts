@@ -78,10 +78,10 @@ describe("extractFreshGridReferencePrice", () => {
           freshness: { isStale: false },
           data: {
             t: [
-              Math.floor((nowMs - 10_000) / 1000),
               Math.floor(
                 (nowMs - GRID_REFERENCE_PRICE_MAX_AGE_MS - 10_000) / 1000
               ),
+              Math.floor((nowMs - 10_000) / 1000),
             ],
             c: [101, 99],
           },
