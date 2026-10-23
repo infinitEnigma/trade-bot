@@ -91,6 +91,7 @@ describe("command-consumer processMessage", () => {
         strategyId: "strategy-1",
         runId: "run-1",
         preparationVersion: 3,
+        preparationCorrelationId: "corr-start",
       },
       "corr-authorize"
     );
@@ -104,6 +105,7 @@ describe("command-consumer processMessage", () => {
       "strategy-1",
       "run-1",
       3,
+      "corr-start",
       "corr-authorize"
     );
     expect(publishAccepted).toHaveBeenCalledWith(
