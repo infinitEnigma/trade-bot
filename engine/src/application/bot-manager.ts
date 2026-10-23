@@ -422,17 +422,14 @@ export class BotManager {
           try {
             await run.strategy.stop();
           } catch (runStopError) {
-            logger.error(
-              "Strategy stop cleanup failed",
-              {
-                botId,
-                runId: run.runId,
-                error:
-                  runStopError instanceof Error
-                    ? runStopError.message
-                    : String(runStopError),
-              }
-            );
+            logger.error("Strategy stop cleanup failed", {
+              botId,
+              runId: run.runId,
+              error:
+                runStopError instanceof Error
+                  ? runStopError.message
+                  : String(runStopError),
+            });
           }
         }
       }
@@ -1126,7 +1123,7 @@ export class BotManager {
   ): Promise<boolean> {
     const preparedRuns = this.prepared.get(botId);
     const prepared = preparedRuns?.get(runId);
-    if (!prepared) {
+    if (!preparedRuns || !prepared) {
       // A retry may arrive after the strategy started but before COMMAND_ACCEPTED
       // was durably published. Re-ack the same run/version without starting a
       // duplicate runner.
@@ -1139,7 +1136,10 @@ export class BotManager {
       ) {
         return true;
       }
-      logger.warn("BOT_AUTHORIZE with no matching prepared run", { botId, runId });
+      logger.warn("BOT_AUTHORIZE with no matching prepared run", {
+        botId,
+        runId,
+      });
       await this.publishFailed(
         streamOps,
         botId,
