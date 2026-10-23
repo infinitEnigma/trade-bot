@@ -20,7 +20,10 @@ const freshResponse = (timestampMs: number, close: number = 100) => ({
 describe("extractFreshGridReferencePrice", () => {
   it("returns the latest fresh positive venue candle close", () => {
     expect(
-      extractFreshGridReferencePrice(freshResponse(nowMs - 30_000, 123.45), nowMs)
+      extractFreshGridReferencePrice(
+        freshResponse(nowMs - 30_000, 123.45),
+        nowMs
+      )
     ).toEqual({
       price: 123.45,
       timestampMs: nowMs - 30_000,
@@ -51,7 +54,10 @@ describe("extractFreshGridReferencePrice", () => {
 
   it("rejects invalid prices and timestamps", () => {
     expect(
-      extractFreshGridReferencePrice(freshResponse(nowMs - 10_000, 0), nowMs)
+      extractFreshGridReferencePrice(
+        freshResponse(nowMs - 10_000, 0),
+        nowMs
+      )
     ).toBeNull();
     expect(
       extractFreshGridReferencePrice(
