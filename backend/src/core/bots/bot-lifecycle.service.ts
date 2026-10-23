@@ -384,7 +384,19 @@ export class BotLifecycleService {
         // runs are retained for reconciliation because they already reserve
         // notional.
         for (const run of bootRuns) {
-          await this.repository.setRunState(run.id, "STOPPED", "PREPARING");
+          try {
+            await this.repository.setRunState(
+              run.id,
+              "STOPPED",
+              "PREPARING"
+            );
+          } catch (runResetError) {
+            logger.error(
+              "Failed to reset an unadmitted run after start failure",
+              runResetError as Error,
+              { botId, runId: run.id }
+            );
+          }
         }
         // The engine emits PREPARED before estimates, so the session may
         // already have advanced beyond STARTING when admission fails. Re-read
