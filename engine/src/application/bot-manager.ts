@@ -116,6 +116,7 @@ function accountIdentityOf(runtime: BotRuntime): string | undefined {
  */
 interface PreparedRun {
   runId: string;
+  strategyId: string;
   preparationVersion: number;
   preparationCorrelationId: string;
   strategy: GridTradingStrategy;
@@ -1017,6 +1018,7 @@ export class BotManager {
         const runKey = spec.runId ?? strategyId;
         preparedRuns.push({
           runId: runKey,
+          strategyId: spec.strategyId,
           preparationVersion,
           preparationCorrelationId: correlationId,
           strategy: gridStrategy,
@@ -1130,7 +1132,8 @@ export class BotManager {
       // duplicate runner.
       const activeRun = this.bots.get(botId)?.runs?.get(runId);
       if (
-        activeRun?.preparationVersion === preparationVersion &&
+        activeRun?.strategyId === strategyId &&
+        activeRun.preparationVersion === preparationVersion &&
         activeRun.preparationCorrelationId === preparationCorrelationId
       ) {
         return true;
@@ -1148,6 +1151,7 @@ export class BotManager {
     }
 
     if (
+      prepared.strategyId !== strategyId ||
       prepared.preparationVersion !== preparationVersion ||
       prepared.preparationCorrelationId !== preparationCorrelationId
     ) {
@@ -1155,6 +1159,8 @@ export class BotManager {
         botId,
         requestedRunId: runId,
         preparedRunId: prepared.runId,
+        requestedStrategyId: strategyId,
+        preparedStrategyId: prepared.strategyId,
         requestedVersion: preparationVersion,
         preparedVersion: prepared.preparationVersion,
         requestedPreparationCorrelationId: preparationCorrelationId,
