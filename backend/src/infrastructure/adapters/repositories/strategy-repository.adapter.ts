@@ -362,6 +362,82 @@ export class StrategyRepositoryAdapter implements IStrategyRepository {
   }
 
   /**
+   * Lifetime fill-ledger aggregates for ALL strategies owned by `userId`,
+   * in a single grouped query (master-list PnL).
+   *
+   * Ownership is enforced at the SQL layer via the JOIN with `strategies`
+   * on `strategy_id` and the `WHERE s.user_id = $1` filter. A foreign
+   * user's strategies are never returned, even if the caller manipulates
+   * request parameters.
+   *
+   * Uses LEFT JOIN so strategies with no fills still appear with
+   * zero/null aggregates. F2 honesty: realizedPnl sums KNOWN pnl only,
+   * unknown fills counted separately, best/worst NULL when no known fill.
+   *
+   * DECIMAL/NUMERIC arrive as STRINGS from node-postgres — every figure is
+   * coerced here at the single mapping boundary.
+   */
+  async getStrategyFillTotalsByUser(
+    userId: string
+  ): Promise<Record<string, StrategyFillTotals>> {
+    try {
+      const result = await query<StrategyFillTotalsByUserRow>(
+        `SELECT
+           s.id                              AS strategy_id,
+           COUNT(f.*)                        AS total_fills,
+           COUNT(f.pnl)                      AS known_pnl_fills,
+           COUNT(*) FILTER (WHERE f.pnl IS NULL) AS unknown_pnl_fills,
+           COALESCE(SUM(f.pnl), 0)           AS realized_pnl,
+           COUNT(*) FILTER (WHERE f.pnl > 0) AS winning_fills,
+           COUNT(*) FILTER (WHERE f.pnl < 0) AS losing_fills,
+           MAX(f.pnl)                        AS best_fill,
+           MIN(f.pnl)                        AS worst_fill,
+           COALESCE(SUM(f.fee), 0)           AS total_fees,
+           COUNT(f.fee)                      AS known_fee_fills,
+           COUNT(*) FILTER (WHERE f.fee IS NULL) AS unknown_fee_fills,
+           MIN(f.executed_at)                AS first_fill_at,
+           MAX(f.executed_at)                AS last_fill_at
+         FROM strategies s
+         LEFT JOIN bot_trade_fills f ON f.strategy_id = s.id
+         WHERE s.user_id = $1
+         GROUP BY s.id
+         ORDER BY s.created_at DESC`,
+        [userId]
+      );
+
+      const totals: Record<string, StrategyFillTotals> = {};
+      for (const row of result.rows) {
+        totals[row.strategy_id] = {
+          totalFills: Number(row.total_fills ?? 0),
+          knownPnlFills: Number(row.known_pnl_fills ?? 0),
+          unknownPnlFills: Number(row.unknown_pnl_fills ?? 0),
+          realizedPnl: Number(row.realized_pnl ?? 0),
+          winningFills: Number(row.winning_fills ?? 0),
+          losingFills: Number(row.losing_fills ?? 0),
+          bestFill: row.best_fill == null ? null : Number(row.best_fill),
+          worstFill: row.worst_fill == null ? null : Number(row.worst_fill),
+          totalFees: Number(row.total_fees ?? 0),
+          knownFeeFills: Number(row.known_fee_fills ?? 0),
+          unknownFeeFills: Number(row.unknown_fee_fills ?? 0),
+          firstFillAt: row.first_fill_at
+            ? new Date(row.first_fill_at).toISOString()
+            : null,
+          lastFillAt: row.last_fill_at
+            ? new Date(row.last_fill_at).toISOString()
+            : null,
+        };
+      }
+      return totals;
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      throw new Error(
+        `Failed to get strategy fill totals by user: ${errorMessage}`
+      );
+    }
+  }
+
+  /**
    * Map database row to Strategy interface object
    */
   private mapRowToStrategy(row: StrategyRow): Strategy | null {
@@ -417,6 +493,28 @@ interface StrategyRow {
  * DECIMAL/NUMERIC/BIGINT as strings — the mapper above coerces every field.
  */
 interface StrategyFillTotalsRow {
+  total_fills: string;
+  known_pnl_fills: string;
+  unknown_pnl_fills: string;
+  realized_pnl: string;
+  winning_fills: string;
+  losing_fills: string;
+  best_fill: string | null;
+  worst_fill: string | null;
+  total_fees: string;
+  known_fee_fills: string;
+  unknown_fee_fills: string;
+  first_fill_at: string | null;
+  last_fill_at: string | null;
+}
+
+/**
+ * Raw aggregate row for `getStrategyFillTotalsByUser`. Includes `strategy_id`
+ * so the caller can key results per strategy. node-postgres types
+ * DECIMAL/NUMERIC/BIGINT arrive as strings — the mapper coerces every field.
+ */
+interface StrategyFillTotalsByUserRow {
+  strategy_id: string;
   total_fills: string;
   known_pnl_fills: string;
   unknown_pnl_fills: string;

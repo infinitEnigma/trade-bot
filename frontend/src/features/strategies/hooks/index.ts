@@ -16,3 +16,8 @@ export type {
   StrategyPerformanceOptions,
   StrategyPerformanceResult,
 } from "./useStrategyPerformance";
+export {
+  useStrategyPerformanceSummary,
+  strategyPerformanceSummaryQueryKey,
+} from "./useStrategyPerformance";
+export type { StrategyPerformanceSummaryResult } from "./useStrategyPerformance";

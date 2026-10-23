@@ -1,10 +1,18 @@
 /** @format */
 
-import React from "react";
-import { Play, Square, OctagonAlert, Activity } from "lucide-react";
+import React, { useMemo } from "react";
+import {
+  Play,
+  Square,
+  OctagonAlert,
+  Activity,
+  DollarSign,
+  AlertTriangle,
+} from "lucide-react";
 import { cn } from "../../../shared/utils";
 import { BotInstance } from "../types/strategies.types";
 import { summarizeBotStates } from "../utils/summarizeBotStates";
+import { useStrategyPerformanceSummary } from "../hooks";
 
 /**
  * StrategyOverview — a compact operational strip: how many bots are Running,
@@ -13,11 +21,10 @@ import { summarizeBotStates } from "../utils/summarizeBotStates";
  * answers "is anything running / is anything wrong?" at a glance, above the
  * card list.
  *
- * Buckets are mutually exclusive (priority: needs-attention > running >
- * transitional > stopped) so they always sum to the total, never double-count.
- * The pure summarizer lives in ../utils/summarizeBotStates.
+ * Phase 1: also shows lifetime realized PnL and unknown-PnL fill count,
+ * derived from the shared fill-ledger aggregate (the same data as the
+ * master-list chips). Buckets remain mutually exclusive and sum to the total.
  */
-
 interface StatProps {
   icon: React.ReactNode;
   label: string;
@@ -25,14 +32,24 @@ interface StatProps {
   accent: string;
   /** Dim the tile when the count is zero (nothing to draw the eye to). */
   muted?: boolean;
+  /** Optional tooltip shown on hover. */
+  title?: string;
 }
 
-const Stat: React.FC<StatProps> = ({ icon, label, count, accent, muted }) => (
+const Stat: React.FC<StatProps> = ({
+  icon,
+  label,
+  count,
+  accent,
+  muted,
+  title,
+}) => (
   <div
     className={cn(
       "glass-card p-4 flex items-center gap-3",
       muted && count === 0 && "opacity-60"
     )}
+    title={title}
   >
     <div
       className={cn(
@@ -55,6 +72,33 @@ interface StrategyOverviewProps {
 
 export const StrategyOverview: React.FC<StrategyOverviewProps> = ({ bots }) => {
   const s = summarizeBotStates(bots);
+  const {
+    performance: summary,
+    isLoading,
+    error,
+  } = useStrategyPerformanceSummary();
+
+  // Aggregate across all strategies owned by the user. Each strategy's
+  // realizedPnl already excludes unknown fills; unknownPnlFills is summed
+  // separately so the total can be flagged as incomplete.
+  const aggregated = useMemo(() => {
+    if (!summary) return { realizedPnl: 0, unknownPnlFills: 0, count: 0 };
+    let realizedPnl = 0;
+    let unknownPnlFills = 0;
+    let count = 0;
+    for (const perf of Object.values(summary)) {
+      realizedPnl += perf.totalPnL;
+      unknownPnlFills += perf.unknownPnlFills;
+      count += perf.totalTrades;
+    }
+    return { realizedPnl, unknownPnlFills, count };
+  }, [summary]);
+
+  // Distinguish loading/error from a genuine zero. While fetching, show a
+  // placeholder; on error, show the operational counts only (no fabricated
+  // PnL). When loaded, zero is a real zero (no fills).
+  const pnlUnavailable = isLoading && !summary;
+  const pnlError = Boolean(error) && !summary;
 
   return (
     <div className="space-y-2">
@@ -92,6 +136,48 @@ export const StrategyOverview: React.FC<StrategyOverviewProps> = ({ bots }) => {
           count={s.stopped}
           accent="bg-white/5"
           muted
+        />
+        <Stat
+          icon={<DollarSign className="w-4 h-4 text-text" />}
+          label={
+            pnlError || pnlUnavailable
+              ? "Realized PnL"
+              : aggregated.unknownPnlFills > 0
+                ? "Realized PnL (incomplete)"
+                : "Realized PnL"
+          }
+          count={
+            pnlUnavailable ? 0 : Math.round(aggregated.realizedPnl * 100) / 100
+          }
+          accent={
+            aggregated.realizedPnl > 0
+              ? "bg-success/10"
+              : aggregated.realizedPnl < 0
+                ? "bg-danger/10"
+                : "bg-white/5"
+          }
+          muted={pnlUnavailable || pnlError}
+          title={
+            pnlUnavailable
+              ? "Loading…"
+              : pnlError
+                ? "Unavailable"
+                : `Lifetime realized PnL across all strategies${aggregated.unknownPnlFills > 0 ? ` — ${aggregated.unknownPnlFills} unknown-PnL fills excluded` : ""}`
+          }
+        />
+        <Stat
+          icon={<AlertTriangle className="w-4 h-4 text-warning" />}
+          label="Unknown-PnL fills"
+          count={pnlUnavailable || pnlError ? 0 : aggregated.unknownPnlFills}
+          accent="bg-warning/10"
+          muted={pnlUnavailable || pnlError}
+          title={
+            pnlUnavailable
+              ? "Loading…"
+              : pnlError
+                ? "Unavailable"
+                : `Fills booked with unknown PnL — excluded from realized PnL and win rate${aggregated.unknownPnlFills === 0 ? " (none)" : ""}`
+          }
         />
       </div>
     </div>

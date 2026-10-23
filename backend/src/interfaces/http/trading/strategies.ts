@@ -326,6 +326,38 @@ router.delete(
   }
 );
 
+// GET /api/strategies/performance — grouped lifetime aggregates for all
+// strategies owned by the caller (master-list PnL). Single SQL query, no N+1.
+router.get(
+  "/performance",
+  authMiddleware,
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      if (!req.user) {
+        throw new Error("User not authenticated");
+      }
+
+      const performance =
+        await diContainer.strategyService.getStrategyPerformanceByUser(
+          req.user.userId
+        );
+
+      res.json({
+        success: true,
+        data: performance,
+        timestamp: Date.now(),
+      });
+    } catch (err) {
+      logger.error("Get grouped performance error", err as Error, {
+        userId: req.user?.userId,
+      });
+      res
+        .status(500)
+        .json({ success: false, error: "Failed to get performance" });
+    }
+  }
+);
+
 // GET /api/strategies/:id/performance
 router.get(
   "/:id/performance",

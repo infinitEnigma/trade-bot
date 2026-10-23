@@ -352,6 +352,24 @@ export interface IStrategyRepository {
   getStrategyFillTotals?(strategyId: string): Promise<StrategyFillTotals>;
 
   /**
+   * Lifetime fill-ledger aggregates for ALL strategies owned by `userId`,
+   * in a single grouped query (master-list PnL).
+   *
+   * Ownership is enforced at the SQL layer: only rows whose `strategies`
+   * row belongs to `userId` are returned. Strategies with no fills still
+   * appear with zero/null aggregates (LEFT JOIN).
+   *
+   * F2 honesty: realizedPnl sums KNOWN pnl only; unknown fills are counted
+   * separately; best/worst are NULL when no known fill exists.
+   *
+   * @returns Record mapping strategyId → its fill totals. Empty object when
+   * the user has no strategies.
+   */
+  getStrategyFillTotalsByUser?(
+    userId: string
+  ): Promise<Record<string, StrategyFillTotals>>;
+
+  /**
    * Get all strategies for a user
    */
   getStrategies(userId: string): Promise<Strategy[]>;

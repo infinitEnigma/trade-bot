@@ -132,6 +132,24 @@ export const tradingApi = {
     );
   },
 
+  /**
+   * Lifetime fill-ledger aggregates for ALL strategies owned by the caller
+   * (Phase 1 strategy-page master-list PnL). Single grouped query — no N+1.
+   * Returns Record<strategyId, StrategyPerformance>. Ownership is enforced
+   * at the backend SQL layer.
+   */
+  async getStrategyPerformanceSummary() {
+    return globalRequestManager.deduplicateRequest(
+      `strategies:perf:summary`,
+      () =>
+        httpClient
+          .getClient()
+          .get(`/api/strategies/performance`)
+          .then(r => r.data),
+      "tradingApi"
+    );
+  },
+
   // Bot endpoints (L1: management router is mounted at /management, so the
   // served paths are /api/bot/management/* — the bare /api/bot/* paths 404)
   async getBotInstances() {

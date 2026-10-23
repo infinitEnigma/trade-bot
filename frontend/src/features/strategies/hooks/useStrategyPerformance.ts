@@ -75,3 +75,50 @@ export const useStrategyPerformance = (
 };
 
 export default useStrategyPerformance;
+
+/**
+ * useStrategyPerformanceSummary — lifetime fill-ledger aggregates for ALL
+ * strategies owned by the caller (master-list PnL).
+ *
+ * Reads `GET /api/strategies/performance` — one grouped query, shared by
+ * every render site (master list + overview) so a strategy never costs two
+ * fetches. Gated on VERIFIED like every private-ledger read.
+ *
+ * Returns a Record mapping strategyId → its performance metrics, or null
+ * until the first successful fetch. Never fabricated zeros.
+ */
+export interface StrategyPerformanceSummaryResult {
+  performance: Record<string, StrategyPerformance> | null;
+  isLoading: boolean;
+  error: unknown;
+  dataUpdatedAt: number;
+}
+
+export const strategyPerformanceSummaryQueryKey = [
+  "strategy-performance-summary",
+] as const;
+
+export function useStrategyPerformanceSummary(): StrategyPerformanceSummaryResult {
+  const { user } = useAuth();
+  const isVerified = user?.userLevel === "VERIFIED";
+
+  const query = useQuery({
+    queryKey: strategyPerformanceSummaryQueryKey,
+    queryFn: async () => {
+      const res = await tradingApi.getStrategyPerformanceSummary();
+      return (res?.data ?? null) as Record<string, StrategyPerformance> | null;
+    },
+    enabled: isVerified,
+    staleTime: 15 * 1000,
+    refetchInterval: false,
+    refetchIntervalInBackground: false,
+    retry: false,
+  });
+
+  return {
+    performance: query.data ?? null,
+    isLoading: query.isLoading,
+    error: query.error,
+    dataUpdatedAt: query.dataUpdatedAt,
+  };
+}

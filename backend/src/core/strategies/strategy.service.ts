@@ -398,6 +398,64 @@ export class StrategyService {
       lastFillAt: totals.lastFillAt,
     };
   }
+
+  /**
+   * Lifetime strategy performance from the fill ledger for ALL strategies
+   * owned by `userId` (Phase 1 strategy-page PnL).
+   *
+   * Single grouped repository query — no N+1. Ownership is enforced at the
+   * SQL layer; the service trusts the userId it is handed. Strategies with
+   * no fills appear with zero/null aggregates.
+   *
+   * Derives the same ratios and honesty rules as `getStrategyPerformance`:
+   * - win rate / avg trade divide by KNOWN-pnl fills only;
+   * - bestTrade/worstTrade are null when nothing known exists, never 0.
+   */
+  async getStrategyPerformanceByUser(
+    userId: string
+  ): Promise<Record<string, StrategyPerformanceMetrics>> {
+    let totals: Record<string, StrategyFillTotals> | undefined;
+    try {
+      totals =
+        await this.deps.strategyRepository.getStrategyFillTotalsByUser?.(
+          userId
+        );
+    } catch (error) {
+      this.deps.logger.error("Failed to get strategy performance by user", {
+        error: error instanceof Error ? error.message : String(error),
+        userId,
+      });
+      throw new Error("Failed to get strategy performance");
+    }
+    if (!totals) {
+      this.deps.logger.error(
+        "Strategy fill-totals-by-user repository is not wired",
+        {
+          userId,
+        }
+      );
+      throw new Error("Strategy fill-totals-by-user repository is not wired");
+    }
+    // Pure derivation from here — no failure mode left to wrap.
+    const result: Record<string, StrategyPerformanceMetrics> = {};
+    for (const [strategyId, t] of Object.entries(totals)) {
+      const known = t.knownPnlFills;
+      result[strategyId] = {
+        totalTrades: t.totalFills,
+        totalPnL: t.realizedPnl,
+        unknownPnlFills: t.unknownPnlFills,
+        winRate: known > 0 ? (t.winningFills / known) * 100 : 0,
+        avgTrade: known > 0 ? t.realizedPnl / known : 0,
+        bestTrade: t.bestFill,
+        worstTrade: t.worstFill,
+        totalFees: t.totalFees,
+        unknownFeeFills: t.unknownFeeFills,
+        firstFillAt: t.firstFillAt,
+        lastFillAt: t.lastFillAt,
+      };
+    }
+    return result;
+  }
 }
 
 // Export factory function for creating service instances
