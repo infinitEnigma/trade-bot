@@ -669,9 +669,9 @@ export const GridStrategyForm: React.FC<GridStrategyFormProps> = ({
           <span className="text-xs text-text-tertiary">Estimate only</span>
         </div>
         <p className="text-xs text-text-tertiary">
-          Uses the selected venue's latest one-minute candle and the shared
-          grid calculator before venue-specific tick quantization. Actual orders
-          and live exposure can differ.
+          Uses the selected venue's latest one-minute candle and the shared grid
+          calculator before venue-specific tick quantization. Actual orders and
+          live exposure can differ.
         </p>
 
         {!selectedVenue ? (
@@ -698,9 +698,7 @@ export const GridStrategyForm: React.FC<GridStrategyFormProps> = ({
           <>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div className="rounded-md bg-surface-secondary p-3">
-                <p className="text-xs text-text-tertiary">
-                  Reference price
-                </p>
+                <p className="text-xs text-text-tertiary">Reference price</p>
                 <p className="font-semibold text-text-primary">
                   {formatUsd(exposurePriceQuery.data!.price, 8)}
                 </p>
