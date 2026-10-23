@@ -277,12 +277,6 @@ async function handleCommand(
     // branch above, so read the fields off the captured payload — the guard
     // has already validated botId, userId, strategyId, runId and version.
     const authorize = payload as AuthorizeBotCommandPayload;
-    await botManager.publishAccepted(
-      streamOps,
-      authorize.botId,
-      "BOT_AUTHORIZE",
-      correlationId
-    );
     await botManager.authorizeStart(
       streamOps,
       authorize.botId,
@@ -291,6 +285,16 @@ async function handleCommand(
       authorize.runId,
       authorize.preparationVersion,
       correlationId
+    );
+    // For BOT_AUTHORIZE, acceptance is emitted only after the matching run
+    // has actually started; the backend uses runId to release its pending
+    // exposure reservation into the live-run state.
+    await botManager.publishAccepted(
+      streamOps,
+      authorize.botId,
+      "BOT_AUTHORIZE",
+      correlationId,
+      authorize.runId
     );
   } else if (isBotEmergencyStopCommand(command)) {
     // M1: the panic button publishes a real EMERGENCY_STOP command. ACK it
