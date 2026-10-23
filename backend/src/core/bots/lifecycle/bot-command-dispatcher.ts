@@ -79,7 +79,8 @@ export class BotCommandDispatcher {
     userId: string,
     strategyId: string,
     runId: string,
-    preparationVersion: number
+    preparationVersion: number,
+    preparationCorrelationId: string
   ): Promise<SendCommandResult> {
     return this.publishTrackedCommand("BOT_AUTHORIZE", {
       botId,
@@ -87,6 +88,7 @@ export class BotCommandDispatcher {
       strategyId,
       runId,
       preparationVersion,
+      preparationCorrelationId,
     });
   }
 
