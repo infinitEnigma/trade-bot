@@ -54,10 +54,7 @@ describe("extractFreshGridReferencePrice", () => {
 
   it("rejects invalid prices and timestamps", () => {
     expect(
-      extractFreshGridReferencePrice(
-        freshResponse(nowMs - 10_000, 0),
-        nowMs
-      )
+      extractFreshGridReferencePrice(freshResponse(nowMs - 10_000, 0), nowMs)
     ).toBeNull();
     expect(
       extractFreshGridReferencePrice(
