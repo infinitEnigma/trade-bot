@@ -1132,7 +1132,8 @@ export class BotManager {
       // duplicate runner.
       const activeRun = this.bots.get(botId)?.runs?.get(runId);
       if (
-        activeRun?.strategyId === strategyId &&
+        activeRun &&
+        activeRun.strategyId === strategyId &&
         activeRun.preparationVersion === preparationVersion &&
         activeRun.preparationCorrelationId === preparationCorrelationId
       ) {
