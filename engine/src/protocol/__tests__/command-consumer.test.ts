@@ -133,6 +133,7 @@ describe("command-consumer processMessage", () => {
         strategyId: "strategy-1",
         runId: "run-1",
         preparationVersion: 3,
+        preparationCorrelationId: "corr-start",
       },
       "corr-stale"
     );
