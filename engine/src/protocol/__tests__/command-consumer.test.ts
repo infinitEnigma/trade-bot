@@ -98,10 +98,20 @@ describe("command-consumer processMessage", () => {
     await processMessage(ops, manager, msg("2-0", command), new Set());
 
     expect(authorizeStart).toHaveBeenCalledWith(
-      ops, "bot-1", "user-1", "strategy-1", "run-1", 3, "corr-authorize"
+      ops,
+      "bot-1",
+      "user-1",
+      "strategy-1",
+      "run-1",
+      3,
+      "corr-authorize"
     );
     expect(publishAccepted).toHaveBeenCalledWith(
-      ops, "bot-1", "BOT_AUTHORIZE", "corr-authorize", "run-1"
+      ops,
+      "bot-1",
+      "BOT_AUTHORIZE",
+      "corr-authorize",
+      "run-1"
     );
     expect(authorizeStart.mock.invocationCallOrder[0]).toBeLessThan(
       publishAccepted.mock.invocationCallOrder[0]
