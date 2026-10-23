@@ -46,6 +46,8 @@ export interface CommandAcceptedEventPayload {
   engineId: string;
   /** Restart epoch of the emitting engine process (authority validation). */
   engineEpoch: number;
+  /** Run whose authorization completed, when commandType is BOT_AUTHORIZE. */
+  runId?: string;
 }
 
 export interface CommandFailedEventPayload {
