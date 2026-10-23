@@ -1043,9 +1043,6 @@ export class BotManager {
     } catch (error) {
       this.bots.delete(botId);
       this.prepared.delete(botId);
-      // A failed authorization invalidates the whole preparation batch; later
-      // queued BOT_AUTHORIZE commands must not start sibling runs.
-      this.stopRequested.add(botId);
       const err = error instanceof Error ? error : new Error(String(error));
       await this.publishFailed(
         streamOps,
