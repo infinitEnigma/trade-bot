@@ -765,13 +765,30 @@ export class BotLifecycleService {
       waitKey,
       this.estimateWaitTimeoutMs
     );
+    // Cancellation rejects the wait. Observe that rejection immediately so a
+    // dispatcher exception cannot leave an unhandled rejection before the
+    // normal await below is reached.
+    void wait.catch(() => undefined);
 
     // 2. PUBLISH — the engine prepares and reports.
-    const sendResult = await this.dispatcher.sendStartCommand(
-      botId,
-      userId,
-      strategyId
-    );
+    let sendResult;
+    try {
+      sendResult = await this.dispatcher.sendStartCommand(
+        botId,
+        userId,
+        strategyId
+      );
+    } catch (error) {
+      // Dispatch may throw before returning a SendCommandResult (e.g. pending
+      // command persistence or Redis publication throws). Never leak the
+      // registered waiter on that path.
+      this.engineProtocol.cancelEstimateWait(
+        waitKey,
+        "BOT_START dispatch threw before preparation was confirmed"
+      );
+      throw error;
+    }
+
     if (!sendResult.success) {
       // Publication failed: abandon the wait so a late estimate cannot
       // resolve it, and fail closed.
