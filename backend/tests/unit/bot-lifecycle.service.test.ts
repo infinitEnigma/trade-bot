@@ -1883,14 +1883,46 @@ describe("BotLifecycleService F1 notional admission", () => {
     service.setGridAdmissionService(
       { admit: jest.fn() } as unknown as import("../../src/core/strategies/admission/grid-admission.service").GridAdmissionService
     );
-    routeStart("0");
+    const run = {
+      id: "run-1",
+      bot_id: "bot-1",
+      strategy_id: "strategy-1",
+      config_version: 1,
+      config: { symbol: "ETH", gridSize: 3, gridRange: 5, orderQuantity: 1 },
+      notional_amount: 100,
+      state: "PREPARING",
+      last_error_code: null,
+      created_at: new Date("2026-01-01T00:00:00.000Z"),
+      updated_at: new Date("2026-01-01T00:00:00.000Z"),
+    };
+    mockQuery.mockImplementation((sql: string) => {
+      const text = String(sql);
+      if (text.startsWith("SELECT id, user_id")) {
+        return Promise.resolve({ rows: [runningBotRow] });
+      }
+      if (text.includes("SUM(notional_amount)")) {
+        return Promise.resolve({ rows: [{ total: "0" }] });
+      }
+      if (text.includes("SELECT exchange, environment, config FROM strategies")) {
+        return Promise.resolve({
+          rows: [{ exchange: "lighter", environment: "testnet", config: run.config }],
+        });
+      }
+      if (text.includes("SELECT config FROM strategies")) {
+        return Promise.resolve({ rows: [{ config: run.config }] });
+      }
+      if (text.includes("FROM strategy_runs")) {
+        return Promise.resolve({ rows: [run] });
+      }
+      return okResult();
+    });
 
     await expect(service.start("bot-1", "user-1")).rejects.toThrow(
       "redis publish threw"
     );
     expect(waitForEstimate).toHaveBeenCalledTimes(1);
     expect(cancelEstimateWait).toHaveBeenCalledWith(
-      expect.objectContaining({ botId: "bot-1", runId: "" }),
+      expect.objectContaining({ botId: "bot-1", runId: "run-1" }),
       "BOT_START dispatch threw before preparation was confirmed"
     );
   });
