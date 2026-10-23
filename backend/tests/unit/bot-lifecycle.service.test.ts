@@ -1863,6 +1863,38 @@ describe("BotLifecycleService F1 notional admission", () => {
     toggle.mockRestore();
   });
 
+  it("cancels the estimate waiter when BOT_START dispatch throws", async () => {
+    const waitForEstimate = jest.fn(
+      () => new Promise(() => undefined)
+    );
+    const cancelEstimateWait = jest.fn();
+    const sendCommand = jest
+      .fn()
+      .mockRejectedValue(new Error("redis publish threw"));
+    service = createWiredService({
+      sendCommand,
+      waitForEstimate,
+      cancelEstimateWait,
+    } as unknown as EngineProtocolService);
+    service.setAuthorityChecker(async () => true);
+    service.setSessionCapProvider({
+      getAdmissionSnapshot: async () => ({ cap: 5000, existingExposure: 0 }),
+    });
+    service.setGridAdmissionService(
+      { admit: jest.fn() } as unknown as import("../../src/core/strategies/admission/grid-admission.service").GridAdmissionService
+    );
+    routeStart("0");
+
+    await expect(service.start("bot-1", "user-1")).rejects.toThrow(
+      "redis publish threw"
+    );
+    expect(waitForEstimate).toHaveBeenCalledTimes(1);
+    expect(cancelEstimateWait).toHaveBeenCalledWith(
+      expect.objectContaining({ botId: "bot-1", runId: "" }),
+      "BOT_START dispatch threw before preparation was confirmed"
+    );
+  });
+
   it("start() 503s (fail-closed) when the snapshot is unavailable (balance/positions down)", async () => {
     service.setSessionCapProvider({
       getAdmissionSnapshot: async () => {
