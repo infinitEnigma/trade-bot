@@ -721,19 +721,20 @@ export const GridStrategyForm: React.FC<GridStrategyFormProps> = ({
 
             <details className="text-sm">
               <summary className="cursor-pointer text-text-secondary">
-                Per-level notional ({exposureEstimate.buyLevels.length} eligible
-                buy levels)
+                Per-level notional ({exposureEstimate.levels.length} grid
+                levels; eligible buy levels are included in the total)
               </summary>
               <div className="mt-2 max-h-48 overflow-y-auto rounded-md border border-border-light">
-                <div className="grid grid-cols-[1fr_1fr_1fr] gap-2 px-3 py-2 text-xs font-medium text-text-tertiary">
+                <div className="grid grid-cols-[0.6fr_1fr_1fr_1fr] gap-2 px-3 py-2 text-xs font-medium text-text-tertiary">
                   <span>Level</span>
                   <span className="text-right">Price</span>
-                  <span className="text-right">Order notional</span>
+                  <span className="text-right">Per-order notional</span>
+                  <span className="text-right">Status</span>
                 </div>
-                {exposureEstimate.buyLevels.map(level => (
+                {exposureEstimate.levels.map(level => (
                   <div
                     key={level.index}
-                    className="grid grid-cols-[1fr_1fr_1fr] gap-2 border-t border-border-light px-3 py-2 text-xs"
+                    className="grid grid-cols-[0.6fr_1fr_1fr_1fr] gap-2 border-t border-border-light px-3 py-2 text-xs"
                   >
                     <span className="text-text-secondary">
                       {level.index + 1}
@@ -743,6 +744,9 @@ export const GridStrategyForm: React.FC<GridStrategyFormProps> = ({
                     </span>
                     <span className="text-right text-text-primary">
                       {formatUsd(level.orderNotional)}
+                    </span>
+                    <span className="text-right text-text-secondary">
+                      {level.buyEligible ? "Eligible buy" : "Not eligible"}
                     </span>
                   </div>
                 ))}
