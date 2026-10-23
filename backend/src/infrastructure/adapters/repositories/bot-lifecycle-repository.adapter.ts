@@ -114,7 +114,18 @@ export class BotLifecycleRepositoryAdapter implements ILifecycleRepository {
           WHERE id = $1 AND actual_state = $${params.length}`,
         params
       );
-      return (result.rowCount ?? 0) === 1;
+      if ((result.rowCount ?? 0) !== 1) return false;
+
+      // Stop live runs and discard non-trading preparations in the same
+      // transaction as the authoritative session STOPPED transition.
+      // AUTHORIZATION_PENDING reservations remain untouched for reconciliation.
+      await client.query(
+        `UPDATE strategy_runs
+            SET state = 'STOPPED', updated_at = CURRENT_TIMESTAMP
+          WHERE bot_id = $1 AND state IN ('RUNNING', 'PREPARING')`,
+        [botId]
+      );
+      return true;
     });
   }
 
@@ -235,8 +246,23 @@ export class BotLifecycleRepositoryAdapter implements ILifecycleRepository {
     if (expectedActualState) {
       params.push(expectedActualState);
     }
-    const result = await query(sql, params);
-    return (result.rowCount ?? 0) === 1;
+    return transaction(async client => {
+      const result = await client.query(sql, params);
+      if ((result.rowCount ?? 0) !== 1) return false;
+
+      if (input.actualState === "ERROR") {
+        // ERROR terminates active runners, but retains admitted reservations
+        // until they are explicitly reconciled. PREPARING is non-trading and
+        // can safely return to STOPPED.
+        await client.query(
+          `UPDATE strategy_runs
+              SET state = 'STOPPED', updated_at = CURRENT_TIMESTAMP
+            WHERE bot_id = $1 AND state IN ('RUNNING', 'PREPARING')`,
+          [botId]
+        );
+      }
+      return true;
+    });
   }
 
   /**
