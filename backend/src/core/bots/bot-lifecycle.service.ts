@@ -892,11 +892,9 @@ export class BotLifecycleService {
               config: context.gridConfig,
               symbol: context.venue.symbol,
               venue: (context.venue.exchange ?? "lighter") as
-                | "kodiak"
-                | "lighter",
+                "kodiak" | "lighter",
               environment: (context.venue.environment ?? "testnet") as
-                | "testnet"
-                | "mainnet",
+                "testnet" | "mainnet",
             },
             estimate
           );
@@ -970,7 +968,11 @@ export class BotLifecycleService {
           logger.error(
             "Authorization publication failed after multi-run admission committed",
             undefined,
-            { botId, runId: run.runId, reservedNotional: run.authorizedNotional }
+            {
+              botId,
+              runId: run.runId,
+              reservedNotional: run.authorizedNotional,
+            }
           );
           const error = new Error(
             "The session was admitted but not every run could be authorized; all reservations remain until reconciliation"
