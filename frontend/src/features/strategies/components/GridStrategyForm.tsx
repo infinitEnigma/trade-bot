@@ -335,11 +335,7 @@ export const GridStrategyForm: React.FC<GridStrategyFormProps> = ({
   // F5: publish the live grid geometry so the chart beside this form can draw
   // the band while the operator types. The venue travels with the preview
   // (026) — the panel withholds the band when it differs from the chart.
-  const [
-    previewGridSize,
-    previewGridRange,
-    previewOrderQuantity,
-  ] = useWatch({
+  const [previewGridSize, previewGridRange, previewOrderQuantity] = useWatch({
     control,
     name: ["gridSize", "gridRange", "orderQuantity"],
   });
