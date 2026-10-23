@@ -220,7 +220,8 @@ export class BotManager {
     streamOps: RedisStreamOperations,
     botId: string,
     commandType: string,
-    correlationId: string
+    correlationId: string,
+    runId?: string
   ): Promise<void> {
     await publishAccepted(
       streamOps,
@@ -228,7 +229,8 @@ export class BotManager {
       commandType,
       this.engineId,
       this.epoch,
-      correlationId
+      correlationId,
+      runId
     );
   }
 
