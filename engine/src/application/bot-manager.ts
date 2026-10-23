@@ -1227,10 +1227,14 @@ export class BotManager {
           try {
             await activeRun.strategy.stop();
           } catch (stopError) {
-            logger.error("Failed to stop a run after authorization failure", stopError as Error, {
+            logger.error(
+              "Failed to stop a run after authorization failure",
+              stopError as Error,
+              {
               botId,
-              runId: activeRun.runId,
-            });
+                runId: activeRun.runId,
+              }
+            );
           }
         }
       }
