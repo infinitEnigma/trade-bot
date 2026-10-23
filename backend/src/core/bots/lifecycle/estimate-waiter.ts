@@ -15,10 +15,11 @@
  *
  * - REGISTER BEFORE PUBLISHING. A fast engine response must not arrive
  *   before the waiter exists, or the estimate would be lost.
- * - CORRELATE EXACTLY. A waiter is keyed by runId + preparationVersion +
- *   correlationId, and the incoming event must match the botId and the
- *   expected type as well. An estimate for another run or a superseded
- *   preparation never resolves a waiter.
+ * - CORRELATE EXACTLY. A waiter is keyed by botId + runId + the originating
+ *   command correlationId. The engine owns the monotonic preparationVersion,
+ *   so the waiter accepts that version only from the matching command; callers
+ *   then use the returned version for BOT_AUTHORIZE. An estimate from another
+ *   run or command never resolves the waiter.
  * - BOUNDED. Every wait has a deadline; a timeout is an UNKNOWN outcome, not
  *   proof that preparation failed.
  * - CLEAN UP ALWAYS. The registry entry is removed on success, on timeout, on
@@ -62,7 +63,9 @@ function keyOf(key: EstimateWaitKey): string {
   return [
     key.botId,
     key.runId,
-    key.preparationVersion === undefined ? "*" : String(key.preparationVersion),
+    key.preparationVersion === undefined
+      ? "*"
+      : String(key.preparationVersion),
     key.correlationId,
   ].join("|");
 }
