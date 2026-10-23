@@ -176,6 +176,7 @@ describe("BotManager.handleStart credential-contract slice (workstream A)", () =
       "strategy-1",
       "strategy-1",
       1,
+      "corr-1",
       "corr-auth"
     );
     expect(manager.hasBot("bot-1")).toBe(true);
@@ -380,6 +381,7 @@ describe("BotManager.handleStart credential-contract slice (workstream A)", () =
       "strategy-1",
       "run-1",
       99,
+      "corr-session",
       "corr-stale"
     );
     expect(manager.hasBot("bot-1")).toBe(false);
@@ -400,6 +402,7 @@ describe("BotManager.handleStart credential-contract slice (workstream A)", () =
       "strategy-1",
       "run-1",
       1,
+      "corr-session",
       "corr-good"
     );
     expect(manager.hasBot("bot-1")).toBe(true);
@@ -416,6 +419,7 @@ describe("BotManager.handleStart credential-contract slice (workstream A)", () =
       "strategy-1",
       "run-1",
       1,
+      "corr-none",
       "corr-none"
     );
     expect(manager.hasBot("bot-1")).toBe(false);
