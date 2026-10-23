@@ -750,25 +750,36 @@ export class BotLifecycleService {
     // estimate emitted for this preparation batch. Each run's preparation
     // version remains engine-assigned and is taken from its matching report.
     const preparationCorrelationId = crypto.randomUUID();
-    const contexts = await Promise.all(runs.map(async run => {
-      const venue = await this.repository.findStrategyVenue(run.strategyId);
-      const strategyConfig = await this.repository.findStrategyConfig(run.strategyId);
-      const waitKey: EstimateWaitKey = {
-        botId,
-        runId: run.runId,
-        correlationId: preparationCorrelationId,
-      };
-      return {
-        ...run,
-        venue,
-        gridConfig: {
-          gridSize: Number(strategyConfig.gridSize ?? 10),
-          gridRangePercent: Number(strategyConfig.gridRange ?? 5),
-          orderQuantity: Number(strategyConfig.orderQuantity ?? 1),
-        },
-        waitKey,
-        wait: this.engineProtocol.waitForEstimate(waitKey, this.estimateWaitTimeoutMs),
-      };
+    const runContexts = await Promise.all(
+      runs.map(async run => {
+        const venue = await this.repository.findStrategyVenue(run.strategyId);
+        const strategyConfig = await this.repository.findStrategyConfig(
+          run.strategyId
+        );
+        return {
+          ...run,
+          venue,
+          gridConfig: {
+            gridSize: Number(strategyConfig.gridSize ?? 10),
+            gridRangePercent: Number(strategyConfig.gridRange ?? 5),
+            orderQuantity: Number(strategyConfig.orderQuantity ?? 1),
+          },
+          waitKey: {
+            botId,
+            runId: run.runId,
+            correlationId: preparationCorrelationId,
+          } satisfies EstimateWaitKey,
+        };
+      })
+    );
+    // Register only after all DB reads succeed, then register every run before
+    // publishing BOT_START so no fast estimate can race registration.
+    const contexts = runContexts.map(context => ({
+      ...context,
+      wait: this.engineProtocol.waitForEstimate(
+        context.waitKey,
+        this.estimateWaitTimeoutMs
+      ),
     }));
     // Observe cancellation rejections immediately; all waits are registered
     // before BOT_START can publish estimates for any run.
@@ -826,7 +837,14 @@ export class BotLifecycleService {
     // Validate every run before reserving any notional or authorizing any
     // execution. A single rejected estimate prevents the whole session from
     // partially starting.
-    const admitted = [];
+    const admitted: Array<{
+      runId: string;
+      strategyId: string;
+      venue: Awaited<ReturnType<ILifecycleRepository["findStrategyVenue"]>>;
+      gridConfig: { gridSize: number; gridRangePercent: number; orderQuantity: number };
+      estimate: GridEstimateReport;
+      authorizedNotional: number;
+    }> = [];
     for (let index = 0; index < contexts.length; index++) {
       const context = contexts[index];
       const estimate = estimates[index];
