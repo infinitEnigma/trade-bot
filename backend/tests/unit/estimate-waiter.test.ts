@@ -55,7 +55,7 @@ describe("EstimateWaiterRegistry", () => {
     const registry = new EstimateWaiterRegistry();
     registries.push(registry);
     const wait = registry.waitForEstimate(KEY, 1000);
-    
+
     expect(registry.deliverEstimate(payload(), "corr-1")).toBe(true);
     await expect(wait).resolves.toMatchObject({
       runId: "run-1",
@@ -76,7 +76,9 @@ describe("EstimateWaiterRegistry", () => {
     const registry = new EstimateWaiterRegistry();
     const wait = registry.waitForEstimate(KEY, 1000);
 
-    expect(registry.deliverEstimate(payload({ runId: "run-2" }), "corr-1")).toBe(false);
+    expect(
+      registry.deliverEstimate(payload({ runId: "run-2" }), "corr-1")
+    ).toBe(false);
     // The waiter is still pending — it was not resolved by the wrong event.
     expect(registry.pendingCount).toBe(1);
 
@@ -87,7 +89,9 @@ describe("EstimateWaiterRegistry", () => {
   it("ignores an estimate for another bot", async () => {
     const registry = new EstimateWaiterRegistry();
     const wait = registry.waitForEstimate(KEY, 1000);
-    expect(registry.deliverEstimate(payload({ botId: "bot-2" }), "corr-1")).toBe(false);
+    expect(
+      registry.deliverEstimate(payload({ botId: "bot-2" }), "corr-1")
+    ).toBe(false);
     expect(registry.pendingCount).toBe(1);
     registry.deliverEstimate(payload(), "corr-1");
     await wait;
@@ -112,9 +116,9 @@ describe("EstimateWaiterRegistry", () => {
   it("ignores a superseded preparation version", async () => {
     const registry = new EstimateWaiterRegistry();
     const wait = registry.waitForEstimate(KEY, 1000);
-    expect(registry.deliverEstimate(payload({ preparationVersion: 0 }), "corr-1")).toBe(
-      false
-    );
+    expect(
+      registry.deliverEstimate(payload({ preparationVersion: 0 }), "corr-1")
+    ).toBe(false);
     expect(registry.pendingCount).toBe(1);
     registry.deliverEstimate(payload(), "corr-1");
     await wait;
