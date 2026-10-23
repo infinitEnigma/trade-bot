@@ -353,17 +353,33 @@ export const GridStrategyForm: React.FC<GridStrategyFormProps> = ({
     Number.isFinite(previewOrderQuantity) &&
     previewOrderQuantity > 0;
 
+  // Keep wall-clock reads outside render. Refresh periodically so an otherwise
+  // unchanged candle eventually becomes stale while the form remains open.
+  const [referencePriceClockMs, setReferencePriceClockMs] = useState<
+    number | null
+  >(null);
+  useEffect(() => {
+    const updateClock = () => setReferencePriceClockMs(Date.now());
+    const initialUpdate = window.setTimeout(updateClock, 0);
+    const interval = window.setInterval(updateClock, 15_000);
+    return () => {
+      window.clearTimeout(initialUpdate);
+      window.clearInterval(interval);
+    };
+  }, []);
+
   const exposureEstimate = useMemo(() => {
     const reference = exposurePriceQuery.data;
     if (
       !reference ||
+      referencePriceClockMs === null ||
       exposurePriceQuery.isError ||
       !hasValidExposureConfig
     ) {
       return null;
     }
 
-    const ageMs = Date.now() - reference.timestampMs;
+    const ageMs = referencePriceClockMs - reference.timestampMs;
     if (
       ageMs > GRID_REFERENCE_PRICE_MAX_AGE_MS ||
       ageMs < -60_000 ||
@@ -386,6 +402,7 @@ export const GridStrategyForm: React.FC<GridStrategyFormProps> = ({
     exposurePriceQuery.data,
     exposurePriceQuery.isError,
     hasValidExposureConfig,
+    referencePriceClockMs,
     previewGridSize,
     previewGridRange,
     previewOrderQuantity,
