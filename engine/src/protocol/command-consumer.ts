@@ -277,21 +277,29 @@ async function handleCommand(
     // branch above, so read the fields off the captured payload — the guard
     // has already validated botId, userId, strategyId, runId and version.
     const authorize = payload as AuthorizeBotCommandPayload;
-    await botManager.publishAccepted(
-      streamOps,
-      authorize.botId,
-      "BOT_AUTHORIZE",
-      correlationId
-    );
-    await botManager.authorizeStart(
+    const authorized = await botManager.authorizeStart(
       streamOps,
       authorize.botId,
       authorize.userId,
       authorize.strategyId,
       authorize.runId,
       authorize.preparationVersion,
+      authorize.preparationCorrelationId,
       correlationId
     );
+    // For BOT_AUTHORIZE, acceptance is emitted only after the matching run
+    // has actually started; the backend uses runId to release its pending
+    // exposure reservation into the live-run state. A stale/missing
+    // preparation already emitted COMMAND_FAILED and must not also be ACKed.
+    if (authorized) {
+      await botManager.publishAccepted(
+        streamOps,
+        authorize.botId,
+        "BOT_AUTHORIZE",
+        correlationId,
+        authorize.runId
+      );
+    }
   } else if (isBotEmergencyStopCommand(command)) {
     // M1: the panic button publishes a real EMERGENCY_STOP command. ACK it
     // (the tracked row stays PENDING until the engine reports) and run the

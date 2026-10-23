@@ -15,10 +15,11 @@
  *
  * - REGISTER BEFORE PUBLISHING. A fast engine response must not arrive
  *   before the waiter exists, or the estimate would be lost.
- * - CORRELATE EXACTLY. A waiter is keyed by runId + preparationVersion +
- *   correlationId, and the incoming event must match the botId and the
- *   expected type as well. An estimate for another run or a superseded
- *   preparation never resolves a waiter.
+ * - CORRELATE EXACTLY. A waiter is keyed by botId + runId + the originating
+ *   command correlationId. The engine owns the monotonic preparationVersion,
+ *   so the waiter accepts that version only from the matching command; callers
+ *   then use the returned version for BOT_AUTHORIZE. An estimate from another
+ *   run or command never resolves the waiter.
  * - BOUNDED. Every wait has a deadline; a timeout is an UNKNOWN outcome, not
  *   proof that preparation failed.
  * - CLEAN UP ALWAYS. The registry entry is removed on success, on timeout, on
@@ -34,7 +35,7 @@ import { contextLogger as logger } from "../../logging/context-aware-logger.serv
 export interface EstimateWaitKey {
   botId: string;
   runId: string;
-  preparationVersion: number;
+  preparationVersion?: number;
   correlationId: string;
 }
 
@@ -62,7 +63,7 @@ function keyOf(key: EstimateWaitKey): string {
   return [
     key.botId,
     key.runId,
-    String(key.preparationVersion),
+    key.preparationVersion === undefined ? "*" : String(key.preparationVersion),
     key.correlationId,
   ].join("|");
 }
@@ -71,7 +72,7 @@ function keyOf(key: EstimateWaitKey): string {
 export class EstimateWaitTimeoutError extends Error {
   constructor(key: EstimateWaitKey, timeoutMs: number) {
     super(
-      `Timed out after ${timeoutMs}ms waiting for the engine's estimate for run ${key.runId} (preparation ${key.preparationVersion})`
+      `Timed out after ${timeoutMs}ms waiting for the engine's estimate for run ${key.runId} (preparation ${key.preparationVersion ?? "not yet known"})`
     );
     this.name = "EstimateWaitTimeoutError";
   }
@@ -118,20 +119,17 @@ export class EstimateWaiterRegistry {
    * timed out) or one for a superseded preparation. Such an event is ignored:
    * it must never authorize anything.
    */
-  deliverEstimate(payload: EstimateReadyPayload): boolean {
-    // Try the exact key first.
-    const exactId = keyOf({
-      botId: payload.botId,
-      runId: payload.runId,
-      preparationVersion: payload.preparationVersion,
-      // The correlation id is not part of the payload, so match on the rest.
-      correlationId: "",
-    });
+  deliverEstimate(
+    payload: EstimateReadyPayload,
+    correlationId: string
+  ): boolean {
     for (const [id, waiter] of this.waiters) {
       if (
         waiter.key.botId !== payload.botId ||
         waiter.key.runId !== payload.runId ||
-        waiter.key.preparationVersion !== payload.preparationVersion
+        waiter.key.correlationId !== correlationId ||
+        (waiter.key.preparationVersion !== undefined &&
+          waiter.key.preparationVersion !== payload.preparationVersion)
       ) {
         continue;
       }
@@ -144,8 +142,8 @@ export class EstimateWaiterRegistry {
       botId: payload.botId,
       runId: payload.runId,
       preparationVersion: payload.preparationVersion,
+      correlationId,
     });
-    void exactId;
     return false;
   }
 

@@ -114,7 +114,18 @@ export class BotLifecycleRepositoryAdapter implements ILifecycleRepository {
           WHERE id = $1 AND actual_state = $${params.length}`,
         params
       );
-      return (result.rowCount ?? 0) === 1;
+      if ((result.rowCount ?? 0) !== 1) return false;
+
+      // Stop live runs and discard non-trading preparations in the same
+      // transaction as the authoritative session STOPPED transition.
+      // AUTHORIZATION_PENDING reservations remain untouched for reconciliation.
+      await client.query(
+        `UPDATE strategy_runs
+            SET state = 'STOPPED', updated_at = CURRENT_TIMESTAMP
+          WHERE bot_id = $1 AND state IN ('RUNNING', 'PREPARING')`,
+        [botId]
+      );
+      return true;
     });
   }
 
@@ -128,7 +139,8 @@ export class BotLifecycleRepositoryAdapter implements ILifecycleRepository {
     exchangeAccountId: string | null,
     input: PersistTransitionInput,
     expectedActualState: BotActualState,
-    event: LifecycleEventInput
+    event: LifecycleEventInput,
+    prepareRunsForAdmission = false
   ): Promise<{ persisted: boolean; unresolvedExposureId?: string }> {
     return transaction(async client => {
       const tx = client as unknown as LifecycleTx;
@@ -169,6 +181,18 @@ export class BotLifecycleRepositoryAdapter implements ILifecycleRepository {
       );
       if ((result.rowCount ?? 0) !== 1) {
         return { persisted: false };
+      }
+
+      if (prepareRunsForAdmission) {
+        // A cleanly stopped run must re-enter PREPARING before the engine
+        // can produce a fresh estimate. Runs still AUTHORIZATION_PENDING are
+        // deliberately untouched: their reservation needs reconciliation.
+        await client.query(
+          `UPDATE strategy_runs
+              SET state = 'PREPARING', updated_at = CURRENT_TIMESTAMP
+            WHERE bot_id = $1 AND state = 'STOPPED'`,
+          [botId]
+        );
       }
 
       await this.recordLifecycleEventTx(tx, botId, event);
@@ -222,8 +246,53 @@ export class BotLifecycleRepositoryAdapter implements ILifecycleRepository {
     if (expectedActualState) {
       params.push(expectedActualState);
     }
-    const result = await query(sql, params);
-    return (result.rowCount ?? 0) === 1;
+    if (input.actualState !== "ERROR" && input.actualState !== "UNKNOWN") {
+      const result = await query(sql, params);
+      return (result.rowCount ?? 0) === 1;
+    }
+
+    // ERROR/UNKNOWN also affect run reservations. Preserve the account -> bot
+    // -> run lock order used by admission and stop transactions to avoid
+    // deadlocks.
+    return transaction(async client => {
+      const binding = await client.query<{
+        exchange_account_id: string | null;
+      }>("SELECT exchange_account_id FROM bot_instances WHERE id = $1", [
+        botId,
+      ]);
+      const exchangeAccountId = binding.rows[0]?.exchange_account_id;
+      if (exchangeAccountId) {
+        await client.query(
+          "SELECT id FROM exchange_accounts WHERE id = $1 FOR UPDATE",
+          [exchangeAccountId]
+        );
+      }
+
+      const result = await client.query(sql, params);
+      if ((result.rowCount ?? 0) !== 1) return false;
+
+      if (input.actualState === "UNKNOWN") {
+        // Engine authority was lost while the run was live. Keep its notional
+        // reserved and prevent an automatic restart until reconciliation.
+        await client.query(
+          `UPDATE strategy_runs
+              SET state = 'AUTHORIZATION_PENDING', updated_at = CURRENT_TIMESTAMP
+            WHERE bot_id = $1 AND state = 'RUNNING'`,
+          [botId]
+        );
+      } else {
+        // ERROR terminates active runners. Keep admitted reservations until
+        // they are explicitly reconciled; PREPARING is non-trading and can
+        // safely return to STOPPED.
+        await client.query(
+          `UPDATE strategy_runs
+              SET state = 'STOPPED', updated_at = CURRENT_TIMESTAMP
+            WHERE bot_id = $1 AND state IN ('RUNNING', 'PREPARING')`,
+          [botId]
+        );
+      }
+      return true;
+    });
   }
 
   /**

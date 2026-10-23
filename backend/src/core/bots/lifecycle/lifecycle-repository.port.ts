@@ -109,7 +109,8 @@ export interface ILifecycleRepository {
     exchangeAccountId: string | null,
     input: PersistTransitionInput,
     expectedActualState: BotActualState,
-    event: LifecycleEventInput
+    event: LifecycleEventInput,
+    prepareRunsForAdmission?: boolean
   ): Promise<{ persisted: boolean; unresolvedExposureId?: string }>;
   updateStatus(botId: string, status: string): Promise<void>;
   recordForceStopReason(botId: string, reason: string): Promise<void>;

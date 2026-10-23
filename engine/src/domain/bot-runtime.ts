@@ -24,6 +24,9 @@ export interface StrategyRunState {
   strategyId: string;
   strategy: GridTradingStrategy;
   stopTick: () => void;
+  /** Engine preparation that was successfully authorized; supports retry ACKs. */
+  preparationVersion?: number;
+  preparationCorrelationId?: string;
 }
 
 /**

@@ -103,7 +103,8 @@ export async function publishAccepted(
   commandType: string,
   engineId: string,
   engineEpoch: number,
-  correlationId: string
+  correlationId: string,
+  runId?: string
 ): Promise<PublishResult> {
   return publishEvent(
     streamOps,
@@ -113,6 +114,7 @@ export async function publishAccepted(
       commandType,
       engineId,
       engineEpoch,
+      ...(runId ? { runId } : {}),
     },
     correlationId
   );

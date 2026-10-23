@@ -346,8 +346,9 @@ describe("BotLifecycleService", () => {
       expect(engineProtocol.sendCommand).not.toHaveBeenCalled();
 
       const calls = mockQuery.mock.calls.map(call => String(call[0]));
-      const lockIndex = calls.findIndex(sql =>
-        sql.includes("FROM exchange_accounts") && sql.includes("FOR UPDATE")
+      const lockIndex = calls.findIndex(
+        sql =>
+          sql.includes("FROM exchange_accounts") && sql.includes("FOR UPDATE")
       );
       const unresolvedIndex = calls.findIndex(sql =>
         sql.includes("residual_abandoned_at IS NULL")
@@ -359,8 +360,7 @@ describe("BotLifecycleService", () => {
     it("allows start/resume after the residual has been abandoned", async () => {
       mockStartFlow({
         ...botRow,
-        force_stop_reason:
-          "cleanup_incomplete: position 0.1 ETH not flattened",
+        force_stop_reason: "cleanup_incomplete: position 0.1 ETH not flattened",
         residual_abandoned_at: "2026-10-20T12:00:00.000Z",
       } as typeof botRow);
 
@@ -1864,9 +1864,7 @@ describe("BotLifecycleService F1 notional admission", () => {
   });
 
   it("cancels the estimate waiter when BOT_START dispatch throws", async () => {
-    const waitForEstimate = jest.fn(
-      () => new Promise(() => undefined)
-    );
+    const waitForEstimate = jest.fn(() => new Promise(() => undefined));
     const cancelEstimateWait = jest.fn();
     const sendCommand = jest
       .fn()
@@ -1880,17 +1878,53 @@ describe("BotLifecycleService F1 notional admission", () => {
     service.setSessionCapProvider({
       getAdmissionSnapshot: async () => ({ cap: 5000, existingExposure: 0 }),
     });
-    service.setGridAdmissionService(
-      { admit: jest.fn() } as unknown as import("../../src/core/strategies/admission/grid-admission.service").GridAdmissionService
-    );
-    routeStart("0");
+    service.setGridAdmissionService({
+      admit: jest.fn(),
+    } as unknown as import("../../src/core/strategies/admission/grid-admission.service").GridAdmissionService);
+    const run = {
+      id: "run-1",
+      bot_id: "bot-1",
+      strategy_id: "strategy-1",
+      config_version: 1,
+      config: { symbol: "ETH", gridSize: 3, gridRange: 5, orderQuantity: 1 },
+      notional_amount: 100,
+      state: "PREPARING",
+      last_error_code: null,
+      created_at: new Date("2026-01-01T00:00:00.000Z"),
+      updated_at: new Date("2026-01-01T00:00:00.000Z"),
+    };
+    mockQuery.mockImplementation((sql: string) => {
+      const text = String(sql);
+      if (text.startsWith("SELECT id, user_id")) {
+        return Promise.resolve({ rows: [runningBotRow] });
+      }
+      if (text.includes("SUM(notional_amount)")) {
+        return Promise.resolve({ rows: [{ total: "0" }] });
+      }
+      if (
+        text.includes("SELECT exchange, environment, config FROM strategies")
+      ) {
+        return Promise.resolve({
+          rows: [
+            { exchange: "lighter", environment: "testnet", config: run.config },
+          ],
+        });
+      }
+      if (text.includes("SELECT config FROM strategies")) {
+        return Promise.resolve({ rows: [{ config: run.config }] });
+      }
+      if (text.includes("FROM strategy_runs")) {
+        return Promise.resolve({ rows: [run] });
+      }
+      return okResult();
+    });
 
     await expect(service.start("bot-1", "user-1")).rejects.toThrow(
       "redis publish threw"
     );
     expect(waitForEstimate).toHaveBeenCalledTimes(1);
     expect(cancelEstimateWait).toHaveBeenCalledWith(
-      expect.objectContaining({ botId: "bot-1", runId: "" }),
+      expect.objectContaining({ botId: "bot-1", runId: "run-1" }),
       "BOT_START dispatch threw before preparation was confirmed"
     );
   });
@@ -3618,10 +3652,14 @@ describe("residual exposure admission (Priority 1)", () => {
     );
     expect(stopUpdateIdx).toBeGreaterThanOrEqual(0);
     const afterStop = txQueries.slice(stopUpdateIdx + 1);
-    expect(afterStop[0]).toMatch(/^SELECT id FROM exchange_accounts/);
-    expect(afterStop[1]).toMatch(/^SELECT id,user_id,exchange_account_id/);
-    expect(afterStop[2]).toMatch(/^SELECT DISTINCT COALESCE\(config/);
-    expect(afterStop[3]).toMatch(/^UPDATE bot_instances/);
-    expect(afterStop[4]).toMatch(/^INSERT INTO bot_lifecycle_events/);
+    // persistStopTx now updates strategy_runs in the same transaction after
+    // the session CAS. The abandon transaction then acquires the account lock
+    // and reads the committed residual context before writing its resolution.
+    expect(afterStop[0]).toMatch(/^UPDATE strategy_runs/);
+    expect(afterStop[1]).toMatch(/^SELECT id FROM exchange_accounts/);
+    expect(afterStop[2]).toMatch(/^SELECT id,user_id,exchange_account_id/);
+    expect(afterStop[3]).toMatch(/^SELECT DISTINCT COALESCE\(config/);
+    expect(afterStop[4]).toMatch(/^UPDATE bot_instances/);
+    expect(afterStop[5]).toMatch(/^INSERT INTO bot_lifecycle_events/);
   });
 });

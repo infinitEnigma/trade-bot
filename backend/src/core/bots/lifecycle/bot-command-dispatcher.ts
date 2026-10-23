@@ -39,27 +39,32 @@ export class BotCommandDispatcher {
   async sendStartCommand(
     botId: string,
     userId: string,
-    strategyId: string
+    strategyId: string,
+    correlationId?: string
   ): Promise<SendCommandResult> {
     const config = await this.repository.findStrategyConfig(strategyId);
     const runs = await this.repository.getRunsForBot(botId);
-    return this.publishTrackedCommand("BOT_START", {
-      botId,
-      userId,
-      strategyId,
-      configVersion: 1,
-      config,
-      // Session runs (plan §D): the engine fans one session out to N
-      // runners. Single-run sessions carry exactly one entry — the
-      // single-run shim path.
-      runs: runs.map(run => ({
-        runId: run.id,
-        strategyId: run.strategy_id,
-        configVersion: run.config_version,
-        config: run.config,
-        notionalAmount: Number(run.notional_amount),
-      })),
-    });
+    return this.publishTrackedCommand(
+      "BOT_START",
+      {
+        botId,
+        userId,
+        strategyId,
+        configVersion: 1,
+        config,
+        // Session runs (plan §D): the engine fans one session out to N
+        // runners. Single-run sessions carry exactly one entry — the
+        // single-run shim path.
+        runs: runs.map(run => ({
+          runId: run.id,
+          strategyId: run.strategy_id,
+          configVersion: run.config_version,
+          config: run.config,
+          notionalAmount: Number(run.notional_amount),
+        })),
+      },
+      correlationId
+    );
   }
 
   /**
@@ -74,7 +79,8 @@ export class BotCommandDispatcher {
     userId: string,
     strategyId: string,
     runId: string,
-    preparationVersion: number
+    preparationVersion: number,
+    preparationCorrelationId: string
   ): Promise<SendCommandResult> {
     return this.publishTrackedCommand("BOT_AUTHORIZE", {
       botId,
@@ -82,6 +88,7 @@ export class BotCommandDispatcher {
       strategyId,
       runId,
       preparationVersion,
+      preparationCorrelationId,
     });
   }
 
@@ -111,9 +118,10 @@ export class BotCommandDispatcher {
    */
   private async publishTrackedCommand(
     type: "BOT_START" | "BOT_STOP" | "EMERGENCY_STOP" | "BOT_AUTHORIZE",
-    payload: unknown
+    payload: unknown,
+    suppliedCorrelationId?: string
   ): Promise<SendCommandResult> {
-    const correlationId = crypto.randomUUID();
+    const correlationId = suppliedCorrelationId ?? crypto.randomUUID();
     const commandType = type;
 
     // Track BEFORE publishing so the engine's (possibly already-processed)

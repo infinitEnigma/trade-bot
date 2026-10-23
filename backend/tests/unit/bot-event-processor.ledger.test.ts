@@ -67,9 +67,41 @@ describe("BotEventProcessor ledger routing (Phase 4)", () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    processor = new BotEventProcessor(() => ({} as never), {} as never);
+    processor = new BotEventProcessor(() => ({}) as never, {} as never);
     ledgerHandler = jest.fn().mockResolvedValue(undefined);
     processor.setTradeLedgerHandler(ledgerHandler);
+  });
+
+  it("moves the specific run to RUNNING after BOT_AUTHORIZE is acknowledged", async () => {
+    const repository = {
+      findTrackedCommand: jest.fn().mockResolvedValue(null),
+      resolveCommand: jest.fn().mockResolvedValue(undefined),
+      setRunState: jest.fn().mockResolvedValue(true),
+      recordLifecycleEvent: jest.fn().mockResolvedValue(undefined),
+    };
+    processor = new BotEventProcessor(() => repository as never, {} as never);
+    processor.setAuthorityChecker(async () => true);
+    const event = createBotEvent(
+      "COMMAND_ACCEPTED",
+      {
+        ...BASE,
+        commandType: "BOT_AUTHORIZE",
+        runId: "run-42",
+      } as never,
+      "corr-authorize"
+    );
+
+    await processor.handleEngineEvent(event);
+
+    expect(repository.setRunState).toHaveBeenCalledWith(
+      "run-42",
+      "RUNNING",
+      "AUTHORIZATION_PENDING"
+    );
+    expect(repository.resolveCommand).toHaveBeenCalledWith(
+      "corr-authorize",
+      "ACCEPTED"
+    );
   });
 
   it("routes an authoritative TRADE_EXECUTED to the ledger handler", async () => {
