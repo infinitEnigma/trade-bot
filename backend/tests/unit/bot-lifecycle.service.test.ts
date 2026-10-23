@@ -346,8 +346,9 @@ describe("BotLifecycleService", () => {
       expect(engineProtocol.sendCommand).not.toHaveBeenCalled();
 
       const calls = mockQuery.mock.calls.map(call => String(call[0]));
-      const lockIndex = calls.findIndex(sql =>
-        sql.includes("FROM exchange_accounts") && sql.includes("FOR UPDATE")
+      const lockIndex = calls.findIndex(
+        sql =>
+          sql.includes("FROM exchange_accounts") && sql.includes("FOR UPDATE")
       );
       const unresolvedIndex = calls.findIndex(sql =>
         sql.includes("residual_abandoned_at IS NULL")
@@ -359,8 +360,7 @@ describe("BotLifecycleService", () => {
     it("allows start/resume after the residual has been abandoned", async () => {
       mockStartFlow({
         ...botRow,
-        force_stop_reason:
-          "cleanup_incomplete: position 0.1 ETH not flattened",
+        force_stop_reason: "cleanup_incomplete: position 0.1 ETH not flattened",
         residual_abandoned_at: "2026-10-20T12:00:00.000Z",
       } as typeof botRow);
 
@@ -1864,9 +1864,7 @@ describe("BotLifecycleService F1 notional admission", () => {
   });
 
   it("cancels the estimate waiter when BOT_START dispatch throws", async () => {
-    const waitForEstimate = jest.fn(
-      () => new Promise(() => undefined)
-    );
+    const waitForEstimate = jest.fn(() => new Promise(() => undefined));
     const cancelEstimateWait = jest.fn();
     const sendCommand = jest
       .fn()
@@ -1880,9 +1878,9 @@ describe("BotLifecycleService F1 notional admission", () => {
     service.setSessionCapProvider({
       getAdmissionSnapshot: async () => ({ cap: 5000, existingExposure: 0 }),
     });
-    service.setGridAdmissionService(
-      { admit: jest.fn() } as unknown as import("../../src/core/strategies/admission/grid-admission.service").GridAdmissionService
-    );
+    service.setGridAdmissionService({
+      admit: jest.fn(),
+    } as unknown as import("../../src/core/strategies/admission/grid-admission.service").GridAdmissionService);
     const run = {
       id: "run-1",
       bot_id: "bot-1",
@@ -1903,9 +1901,13 @@ describe("BotLifecycleService F1 notional admission", () => {
       if (text.includes("SUM(notional_amount)")) {
         return Promise.resolve({ rows: [{ total: "0" }] });
       }
-      if (text.includes("SELECT exchange, environment, config FROM strategies")) {
+      if (
+        text.includes("SELECT exchange, environment, config FROM strategies")
+      ) {
         return Promise.resolve({
-          rows: [{ exchange: "lighter", environment: "testnet", config: run.config }],
+          rows: [
+            { exchange: "lighter", environment: "testnet", config: run.config },
+          ],
         });
       }
       if (text.includes("SELECT config FROM strategies")) {
