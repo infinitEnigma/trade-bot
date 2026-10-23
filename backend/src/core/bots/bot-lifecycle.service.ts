@@ -753,11 +753,14 @@ export class BotLifecycleService {
       orderQuantity: Number(strategyConfig.orderQuantity ?? 1),
     };
 
+    // The engine assigns the monotonic preparation version. Correlate this
+    // request by the command envelope's unique ID and accept the version from
+    // the matching estimate; never assume a restarted/re-prepared bot is v1.
+    const preparationCorrelationId = crypto.randomUUID();
     const waitKey: EstimateWaitKey = {
       botId,
       runId,
-      preparationVersion: 1,
-      correlationId,
+      correlationId: preparationCorrelationId,
     };
 
     // 1. REGISTER THE WAIT BEFORE PUBLISHING.
@@ -776,7 +779,8 @@ export class BotLifecycleService {
       sendResult = await this.dispatcher.sendStartCommand(
         botId,
         userId,
-        strategyId
+        strategyId,
+        preparationCorrelationId
       );
     } catch (error) {
       // Dispatch may throw before returning a SendCommandResult (e.g. pending
