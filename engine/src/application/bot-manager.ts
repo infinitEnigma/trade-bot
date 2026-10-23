@@ -138,7 +138,7 @@ export class BotManager {
    * orders placed, no tick runner armed. Execution begins only after a
    * matching BOT_AUTHORIZE validates this exact preparation.
    */
-  private prepared: Map<string, PreparedRun> = new Map();
+  private prepared: Map<string, Map<string, PreparedRun>> = new Map();
   /**
    * Monotonic preparation version per bot. A BOT_AUTHORIZE carrying a stale
    * version is rejected, so a valid authorization can never execute a
@@ -999,7 +999,10 @@ export class BotManager {
       }
 
       // Remember the primary preparation so BOT_AUTHORIZE can find it.
-      this.prepared.set(botId, preparedRuns[0]);
+      this.prepared.set(
+        botId,
+        new Map(preparedRuns.map(prepared => [prepared.runId, prepared]))
+      );
 
       // STARTING → PREPARED. Execution is NOT authorized yet.
       await this.publishStateChanged(
@@ -1078,24 +1081,22 @@ export class BotManager {
     preparationVersion: number,
     correlationId: string
   ): Promise<void> {
-    const prepared = this.prepared.get(botId);
+    const preparedRuns = this.prepared.get(botId);
+    const prepared = preparedRuns?.get(runId);
     if (!prepared) {
-      logger.warn("BOT_AUTHORIZE with no prepared run", { botId, runId });
+      logger.warn("BOT_AUTHORIZE with no matching prepared run", { botId, runId });
       await this.publishFailed(
         streamOps,
         botId,
         "BOT_AUTHORIZE",
         "NOT_PREPARED",
-        `No prepared run for bot ${botId}`,
+        `No prepared run ${runId} for bot ${botId}`,
         correlationId
       );
       return;
     }
 
-    if (
-      prepared.runId !== runId ||
-      prepared.preparationVersion !== preparationVersion
-    ) {
+    if (prepared.preparationVersion !== preparationVersion) {
       logger.warn("BOT_AUTHORIZE does not match the prepared run", {
         botId,
         requestedRunId: runId,
@@ -1114,12 +1115,14 @@ export class BotManager {
       return;
     }
 
-    // This preparation is consumed by this authorization.
-    this.prepared.delete(botId);
+    // Consume only this run's preparation. Other runs in the same session
+    // remain independently authorizable.
+    preparedRuns!.delete(runId);
+    if (preparedRuns!.size === 0) this.prepared.delete(botId);
 
+    const existingRuntime = this.bots.get(botId);
     const startedRunners: StrategyRunner[] = [];
     try {
-      // Execution begins HERE — start the strategy and arm the tick loop.
       await prepared.strategy.start();
 
       const runner = new StrategyRunner(
@@ -1146,38 +1149,77 @@ export class BotManager {
       startedRunners.push(runner);
 
       const stopRunner = (): void => runner.stop();
-      const runs = new Map<string, StrategyRunState>();
-      runs.set(prepared.runId, {
+      const runState: StrategyRunState = {
         runId: prepared.runId,
         strategyId,
         strategy: prepared.strategy,
         stopTick: stopRunner,
-      });
+      };
 
-      this.bots.set(botId, {
-        botId,
-        strategyId,
-        userId,
-        symbol: prepared.symbol,
-        state: "RUNNING",
-        strategy: prepared.strategy,
-        stopTick: stopRunner,
-        exchangeClient: prepared.exchangeClient,
-        runs,
-      });
+      if (existingRuntime) {
+        existingRuntime.runs ??= new Map([
+          [
+            existingRuntime.runs?.values().next().value?.runId ??
+              existingRuntime.strategyId,
+            {
+              runId:
+                existingRuntime.runs?.values().next().value?.runId ??
+                existingRuntime.strategyId,
+              strategyId: existingRuntime.strategyId,
+              strategy: existingRuntime.strategy,
+              stopTick: existingRuntime.stopTick,
+            },
+          ],
+        ]);
+        existingRuntime.runs.set(prepared.runId, runState);
+      } else {
+        const runs = new Map<string, StrategyRunState>();
+        runs.set(prepared.runId, runState);
+        this.bots.set(botId, {
+          botId,
+          strategyId,
+          userId,
+          symbol: prepared.symbol,
+          state: "RUNNING",
+          strategy: prepared.strategy,
+          stopTick: stopRunner,
+          exchangeClient: prepared.exchangeClient,
+          runs,
+        });
 
-      // PREPARED → RUNNING — the engine now acknowledges execution.
-      await this.publishStateChanged(
-        streamOps,
-        botId,
-        "PREPARED",
-        "RUNNING",
-        correlationId,
-        `authorized and started (${runs.size} run)`
-      );
+        // Only the first authorized run changes the session state. Further
+        // authorizations add runners to the already-running session.
+        await this.publishStateChanged(
+          streamOps,
+          botId,
+          "PREPARED",
+          "RUNNING",
+          correlationId,
+          "authorized and started (session run)"
+        );
+      }
     } catch (error) {
-      for (const r of startedRunners) r.stop();
+      for (const runner of startedRunners) runner.stop();
+
+      // Any run failing after another run has started invalidates the session:
+      // stop every already-active runner and strategy before reporting ERROR.
+      const activeRuntime = this.bots.get(botId);
+      if (activeRuntime) {
+        const activeRuns = activeRuntime.runs?.values() ?? [];
+        for (const activeRun of activeRuns) {
+          activeRun.stopTick();
+          try {
+            await activeRun.strategy.stop();
+          } catch (stopError) {
+            logger.error("Failed to stop a run after authorization failure", stopError as Error, {
+              botId,
+              runId: activeRun.runId,
+            });
+          }
+        }
+      }
       this.bots.delete(botId);
+      this.prepared.delete(botId);
       const err = error instanceof Error ? error : new Error(String(error));
       await this.publishFailed(
         streamOps,
