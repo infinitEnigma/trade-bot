@@ -369,6 +369,16 @@ export class BotLifecycleService {
       const bootRuns = await this.repository.getRunsForBot(botId);
 
       try {
+        const blockedRun = bootRuns.find(run => run.state !== "PREPARING");
+        if (blockedRun) {
+          const error = new Error(
+            `Run ${blockedRun.id} is ${blockedRun.state}; reconciliation is required before starting this session`
+          ) as Error & { statusCode?: number; code?: string };
+          error.statusCode = 409;
+          error.code = "RUN_RECONCILIATION_REQUIRED";
+          throw error;
+        }
+
         await this.admitPreparedRuns(
           botId,
           userId,
