@@ -47,6 +47,12 @@ import {
   ILifecycleRepository,
   RunNotionalCapExceededError,
 } from "./lifecycle/lifecycle-repository.port";
+import {
+  GridAdmissionRejectedError,
+  GridAdmissionService,
+  type GridEstimateReport,
+} from "../strategies/admission/grid-admission.service";
+import type { EstimateWaitKey } from "./lifecycle/estimate-waiter";
 import { ExchangeAccountLookup } from "./lifecycle/exchange-account-lookup.port";
 import { IVenueSymbolCatalog } from "./lifecycle/venue-symbol-catalog.port";
 import { revalidateSymbolAgainstCatalog } from "../market/venue-catalog.policy";
@@ -106,13 +112,30 @@ export class BotLifecycleService {
   private venueCatalogImpl?: IVenueSymbolCatalog;
   private notifier = new BotLifecycleNotifier();
   private dispatcher: BotCommandDispatcher;
+  /** The engine protocol — used for the admission flow's estimate wait. */
+  private engineProtocol: EngineProtocolService;
   private eventProcessor: BotEventProcessor;
   // F1: injected so tests can supply a deterministic cap and production wires
   // the venue-aware default (see dependency-injection.container). Optional —
   // when unset the admission gate fails closed (503) rather than admit.
   private sessionCapProvider?: SessionCapProvider;
+  /**
+   * The grid admission gate — the backend's authoritative decision on whether
+   * a prepared grid may trade. When unset, the admission gate fails CLOSED
+   * (503): a grid must never be authorized without it.
+   */
+  private gridAdmission?: GridAdmissionService;
+  /**
+   * How long to wait for the engine's estimate after publishing BOT_START.
+   * A timeout is an UNKNOWN outcome — the caller must not authorize on it.
+   */
+  private estimateWaitTimeoutMs = 30_000;
 
   constructor(engineProtocol: EngineProtocolService) {
+    // The engine protocol is kept for the admission flow's typed estimate
+    // wait — the service that owns the Redis Streams consumer owns the
+    // correlation mechanism for a preparation and its response.
+    this.engineProtocol = engineProtocol;
     // Lazy accessor: the repository is setter-injected at startup (the
     // module-load singleton is constructed before the composition root can
     // hand over the infrastructure adapter). An unwired repository must
@@ -224,6 +247,20 @@ export class BotLifecycleService {
     this.sessionCapProvider = provider;
   }
 
+  /**
+   * Inject the grid admission gate. Wired at startup; when unset the
+   * admission gate fails CLOSED (503) — a grid is never authorized without
+   * it, because the gate is what recomputes the exposure independently.
+   */
+  setGridAdmissionService(service: GridAdmissionService): void {
+    this.gridAdmission = service;
+  }
+
+  /** Override the estimate wait budget (tests inject a shorter one). */
+  setEstimateWaitTimeoutMs(timeoutMs: number): void {
+    this.estimateWaitTimeoutMs = timeoutMs;
+  }
+
   // ===========================================
   // START
   // ===========================================
@@ -315,30 +352,85 @@ export class BotLifecycleService {
     // strategyId predates sessions — derive it from the oldest run so the
     // engine's legacy single-run path keeps working; a session with no
     // runs yet carries the empty string and runs `[]`.
-    const bootRuns = await this.repository.getRunsForBot(botId);
-    const sendResult = await this.dispatcher.sendStartCommand(
-      bot.id,
-      userId,
-      bootRuns[0]?.strategy_id ?? ""
-    );
-    if (!sendResult.success) {
-      // Roll back to STOPPED so the bot is not stuck in STARTING with no command in flight.
-      await this.repository.persistTransition(
-        botId,
-        { desiredState: "STOPPED", actualState: "STOPPED" },
-        nextState
+    //
+    // TWO-PHASE ADMISSION: the engine PREPARES first (it prices the grid and
+    // reports its estimate, placing no orders); the backend validates that
+    // estimate, admits the recomputed exposure under the account lock, and
+    // only then authorizes execution. A failure in any phase leaves the run
+    // non-tradable.
+    let startCorrelationId: string | null = null;
+    let startMessageId: string | null = null;
+
+    if (this.gridAdmission) {
+      logger.warn?.(
+        `[DEBUG] start() taking grid admission path; gridAdmission set for bot ${botId}`
       );
-      await this.repository.recordLifecycleEvent(botId, {
-        eventType: "START_FAILED",
-        fromState: nextState,
-        toState: "STOPPED",
-        correlationId: sendResult.correlationId ?? null,
-        messageId: sendResult.messageId ?? null,
-        metadata: { reason: sendResult.error ?? "unknown" },
-      });
-      const error = new Error("Failed to deliver start command to engine");
-      (error as Error & { statusCode?: number }).statusCode = 503;
-      throw error;
+      const bootRuns = await this.repository.getRunsForBot(botId);
+      const bootRun = bootRuns[0];
+      const bootStrategyId = bootRun?.strategy_id ?? "";
+
+      try {
+        await this.admitPreparedRun(
+          botId,
+          userId,
+          bootStrategyId,
+          bootRun?.id ?? "",
+          "",
+          bot.exchange_account_id ?? ""
+        );
+      } catch (error) {
+        // The preparation or admission failed. The run stays non-tradable:
+        // roll the session back to STOPPED so it is not stuck in STARTING, and
+        // record why.
+        await this.repository.persistTransition(
+          botId,
+          { desiredState: "STOPPED", actualState: "STOPPED" },
+          nextState
+        );
+        await this.repository.recordLifecycleEvent(botId, {
+          eventType: "START_FAILED",
+          fromState: nextState,
+          toState: "STOPPED",
+          correlationId: null,
+          messageId: null,
+          metadata: {
+            reason: error instanceof Error ? error.message : String(error),
+          },
+        });
+        throw error;
+      }
+    } else {
+      // Legacy path for deployments/strategies that do not use grid admission.
+      // Keep the original single-phase dispatch behavior in this branch only.
+      const sendResult = await this.dispatcher.sendStartCommand(
+        botId,
+        userId,
+        (await this.repository.getRunsForBot(botId))[0]?.strategy_id ?? ""
+      );
+
+      startCorrelationId = sendResult.correlationId ?? null;
+      startMessageId = sendResult.messageId ?? null;
+
+      if (!sendResult.success) {
+        await this.repository.persistTransition(
+          botId,
+          { desiredState: "STOPPED", actualState: "STOPPED" },
+          nextState
+        );
+        await this.repository.recordLifecycleEvent(botId, {
+          eventType: "START_FAILED",
+          fromState: nextState,
+          toState: "STOPPED",
+          correlationId: startCorrelationId,
+          messageId: startMessageId,
+          metadata: { reason: sendResult.error ?? "unknown" },
+        });
+        const error = new Error(
+          `Failed to deliver start command: ${sendResult.error ?? "unknown"}`
+        ) as Error & { statusCode?: number };
+        error.statusCode = 503;
+        throw error;
+      }
     }
 
     // Dispatch already tracked the command as PENDING (record-before-publish),
@@ -347,8 +439,8 @@ export class BotLifecycleService {
       eventType: "START_COMMAND_SENT",
       fromState: nextState,
       toState: nextState,
-      correlationId: sendResult.correlationId ?? null,
-      messageId: sendResult.messageId ?? null,
+      correlationId: startCorrelationId,
+      messageId: startMessageId,
       metadata: {},
     });
 
@@ -361,7 +453,7 @@ export class BotLifecycleService {
       botId,
       desiredState: "RUNNING",
       actualState: nextState,
-      correlationId: sendResult.correlationId,
+      correlationId: startCorrelationId ?? undefined,
     };
   }
 
@@ -597,6 +689,206 @@ export class BotLifecycleService {
 
     // Delegate to start() so the transition/command logic has a single home.
     return this.start(botId, userId);
+  }
+
+  // ===========================================
+  // PREPARATION → ADMISSION → AUTHORIZATION
+  // ===========================================
+
+  /**
+   * The two-phase admission flow for ONE prepared run.
+   *
+   * The sequence, and what each step guarantees:
+   *
+   *  1. WAIT — a waiter is registered BEFORE `BOT_START` is published, so a
+   *     fast engine response cannot arrive before the waiter exists.
+   *  2. PREPARE — `BOT_START` makes the engine price the grid and report
+   *     its estimate. The engine places NO orders.
+   *  3. VALIDATE — `GridAdmissionService` recomputes the exposure from the
+   *     PERSISTED config and the backend's own validated price, cross-checks
+   *     the engine's report, and enforces the per-order policy. A rejection
+   *     here means no authorization, ever.
+   *  4. ADMIT — the authoritative F1 transaction runs under the account
+   *     lock: it re-reads the account-scoped pending-admitted sum, enforces
+   *     the cap, and persists the BACKEND-computed notional together with the
+   *     AUTHORIZATION_PENDING state. One transaction — a run can never be
+   *     reserved without its notional.
+   *  5. AUTHORIZE — `BOT_AUTHORIZE` is published ONLY after that commit.
+   *     A publication failure leaves the reservation in place for idempotent
+   *     recovery; it must never re-admit the same exposure.
+   *
+   * The transaction is deliberately SHORT: the wait for the engine's estimate
+   * happens OUTSIDE it, so the account lock is never held across a network
+   * wait.
+   */
+  private async admitPreparedRun(
+    botId: string,
+    userId: string,
+    strategyId: string,
+    runId: string,
+    correlationId: string,
+    exchangeAccountId: string
+  ): Promise<void> {
+    logger.warn?.(
+      `[DEBUG] admitPreparedRun called; gridAdmission=${this.gridAdmission !== undefined}, engineProtocol=${this.engineProtocol?.constructor?.name}`
+    );
+    const admission = this.gridAdmission;
+    if (!admission) {
+      const error = new Error(
+        "Grid admission is not wired: refusing to authorize a grid without the admission gate."
+      ) as Error & { statusCode?: number; code?: string };
+      error.statusCode = 503;
+      error.code = "ADMISSION_UNAVAILABLE";
+      throw error;
+    }
+
+    // The persisted config + venue identity — never the estimate's own
+    // metadata. The estimate is validated against these.
+    const venue = await this.repository.findStrategyVenue(strategyId);
+    const strategyConfig = await this.repository.findStrategyConfig(strategyId);
+    const symbol = venue.symbol;
+    const gridConfig = {
+      gridSize: Number(strategyConfig.gridSize ?? 10),
+      gridRangePercent: Number(strategyConfig.gridRange ?? 5),
+      orderQuantity: Number(strategyConfig.orderQuantity ?? 1),
+    };
+
+    const waitKey: EstimateWaitKey = {
+      botId,
+      runId,
+      preparationVersion: 1,
+      correlationId,
+    };
+
+    // 1. REGISTER THE WAIT BEFORE PUBLISHING.
+    const wait = this.engineProtocol.waitForEstimate(
+      waitKey,
+      this.estimateWaitTimeoutMs
+    );
+
+    // 2. PUBLISH — the engine prepares and reports.
+    const sendResult = await this.dispatcher.sendStartCommand(
+      botId,
+      userId,
+      strategyId
+    );
+    if (!sendResult.success) {
+      // Publication failed: abandon the wait so a late estimate cannot
+      // resolve it, and fail closed.
+      this.engineProtocol.cancelEstimateWait(
+        waitKey,
+        "BOT_START publication failed"
+      );
+      const error = new Error(
+        "Failed to deliver the preparation command to the engine"
+      ) as Error & { statusCode?: number };
+      error.statusCode = 503;
+      throw error;
+    }
+
+    // 3. WAIT for the estimate — bounded; a timeout is an UNKNOWN outcome.
+    let estimate: GridEstimateReport;
+    try {
+      estimate = await wait;
+    } catch (error) {
+      const failure = new Error(
+        `The engine did not report a grid estimate: ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      ) as Error & { statusCode?: number; code?: string };
+      failure.statusCode = 503;
+      failure.code = "ESTIMATE_UNAVAILABLE";
+      throw failure;
+    }
+
+    // 4. VALIDATE — the backend's authoritative recomputation.
+    let authorizedNotional: number;
+    try {
+      const result = await admission.admit(
+        {
+          botId,
+          runId,
+          preparationVersion: estimate.preparationVersion,
+          config: gridConfig,
+          symbol,
+          venue: (venue.exchange ?? "lighter") as "kodiak" | "lighter",
+          environment: (venue.environment ?? "testnet") as
+            "testnet" | "mainnet",
+        },
+        estimate
+      );
+      authorizedNotional = result.authorizedNotional;
+    } catch (error) {
+      if (error instanceof GridAdmissionRejectedError) {
+        logger.warn("Grid admission rejected", {
+          botId,
+          runId,
+          reason: error.reason,
+          message: error.message,
+        });
+        const failure = new Error(error.message);
+        (failure as Error & { statusCode?: number; code?: string }).statusCode =
+          409;
+        (failure as Error & { code?: string }).code = error.reason;
+        throw failure;
+      }
+      throw error;
+    }
+
+    // 5. ADMIT — the authoritative F1 transaction under the account lock.
+    const { cap, existingExposure } = await this.computeAdmission(
+      userId,
+      exchangeAccountId
+    );
+    await this.repository.inTransaction(async tx => {
+      await this.repository.lockAccountRowTx(tx, exchangeAccountId);
+      try {
+        await this.repository.admitPreparedRunWithCapGuardTx(
+          tx,
+          runId,
+          authorizedNotional,
+          cap,
+          existingExposure,
+          exchangeAccountId
+        );
+      } catch (error) {
+        if (error instanceof RunNotionalCapExceededError) {
+          (error as Error & { statusCode?: number }).statusCode = 409;
+          throw error;
+        }
+        throw error;
+      }
+    });
+
+    // 6. AUTHORIZE — only after the reservation committed.
+    const authorize = await this.dispatcher.sendAuthorizeCommand(
+      botId,
+      userId,
+      strategyId,
+      runId,
+      estimate.preparationVersion
+    );
+    if (!authorize.success) {
+      // The reservation is committed. It is NOT re-admitted and the engine is
+      // NOT assumed to be running: recovery re-publishes the authorization
+      // for the SAME preparation (idempotent), and the reserved exposure keeps
+      // counting until the run is reconciled.
+      logger.error(
+        "Authorization publication failed after the admission committed",
+        undefined,
+        {
+          botId,
+          runId,
+          reservedNotional: authorizedNotional,
+        }
+      );
+      const error = new Error(
+        "The grid was admitted but the authorization could not be delivered — the run stays reserved and must be reconciled"
+      ) as Error & { statusCode?: number; code?: string };
+      error.statusCode = 503;
+      error.code = "AUTHORIZATION_FAILED";
+      throw error;
+    }
   }
 
   /**

@@ -964,7 +964,8 @@ export class BotLifecycleRepositoryAdapter implements ILifecycleRepository {
    * AUTHORIZATION_PENDING run IS in the pending sum: it has been admitted
    * (its notional_amount is the backend's validated exposure) but the engine
    * has not acknowledged execution yet, so its exposure is not yet reflected
-   * in the venue positions. `cap` and
+   * in the venue positions. A PREPARING run is NOT in the pending sum: it is
+   * not admitted and reserves nothing. `cap` and
    * `existingExposure` are resolved by the caller OUTSIDE this transaction (the
    * venue balance + positions calls must not hold a DB lock across network
    * I/O); only the pending sum is re-read authoritatively under the lock.
@@ -1015,11 +1016,78 @@ export class BotLifecycleRepositoryAdapter implements ILifecycleRepository {
     const capInsert = await client.query<{ id: string }>(
       `INSERT INTO strategy_runs
                 (bot_id, strategy_id, config_version, config, notional_amount, state)
-              VALUES ($1, $2, 1, $3, $4, 'STOPPED')
+              VALUES ($1, $2, 1, $3, $4, 'PREPARING')
               RETURNING id`,
       [botId, strategyId, JSON.stringify(config), notionalAmount]
     );
     return capInsert.rows[0].id;
+  }
+
+  /**
+   * THE admission transaction: the sole transition from an unreserved
+   * preparation to a reserved, authorized-pending run.
+   *
+   * Under the account lock it re-reads the account-scoped pending-admitted
+   * sum and enforces
+   * `existingExposure + pendingSum + authorizedNotional <= cap`. On success it
+   * persists the BACKEND-computed notional together with the
+   * AUTHORIZATION_PENDING state — one transaction, so a run can never be
+   * reserved without its notional or carry a notional without its state.
+   *
+   * `PREPARING` is excluded from the pending sum (a prepared run reserves
+   * nothing); AUTHORIZATION_PENDING is included (it reserves real exposure
+   * the venue positions do not yet reflect).
+   */
+  async admitPreparedRunWithCapGuardTx(
+    tx: LifecycleTx,
+    runId: string,
+    authorizedNotional: number,
+    cap: number,
+    existingExposure: number,
+    exchangeAccountId: string
+  ): Promise<void> {
+    const client = clientOf(tx);
+    // Serialize ALL admissions on this account so two concurrent admissions
+    // cannot both pass on a stale pending sum.
+    await client.query(
+      `SELECT id FROM exchange_accounts WHERE id = $1 FOR UPDATE`,
+      [exchangeAccountId]
+    );
+    const sumResult = await client.query<{ total: string | null }>(
+      `SELECT COALESCE(SUM(notional_amount), 0) AS total
+              FROM strategy_runs r
+              JOIN bot_instances b ON r.bot_id = b.id
+             WHERE b.exchange_account_id = $1
+               AND r.state IN ('STOPPED', 'STARTING', 'AUTHORIZATION_PENDING')`,
+      [exchangeAccountId]
+    );
+    const pendingSum = Number(sumResult.rows[0]?.total ?? 0);
+    if (existingExposure + pendingSum + authorizedNotional > cap) {
+      throw new RunNotionalCapExceededError(
+        existingExposure,
+        pendingSum,
+        authorizedNotional,
+        cap
+      );
+    }
+
+    // The reservation and the state transition land together. The run must be
+    // in PREPARING: a run that was never prepared (or was already admitted)
+    // must not be admitted by this path.
+    const update = await client.query(
+      `UPDATE strategy_runs
+          SET state = 'AUTHORIZATION_PENDING',
+              notional_amount = $2,
+              updated_at = CURRENT_TIMESTAMP
+        WHERE id = $1
+          AND state = 'PREPARING'`,
+      [runId, authorizedNotional]
+    );
+    if ((update.rowCount ?? 0) !== 1) {
+      throw new Error(
+        `Run ${runId} is not in PREPARING — refusing to admit it (the preparation was superseded or already admitted)`
+      );
+    }
   }
 
   /** CAS a run's state; returns false when the row moved underneath. */

@@ -39,10 +39,23 @@ function payload(
 }
 
 describe("EstimateWaiterRegistry", () => {
+  // With maxWorkers: 1, all test suites share one process. An orphaned
+  // waiter timer (or its promise rejection) from a finished suite can
+  // crash a later suite. Track every registry we create so we can drain
+  // any leftover waiters in case a test forgets to clean up.
+  const registries: EstimateWaiterRegistry[] = [];
+
+  afterEach(() => {
+    while (registries.length > 0) {
+      registries.pop()!.cancelAll("test cleanup");
+    }
+  });
+
   it("resolves the waiter when the matching estimate arrives", async () => {
     const registry = new EstimateWaiterRegistry();
+    registries.push(registry);
     const wait = registry.waitForEstimate(KEY, 1000);
-
+    
     expect(registry.deliverEstimate(payload())).toBe(true);
     await expect(wait).resolves.toMatchObject({
       runId: "run-1",
@@ -117,12 +130,18 @@ describe("EstimateWaiterRegistry", () => {
     expect(registry.deliverEstimate(payload())).toBe(false);
   });
 
-  it("refuses a duplicate waiter for the same preparation", () => {
+  it("refuses a duplicate waiter for the same preparation", async () => {
     const registry = new EstimateWaiterRegistry();
-    registry.waitForEstimate(KEY, 1000);
+    const wait = registry.waitForEstimate(KEY, 1000);
     expect(() => registry.waitForEstimate(KEY, 1000)).toThrow(
       /already registered/
     );
+
+    // The first waiter is never resolved by this test. Clean it up explicitly
+    // so the 1000ms timer cannot fire as an unhandled promise rejection in a
+    // later suite — with maxWorkers: 1, all suites share one process.
+    registry.cancelWait(KEY, "test cleanup");
+    await expect(wait).rejects.toThrow(/test cleanup/);
   });
 
   it("resolves several concurrent waits independently", async () => {

@@ -1,18 +1,25 @@
 -- Migration: 031_authorization_pending_run_state.sql
--- Two-phase admission: a grid run is PREPARED (the engine priced it) before
--- it is ADMITTED (the backend validated the exposure under the account lock)
--- and only then AUTHORIZED (the engine may execute it).
+-- Two-phase admission: a grid run is PREPARING (the engine is pricing it) or
+-- PREPARED before it is ADMITTED (the backend validated the exposure under the
+-- account lock) and only then AUTHORIZED (the engine may execute it).
 --
--- `strategy_runs.state` gains 'AUTHORIZATION_PENDING': the run has been
--- admitted — its notional_amount is the backend's validated exposure and it
--- COUNTS toward the account's pending exposure — but the engine has not yet
--- acknowledged execution, so it may not place orders.
+-- Two new run states:
 --
--- The state MUST be inside the pending-notional query (`state IN ('STOPPED',
--- 'STARTING')` in attachRunWithCapGuardTx and
--- sumPendingRunNotionalForAccount). An admitted-but-not-yet-running run
--- carries real exposure; excluding it would let two concurrent admissions
--- each pass the F1 cap against the same remaining capacity.
+--   PREPARING             The engine is preparing the run. NOT admitted, NOT
+--                         authorized, may NOT trade, and reserves NO exposure.
+--                         The row exists so the engine can resolve the bot and
+--                         its credentials — its existence grants nothing.
+--   AUTHORIZATION_PENDING The backend ADMITTED the run: its notional_amount is
+--                         the backend's validated exposure and it RESERVES that
+--                         exposure, but the engine has not yet acknowledged
+--                         execution, so it may NOT place orders.
+--
+-- Only an ADMITTED run reserves trading exposure. The pending-notional queries
+-- (`state IN ('STOPPED', 'STARTING', 'AUTHORIZATION_PENDING')` in
+-- attachRunWithCapGuardTx and sumPendingRunNotionalForAccount) therefore
+-- EXCLUDE 'PREPARING' — a prepared run must not consume capacity it has not
+-- been admitted for, and an admitted-but-not-yet-running run must not be
+-- allowed to escape the cap.
 --
 -- The column is widened to VARCHAR(24) because 'AUTHORIZATION_PENDING' is 21
 -- characters — VARCHAR(10) would truncate it.
@@ -39,11 +46,14 @@ BEGIN
       'ALTER TABLE strategy_runs DROP CONSTRAINT %I', constraint_name);
   END IF;
 
-  -- Widen first so the new value fits, then re-add the CHECK with it included.
+  -- Widen first so the new values fit, then re-add the CHECK with them included.
   ALTER TABLE strategy_runs
     ALTER COLUMN state TYPE VARCHAR(24);
 
   ALTER TABLE strategy_runs
     ADD CONSTRAINT strategy_runs_state_check
-    CHECK (state IN ('STOPPED', 'STARTING', 'RUNNING', 'STOPPING', 'ERROR', 'AUTHORIZATION_PENDING'));
+    CHECK (state IN (
+      'STOPPED', 'STARTING', 'RUNNING', 'STOPPING', 'ERROR',
+      'PREPARING', 'AUTHORIZATION_PENDING'
+    ));
 END $$;

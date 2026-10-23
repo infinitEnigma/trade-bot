@@ -62,6 +62,29 @@ export class BotCommandDispatcher {
     });
   }
 
+  /**
+   * Send BOT_AUTHORIZE — the command that lets a PREPARED run execute.
+   *
+   * Published ONLY after the admission transaction has committed: the
+   * backend's authorization decision is authoritative, and the engine refuses
+   * an authorization that does not match a current preparation.
+   */
+  sendAuthorizeCommand(
+    botId: string,
+    userId: string,
+    strategyId: string,
+    runId: string,
+    preparationVersion: number
+  ): Promise<SendCommandResult> {
+    return this.publishTrackedCommand("BOT_AUTHORIZE", {
+      botId,
+      userId,
+      strategyId,
+      runId,
+      preparationVersion,
+    });
+  }
+
   /** Send BOT_STOP for a bot instance. */
   sendStopCommand(botId: string): Promise<SendCommandResult> {
     return this.publishTrackedCommand("BOT_STOP", { botId });
@@ -87,7 +110,7 @@ export class BotCommandDispatcher {
    * 4. if XADD fails → mark the pending command FAILED
    */
   private async publishTrackedCommand(
-    type: "BOT_START" | "BOT_STOP" | "EMERGENCY_STOP",
+    type: "BOT_START" | "BOT_STOP" | "EMERGENCY_STOP" | "BOT_AUTHORIZE",
     payload: unknown
   ): Promise<SendCommandResult> {
     const correlationId = crypto.randomUUID();

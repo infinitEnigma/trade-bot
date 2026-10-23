@@ -255,6 +255,34 @@ export interface ILifecycleRepository {
   findLiveSessionForAccount(
     exchangeAccountId: string
   ): Promise<{ id: string } | null>;
+  /**
+   * THE admission transaction: the sole transition from an unreserved
+   * preparation to a reserved, authorized-pending run.
+   *
+   * Under the account lock (re-issued here, idempotently) it re-reads the
+   * account-scoped pending-admitted sum, enforces
+   * `existingExposure + pendingSum + authorizedNotional <= cap`, and on
+   * success persists the BACKEND-computed notional together with the
+   * AUTHORIZATION_PENDING state in ONE transaction.
+   *
+   * `PREPARING` runs are EXCLUDED from the pending sum (they reserve
+   * nothing), so a prepared-but-not-admitted run never consumes capacity; an
+   * AUTHORIZATION_PENDING run IS included (it reserves real exposure that the
+   * venue positions do not yet reflect).
+   *
+   * The caller MUST have validated the engine's estimate and the policy
+   * BEFORE calling this — this method enforces the ACCOUNT cap, not the
+   * per-order policy.
+   */
+  admitPreparedRunWithCapGuardTx(
+    tx: LifecycleTx,
+    runId: string,
+    authorizedNotional: number,
+    cap: number,
+    existingExposure: number,
+    exchangeAccountId: string
+  ): Promise<void>;
+
   setRunState(
     runId: string,
     to: string,

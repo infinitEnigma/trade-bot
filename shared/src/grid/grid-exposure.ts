@@ -200,7 +200,8 @@ export function computeGridExposure(
  * passes). When both are zero the difference is exactly 0.
  */
 export function relativeDifference(a: number, b: number): number {
-  if (!Number.isFinite(a) || !Number.isFinite(b)) return Number.POSITIVE_INFINITY;
+  if (!Number.isFinite(a) || !Number.isFinite(b))
+    return Number.POSITIVE_INFINITY;
   const scale = Math.max(Math.abs(a), Math.abs(b));
   if (scale === 0) return 0;
   return Math.abs(a - b) / scale;
@@ -213,11 +214,7 @@ export function relativeDifference(a: number, b: number): number {
  * independent recomputation. `tolerance` is a RELATIVE fraction (e.g. 0.001
  * = 0.1%).
  */
-export function agreesWithin(
-  a: number,
-  b: number,
-  tolerance: number
-): boolean {
+export function agreesWithin(a: number, b: number, tolerance: number): boolean {
   if (!Number.isFinite(tolerance) || tolerance < 0) {
     throw new Error(
       `tolerance must be a non-negative finite number (got ${String(tolerance)})`

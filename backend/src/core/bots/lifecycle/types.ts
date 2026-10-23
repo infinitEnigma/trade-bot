@@ -69,10 +69,30 @@ export const PENDING_EXPOSURE_RUN_STATES = [
 ] as const;
 
 /**
+ * The state a run holds while the engine is preparing it. NOT admitted, NOT
+ * authorized, may NOT trade, and reserves NO exposure — the row exists so the
+ * engine can resolve the bot and its credentials, and its existence grants
+ * nothing.
+ */
+export const PREPARING_RUN_STATE = "PREPARING";
+
+/**
  * The state a run holds after the backend admitted it and before the engine
- * acknowledged execution. It may not place orders.
+ * acknowledged execution. It RESERVES the backend's validated notional, but it
+ * may not place orders until the authorization succeeds.
  */
 export const AUTHORIZATION_PENDING_RUN_STATE = "AUTHORIZATION_PENDING";
+
+/**
+ * Run states that may NOT trade.
+ *
+ * A prepared run is not an admitted run, and an admitted run is not an
+ * executing run. These states are the non-tradable half of that distinction.
+ */
+export const NON_TRADABLE_RUN_STATES = [
+  PREPARING_RUN_STATE,
+  AUTHORIZATION_PENDING_RUN_STATE,
+] as const;
 
 /** Map actual_state to the legacy single `status` column. */
 export const STATUS_BY_ACTUAL: Record<BotActualState, string> = {
