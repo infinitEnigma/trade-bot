@@ -371,9 +371,17 @@ describe("StrategyWorkspace", () => {
       <StrategyWorkspace {...workspaceProps({ positionsLoading: true })} />
     );
 
-    // Three "…" placeholders: trades, realized, unrealized — never a
-    // fabricated figure while the real one is loading.
-    expect(screen.getAllByText("…")).toHaveLength(3);
+    // The three existing bot-panel values remain loading placeholders.
+    // The lifetime performance section has its own independent placeholders.
+    expect(
+      screen.getByText("Trades (lifetime):").parentElement?.textContent
+    ).toContain("…");
+    expect(
+      screen.getByText("Realized PnL (lifetime):").parentElement?.textContent
+    ).toContain("…");
+    expect(
+      screen.getByText("Unrealized PnL:").parentElement?.textContent
+    ).toContain("…");
   });
 
   it("sums unrealized PnL over the market-filtered positions and counts unknowns", () => {
