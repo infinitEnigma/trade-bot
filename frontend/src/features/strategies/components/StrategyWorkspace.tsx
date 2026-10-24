@@ -420,7 +420,9 @@ export const StrategyWorkspace: React.FC<StrategyWorkspaceProps> = ({
         aria-label="Strategy performance"
         className="border-t border-white/5 pt-4 space-y-3"
       >
-        <h4 className="text-sm font-semibold text-text">Performance (lifetime)</h4>
+        <h4 className="text-sm font-semibold text-text">
+          Performance (lifetime)
+        </h4>
         <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
           <div className="rounded bg-surface/60 p-3 min-w-0">
             <div className="text-xs text-textMuted">Win rate</div>
