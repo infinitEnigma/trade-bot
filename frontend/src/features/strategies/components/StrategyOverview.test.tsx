@@ -156,7 +156,7 @@ describe("StrategyOverview", () => {
     vi.mocked(tradingApi.getStrategyPerformanceSummary).mockResolvedValue({
       success: true,
       data: {
-        "s1": {
+        s1: {
           totalTrades: 4,
           totalPnL: 12.5,
           unknownPnlFills: 1,
