@@ -9,6 +9,7 @@ import {
   DollarSign,
   AlertTriangle,
   Receipt,
+  Plus,
 } from "lucide-react";
 import { cn } from "../../../shared/utils";
 import { BotInstance } from "../types/strategies.types";
@@ -70,9 +71,16 @@ const Stat: React.FC<StatProps> = ({
 
 interface StrategyOverviewProps {
   bots: BotInstance[];
+  /** Open the create-strategy flow. Placed in the Overview header per
+   * C4 (option a): one sticky header; the button lives in the page content.
+   */
+  onCreateStrategy?: () => void;
 }
 
-export const StrategyOverview: React.FC<StrategyOverviewProps> = ({ bots }) => {
+export const StrategyOverview: React.FC<StrategyOverviewProps> = ({
+  bots,
+  onCreateStrategy,
+}) => {
   const s = summarizeBotStates(bots);
   const {
     performance: summary,
@@ -114,9 +122,21 @@ export const StrategyOverview: React.FC<StrategyOverviewProps> = ({ bots }) => {
     <div className="space-y-2">
       <div className="flex items-baseline justify-between">
         <h2 className="text-lg font-semibold text-text">Overview</h2>
-        <span className="text-xs text-textMuted">
-          {s.total} bot{s.total === 1 ? "" : "s"} total
-        </span>
+        <div className="flex items-center gap-3">
+          <span className="text-xs text-textMuted">
+            {s.total} bot{s.total === 1 ? "" : "s"} total
+          </span>
+          {onCreateStrategy && (
+            <button
+              type="button"
+              onClick={onCreateStrategy}
+              className="btn-primary flex items-center gap-2 px-3 py-2"
+            >
+              <Plus className="w-4 h-4" />
+              Create Strategy
+            </button>
+          )}
+        </div>
       </div>
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <Stat

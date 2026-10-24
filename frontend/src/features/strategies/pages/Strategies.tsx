@@ -10,7 +10,7 @@ import {
 } from "../../../infrastructure/api";
 import { unwrapRows } from "../../../infrastructure/api/envelope";
 import { Strategy } from "../../../shared/types";
-import { Plus, BarChart3, AlertTriangle } from "lucide-react";
+import { BarChart3, AlertTriangle } from "lucide-react";
 import { EngineJournalIntegrityNotice } from "../components/EngineJournalIntegrityNotice";
 import { ConfirmDialog } from "../../../shared/components/ui";
 import {
@@ -410,41 +410,7 @@ const Strategies: React.FC = React.memo(() => {
       : undefined;
 
   return (
-    <PageLayout
-      header={
-        <div className="glass-card border-b border-white/5">
-          <Container className="py-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-linear-to-br from-primary to-primaryHover flex items-center justify-center">
-                  <BarChart3 className="w-5 h-5 text-white" />
-                </div>
-                <div>
-                  <h1 className="text-xl font-bold text-text">
-                    Trading Strategies
-                  </h1>
-                  <p className="text-sm text-textMuted">
-                    Manage your automated trading strategies
-                  </p>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-4">
-                <button
-                  onClick={() => setShowCreateForm(true)}
-                  className="btn-primary flex items-center gap-2"
-                >
-                  <Plus className="w-4 h-4" />
-                  Create Strategy
-                </button>
-              </div>
-            </div>
-
-            {/* Mobile Navigation - removed duplicate */}
-          </Container>
-        </div>
-      }
-    >
+    <PageLayout>
       <Container
         size={{
           default: "lg",
@@ -481,7 +447,10 @@ const Strategies: React.FC = React.memo(() => {
 
         {/* Overview — real Running / Stopped / Needs-attention counts
             derived from live bot state (navigation aid, not metrics). */}
-        <StrategyOverview bots={bots} />
+        <StrategyOverview
+          bots={bots}
+          onCreateStrategy={() => setShowCreateForm(true)}
+        />
 
         {/* F5: the chart panel is PAGE-level, not strategy-level — it mounts
             in the empty state (where no strategy, and therefore no

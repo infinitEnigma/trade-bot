@@ -8,7 +8,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import type { BotInstance, StrategyRun } from "../types/strategies.types";
@@ -155,6 +155,32 @@ describe("StrategyOverview", () => {
     });
     expect(screen.getByText("1 bot total")).toBeDefined();
     expect(screen.getByText("Running")).toBeDefined();
+  });
+
+  it("renders the Create Strategy button when onCreateStrategy is provided", () => {
+    render(<StrategyOverview bots={[bot()]} onCreateStrategy={() => {}} />, {
+      wrapper,
+    });
+    expect(
+      screen.getByRole("button", { name: /Create Strategy/i })
+    ).toBeDefined();
+  });
+
+  it("does not render the Create Strategy button when onCreateStrategy is absent", () => {
+    render(<StrategyOverview bots={[bot()]} />, { wrapper });
+    expect(
+      screen.queryByRole("button", { name: /Create Strategy/i })
+    ).toBeNull();
+  });
+
+  it("calls onCreateStrategy when the Create Strategy button is clicked", () => {
+    const handleCreate = vi.fn();
+    render(
+      <StrategyOverview bots={[bot()]} onCreateStrategy={handleCreate} />,
+      { wrapper }
+    );
+    fireEvent.click(screen.getByRole("button", { name: /Create Strategy/i }));
+    expect(handleCreate).toHaveBeenCalledTimes(1);
   });
 
   it("shows a zero total with correct pluralisation when there are no bots", () => {
