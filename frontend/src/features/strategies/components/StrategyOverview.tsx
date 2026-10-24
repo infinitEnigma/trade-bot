@@ -179,9 +179,7 @@ export const StrategyOverview: React.FC<StrategyOverviewProps> = ({ bots }) => {
         <Stat
           icon={<AlertTriangle className="w-4 h-4 text-warning" />}
           label="Unknown-PnL fills"
-          count={
-            pnlUnavailable || pnlError ? "—" : aggregated.unknownPnlFills
-          }
+          count={pnlUnavailable || pnlError ? "—" : aggregated.unknownPnlFills}
           accent="bg-warning/10"
           muted={pnlUnavailable || pnlError}
           title={
@@ -195,9 +193,7 @@ export const StrategyOverview: React.FC<StrategyOverviewProps> = ({ bots }) => {
         <Stat
           icon={<Receipt className="w-4 h-4 text-warning" />}
           label="Unknown-fee fills"
-          count={
-            pnlUnavailable || pnlError ? "—" : aggregated.unknownFeeFills
-          }
+          count={pnlUnavailable || pnlError ? "—" : aggregated.unknownFeeFills}
           accent="bg-warning/10"
           muted={pnlUnavailable || pnlError}
           title={
