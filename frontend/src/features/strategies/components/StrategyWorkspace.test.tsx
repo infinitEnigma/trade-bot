@@ -268,7 +268,9 @@ describe("StrategyWorkspace", () => {
       <StrategyWorkspace {...workspaceProps({ bot: undefined })} />
     );
 
-    expect(screen.getByRole("region", { name: "Strategy performance" })).toBeDefined();
+    expect(
+      screen.getByRole("region", { name: "Strategy performance" })
+    ).toBeDefined();
     expect(screen.getByText("66.7%")).toBeDefined();
     expect(screen.getByText("$10.00")).toBeDefined();
     expect(screen.getByText("$1.25")).toBeDefined();
@@ -297,8 +299,12 @@ describe("StrategyWorkspace", () => {
     );
 
     expect(screen.getByText("No eligible fills")).toBeDefined();
-    expect(screen.getByText("Best fill").parentElement?.textContent).toContain("—");
-    expect(screen.getByText("Worst fill").parentElement?.textContent).toContain("—");
+    expect(screen.getByText("Best fill").parentElement?.textContent).toContain(
+      "—"
+    );
+    expect(screen.getByText("Worst fill").parentElement?.textContent).toContain(
+      "—"
+    );
   });
 
   it("keeps new ledger metrics unavailable on performance-query errors", () => {
@@ -306,8 +312,12 @@ describe("StrategyWorkspace", () => {
 
     renderWorkspace(<StrategyWorkspace {...workspaceProps()} />);
 
-    expect(screen.getByText("Fees recorded").parentElement?.textContent).toContain("—");
-    expect(screen.getByText("Last fill").parentElement?.textContent).toContain("—");
+    expect(
+      screen.getByText("Fees recorded").parentElement?.textContent
+    ).toContain("—");
+    expect(screen.getByText("Last fill").parentElement?.textContent).toContain(
+      "—"
+    );
   });
 
   it("renders run history without changing bot-level status semantics", () => {
