@@ -10,10 +10,8 @@ export enum UserLevel {
   VERIFIED = "VERIFIED",
 }
 
-export enum UserRole {
-  QUALIFIED_ALPHA = "QUALIFIED_ALPHA",
-  SYSTEM_ADMIN = "SYSTEM_ADMIN",
-}
+import type { UserRole } from "./types/user-role";
+export { UserRole } from "./types/user-role";
 
 export interface User {
   id: string;
@@ -309,7 +307,7 @@ export * from "./protocol/engine-lifecycle";
 export * from "./protocol/engine-ledger";
 
 // Canonical bot lifecycle state (replaces legacy BotStatus)
-export { BotActualState, BotDesiredState } from "./protocol/bot-state";
+export type { BotActualState, BotDesiredState } from "./protocol/bot-state";
 
 // ============================================
 // Engine Integration Contract
