@@ -175,10 +175,10 @@ describe("StrategyOverview", () => {
     render(<StrategyOverview bots={[]} />, { wrapper });
 
     await waitFor(() => {
-      expect(screen.getByText("Unknown-fee fills")).toBeDefined();
+      const label = screen.getByText("Unknown-fee fills");
+      expect(label.parentElement?.textContent).toContain("2");
     });
     const unknownFeesLabel = screen.getByText("Unknown-fee fills");
-    expect(unknownFeesLabel.parentElement?.textContent).toContain("2");
     expect(screen.getAllByText("Unknown-PnL fills")).toHaveLength(1);
     // The four operational counts remain alongside the financial indicators.
     expect(screen.getByText("Running")).toBeDefined();
