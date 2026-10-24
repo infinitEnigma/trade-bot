@@ -11,6 +11,7 @@ import { cn } from "../../../shared/utils";
 import { venueLabel } from "../utils/chartSymbolPicker";
 import { BotControls } from "../bots/components/BotControls";
 import { BotStatusBadge } from "./BotStatusBadge";
+import { RunHistoryPanel } from "./RunHistoryPanel";
 import { OpenOrdersTable } from "./OpenOrdersTable";
 import { PositionsTable } from "./PositionsTable";
 import { strategyService } from "../services/strategyService";
@@ -376,6 +377,7 @@ export const StrategyWorkspace: React.FC<StrategyWorkspaceProps> = ({
               )}
             </div>
           </div>
+          <RunHistoryPanel runs={bot.runs} />
         </div>
       )}
 

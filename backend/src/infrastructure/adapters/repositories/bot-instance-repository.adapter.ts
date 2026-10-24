@@ -57,7 +57,9 @@ export class BotInstanceRepositoryAdapter implements IBotInstanceRepository {
                                'config', r.config,
                                'notional_amount', r.notional_amount,
                                'state', r.state,
-                               'last_error_code', r.last_error_code
+                               'last_error_code', r.last_error_code,
+                               'created_at', r.created_at,
+                               'updated_at', r.updated_at
                              )
                              ORDER BY r.created_at ASC, r.id ASC
                            )

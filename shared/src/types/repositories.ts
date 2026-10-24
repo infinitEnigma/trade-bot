@@ -528,6 +528,8 @@ export interface BotInstanceRecord {
     notional_amount: string;
     state: string;
     last_error_code: string | null;
+    created_at?: string;
+    updated_at?: string;
   }>;
 }
 

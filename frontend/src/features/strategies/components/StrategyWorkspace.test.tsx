@@ -14,6 +14,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactElement } from "react";
 import { Strategy, StrategyType } from "../../../shared/types";
 import type { BotInstance } from "../types/strategies.types";
+import type { StrategyRun } from "../types/strategies.types";
 import type { OpenOrderRow } from "../../../infrastructure/api/market";
 import type { AccountPositionRow } from "../../../infrastructure/api/market";
 import type { ExchangeAccountDto } from "../../../infrastructure/api/accounts";
@@ -235,6 +236,51 @@ describe("StrategyWorkspace", () => {
     // The F2 marker comes from the aggregate's unknown count, not the
     // session counter (which is 0 on this fresh row).
     expect(screen.getByText(/incomplete, 1 unknown/)).toBeDefined();
+  });
+
+  it("renders run history without changing bot-level status semantics", () => {
+    const runs: StrategyRun[] = [
+      {
+        id: "run-1",
+        strategy_id: "s1",
+        config_version: 1,
+        config: {},
+        notional_amount: "100",
+        state: "ERROR",
+        last_error_code: "RUN_FAILED",
+        created_at: "2026-10-01T10:00:00.000Z",
+      },
+    ];
+    const botWithRun = { ...BOT, runs };
+    renderWorkspace(
+      <StrategyWorkspace {...workspaceProps({ bot: botWithRun })} />
+    );
+
+    expect(screen.getByText("Run history")).toBeDefined();
+    expect(screen.getByText("1 run")).toBeDefined();
+    expect(screen.getByLabelText("Run state: Error")).toBeDefined();
+    expect(screen.getByText("Running")).toBeDefined();
+    expect(screen.queryByText("Needs attention")).toBeNull();
+  });
+
+  it("hides run history when the bot has no runs or is absent", () => {
+    const { rerender } = renderWorkspace(
+      <StrategyWorkspace {...workspaceProps()} />
+    );
+    expect(screen.queryByText("Run history")).toBeNull();
+
+    rerender(
+      <QueryClientProvider
+        client={
+          new QueryClient({
+            defaultOptions: { queries: { retry: false } },
+          })
+        }
+      >
+        <StrategyWorkspace {...workspaceProps({ bot: undefined })} />
+      </QueryClientProvider>
+    );
+    expect(screen.queryByText("Run history")).toBeNull();
   });
 
   it("shows loading placeholders while the aggregate is in flight", () => {

@@ -44,6 +44,10 @@ export interface StrategyRun {
   notional_amount: string;
   state: string;
   last_error_code: string | null;
+  /** Additive (not in the original contract): run creation time for an honest
+   * relative age. `updated_at` is NOT substituted for `created_at`. */
+  created_at?: string;
+  updated_at?: string;
 }
 
 export interface BotInstance {
