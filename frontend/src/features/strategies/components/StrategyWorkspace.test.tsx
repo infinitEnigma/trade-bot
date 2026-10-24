@@ -55,13 +55,23 @@ const perfState = {
   error: null as unknown,
   dataUpdatedAt: 0,
 };
+const perfHookCalls: Array<{
+  strategyId?: string;
+  options?: { enabled?: boolean; live?: boolean };
+}> = [];
 vi.mock("../hooks/useStrategyPerformance", () => ({
-  useStrategyPerformance: (strategyId?: string) => ({
-    performance: (strategyId && perfByStrategy[strategyId]) || null,
-    isLoading: perfState.isLoading,
-    error: perfState.error,
-    dataUpdatedAt: perfState.dataUpdatedAt,
-  }),
+  useStrategyPerformance: (
+    strategyId?: string,
+    options?: { enabled?: boolean; live?: boolean }
+  ) => {
+    perfHookCalls.push({ strategyId, options });
+    return {
+      performance: (strategyId && perfByStrategy[strategyId]) || null,
+      isLoading: perfState.isLoading,
+      error: perfState.error,
+      dataUpdatedAt: perfState.dataUpdatedAt,
+    };
+  },
   strategyPerformanceQueryKey: (id?: string) => [
     "strategy-performance",
     id ?? null,
@@ -177,6 +187,7 @@ describe("StrategyWorkspace", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     recentTradesCalls.length = 0;
+    perfHookCalls.length = 0;
     for (const key of Object.keys(fillsByStrategy)) delete fillsByStrategy[key];
     for (const key of Object.keys(perfByStrategy)) delete perfByStrategy[key];
     perfState.isLoading = false;
@@ -238,6 +249,77 @@ describe("StrategyWorkspace", () => {
     expect(screen.getByText(/incomplete, 1 unknown/)).toBeDefined();
   });
 
+  it("shows lifetime performance for botless strategies without session fallbacks", () => {
+    perfByStrategy["s1"] = {
+      totalTrades: 4,
+      totalPnL: 5,
+      unknownPnlFills: 1,
+      winRate: 66.6667,
+      avgTrade: 1.6667,
+      bestTrade: 10,
+      worstTrade: -5,
+      totalFees: 1.25,
+      unknownFeeFills: 2,
+      firstFillAt: "2026-10-01T10:00:00.000Z",
+      lastFillAt: "2026-10-12T10:00:00.000Z",
+    };
+
+    renderWorkspace(
+      <StrategyWorkspace {...workspaceProps({ bot: undefined })} />
+    );
+
+    expect(
+      screen.getByRole("region", { name: "Strategy performance" })
+    ).toBeDefined();
+    expect(screen.getByText("66.7%")).toBeDefined();
+    expect(screen.getByText("$10.00")).toBeDefined();
+    expect(screen.getByText("$1.25")).toBeDefined();
+    expect(screen.getByText("Unknown fees: 2")).toBeDefined();
+    expect(screen.getByText(/Oct 12, 2026/)).toBeDefined();
+    expect(perfHookCalls.at(-1)?.options?.enabled).toBe(true);
+  });
+
+  it("does not show a zero win rate when no fills have known PnL", () => {
+    perfByStrategy["s1"] = {
+      totalTrades: 2,
+      totalPnL: 0,
+      unknownPnlFills: 2,
+      winRate: 0,
+      avgTrade: 0,
+      bestTrade: null,
+      worstTrade: null,
+      totalFees: 0,
+      unknownFeeFills: 1,
+      firstFillAt: "2026-10-01T10:00:00.000Z",
+      lastFillAt: "2026-10-12T10:00:00.000Z",
+    };
+
+    renderWorkspace(
+      <StrategyWorkspace {...workspaceProps({ bot: undefined })} />
+    );
+
+    expect(screen.getByText("No eligible fills")).toBeDefined();
+    expect(screen.getByText("Best fill").parentElement?.textContent).toContain(
+      "—"
+    );
+    expect(screen.getByText("Worst fill").parentElement?.textContent).toContain(
+      "—"
+    );
+  });
+
+  it("keeps new ledger metrics unavailable on performance-query errors", () => {
+    perfState.error = new Error("ledger unavailable");
+
+    renderWorkspace(<StrategyWorkspace {...workspaceProps()} />);
+
+    expect(
+      screen.getByText("Fees recorded").parentElement?.textContent
+    ).toContain("—");
+    expect(screen.getByText("Last fill").parentElement?.textContent).toContain(
+      "—"
+    );
+  });
+
   it("renders run history without changing bot-level status semantics", () => {
     const runs: StrategyRun[] = [
       {
@@ -289,9 +371,17 @@ describe("StrategyWorkspace", () => {
       <StrategyWorkspace {...workspaceProps({ positionsLoading: true })} />
     );
 
-    // Three "…" placeholders: trades, realized, unrealized — never a
-    // fabricated figure while the real one is loading.
-    expect(screen.getAllByText("…")).toHaveLength(3);
+    // The three existing bot-panel values remain loading placeholders.
+    // The lifetime performance section has its own independent placeholders.
+    expect(
+      screen.getByText("Trades (lifetime):").parentElement?.textContent
+    ).toContain("…");
+    expect(
+      screen.getByText("Realized PnL (lifetime):").parentElement?.textContent
+    ).toContain("…");
+    expect(
+      screen.getByText("Unrealized PnL:").parentElement?.textContent
+    ).toContain("…");
   });
 
   it("sums unrealized PnL over the market-filtered positions and counts unknowns", () => {

@@ -8,7 +8,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import type { BotInstance } from "../types/strategies.types";
@@ -150,6 +150,53 @@ describe("StrategyOverview", () => {
     expect(screen.getByText("Starting / stopping")).toBeDefined();
     expect(screen.getByText("Needs attention")).toBeDefined();
     expect(screen.getByText("Stopped")).toBeDefined();
+  });
+
+  it("adds unknown-fee visibility without duplicating unknown-PnL", async () => {
+    vi.mocked(tradingApi.getStrategyPerformanceSummary).mockResolvedValue({
+      success: true,
+      data: {
+        s1: {
+          totalTrades: 4,
+          totalPnL: 12.5,
+          unknownPnlFills: 1,
+          winRate: 66.7,
+          avgTrade: 3.125,
+          bestTrade: 10,
+          worstTrade: -5,
+          totalFees: 1.25,
+          unknownFeeFills: 2,
+          firstFillAt: "2026-10-01T10:00:00.000Z",
+          lastFillAt: "2026-10-12T10:00:00.000Z",
+        },
+      },
+    } as never);
+
+    render(<StrategyOverview bots={[]} />, { wrapper });
+
+    await waitFor(() => {
+      const label = screen.getByText("Unknown-fee fills");
+      expect(label.parentElement?.textContent).toContain("2");
+    });
+    expect(screen.getAllByText("Unknown-PnL fills")).toHaveLength(1);
+    // The four operational counts remain alongside the financial indicators.
+    expect(screen.getByText("Running")).toBeDefined();
+    expect(screen.getByText("Starting / stopping")).toBeDefined();
+    expect(screen.getByText("Needs attention")).toBeDefined();
+    expect(screen.getByText("Stopped")).toBeDefined();
+  });
+
+  it("shows unavailable rather than zero for unknown-fee count on query error", async () => {
+    vi.mocked(tradingApi.getStrategyPerformanceSummary).mockRejectedValue(
+      new Error("ledger unavailable")
+    );
+
+    render(<StrategyOverview bots={[]} />, { wrapper });
+
+    await waitFor(() => {
+      const label = screen.getByText("Unknown-fee fills");
+      expect(label.parentElement?.textContent).toContain("—");
+    });
   });
 
   it("renders the live counts from the summarizer", () => {

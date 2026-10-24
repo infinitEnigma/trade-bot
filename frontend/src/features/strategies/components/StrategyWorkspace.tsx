@@ -159,7 +159,9 @@ export const StrategyWorkspace: React.FC<StrategyWorkspaceProps> = ({
     error: perfError,
     dataUpdatedAt: perfUpdatedAt,
   } = useStrategyPerformance(strategy.id, {
-    enabled: !!bot,
+    // Performance belongs to strategy ledger history, not the hosting
+    // session. Keep it available when the strategy has no attached bot.
+    enabled: true,
     live: bot?.status === "RUNNING",
   });
   // Phase 3.1 (review P2-4): positions are ACCOUNT × MARKET on the backend —
@@ -187,6 +189,35 @@ export const StrategyWorkspace: React.FC<StrategyWorkspaceProps> = ({
       style: "currency",
       currency: "USD",
     }).format(value);
+
+  const formatMetricCurrency = (value: number | null | undefined) =>
+    typeof value === "number" && Number.isFinite(value)
+      ? formatCurrency(value)
+      : "—";
+  const knownPnlFills = performance
+    ? performance.totalTrades - performance.unknownPnlFills
+    : 0;
+  const winRateValue =
+    performance &&
+    Number.isFinite(knownPnlFills) &&
+    knownPnlFills > 0 &&
+    Number.isFinite(performance.winRate)
+      ? `${performance.winRate.toFixed(1)}%`
+      : "—";
+  const lastFillValue = (() => {
+    const timestamp = performance?.lastFillAt;
+    if (!timestamp) return "—";
+    const parsed = new Date(timestamp);
+    if (!Number.isFinite(parsed.getTime())) return "—";
+    return `${new Intl.DateTimeFormat("en-US", {
+      dateStyle: "medium",
+      timeStyle: "short",
+      timeZone: "UTC",
+    }).format(parsed)} UTC`;
+  })();
+  const performanceFallback = perfLoading && !performance ? "…" : "—";
+  const performanceErrorTitle =
+    perfError && !performance ? "Ledger performance unavailable" : undefined;
 
   // Phase 1: venue-exact unrealized PnL for this strategy's market — the sum
   // of `unsettled_pnl` over the ALREADY market-filtered rows above (same
@@ -380,6 +411,83 @@ export const StrategyWorkspace: React.FC<StrategyWorkspaceProps> = ({
           <RunHistoryPanel runs={bot.runs} />
         </div>
       )}
+
+      {/* Lifetime ledger performance is strategy-scoped, so this section
+          remains available even when no bot/session is attached. Unknown
+          financial data is shown as unavailable, never borrowed from session
+          counters. "Fees recorded" may include estimated fees. */}
+      <section
+        aria-label="Strategy performance"
+        className="border-t border-white/5 pt-4 space-y-3"
+      >
+        <h4 className="text-sm font-semibold text-text">
+          Performance (lifetime)
+        </h4>
+        <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+          <div className="rounded bg-surface/60 p-3 min-w-0">
+            <div className="text-xs text-textMuted">Win rate</div>
+            <div className="text-base font-semibold text-text">
+              {performance ? winRateValue : performanceFallback}
+            </div>
+            <div
+              className="text-xs text-textMuted"
+              title="Winning known-PnL fills divided by all known-PnL fills. Unknown-PnL fills are excluded."
+            >
+              {performance && knownPnlFills <= 0
+                ? "No eligible fills"
+                : "Known-PnL fills only"}
+            </div>
+          </div>
+          <div className="rounded bg-surface/60 p-3 min-w-0">
+            <div className="text-xs text-textMuted">Best fill</div>
+            <div className="text-base font-semibold text-text">
+              {performance
+                ? formatMetricCurrency(performance.bestTrade)
+                : performanceFallback}
+            </div>
+          </div>
+          <div className="rounded bg-surface/60 p-3 min-w-0">
+            <div className="text-xs text-textMuted">Worst fill</div>
+            <div className="text-base font-semibold text-text">
+              {performance
+                ? formatMetricCurrency(performance.worstTrade)
+                : performanceFallback}
+            </div>
+          </div>
+          <div className="rounded bg-surface/60 p-3 min-w-0">
+            <div className="text-xs text-textMuted">Fees recorded</div>
+            <div
+              className="text-base font-semibold text-text"
+              title={
+                performanceErrorTitle ??
+                "Known fee values; the aggregate may include estimated fees and excludes unknown fees."
+              }
+            >
+              {performance
+                ? formatMetricCurrency(performance.totalFees)
+                : performanceFallback}
+            </div>
+            <div className="text-xs text-textMuted">
+              Unknown fees:{" "}
+              {performance
+                ? Number.isFinite(performance.unknownFeeFills) &&
+                  performance.unknownFeeFills >= 0
+                  ? performance.unknownFeeFills
+                  : "—"
+                : performanceFallback}
+            </div>
+          </div>
+          <div className="rounded bg-surface/60 p-3 min-w-0">
+            <div className="text-xs text-textMuted">Last fill</div>
+            <div
+              className="text-sm font-medium text-text break-words"
+              title={performanceErrorTitle}
+            >
+              {performance ? lastFillValue : performanceFallback}
+            </div>
+          </div>
+        </div>
+      </section>
 
       {/* Lifecycle controls — without a bot these render the C3a start flow
           (account pick + size), same as the old card. */}
