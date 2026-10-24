@@ -8,6 +8,7 @@ import {
   Activity,
   DollarSign,
   AlertTriangle,
+  Receipt,
 } from "lucide-react";
 import { cn } from "../../../shared/utils";
 import { BotInstance } from "../types/strategies.types";
@@ -28,7 +29,7 @@ import { useStrategyPerformanceSummary } from "../hooks";
 interface StatProps {
   icon: React.ReactNode;
   label: string;
-  count: number;
+  count: number | string;
   accent: string;
   /** Dim the tile when the count is zero (nothing to draw the eye to). */
   muted?: boolean;
@@ -82,16 +83,24 @@ export const StrategyOverview: React.FC<StrategyOverviewProps> = ({ bots }) => {
   // realizedPnl already excludes unknown fills; unknownPnlFills is summed
   // separately so the total can be flagged as incomplete.
   const aggregated = useMemo(() => {
-    if (!summary) return { realizedPnl: 0, unknownPnlFills: 0, count: 0 };
+    if (!summary)
+      return {
+        realizedPnl: 0,
+        unknownPnlFills: 0,
+        unknownFeeFills: 0,
+        count: 0,
+      };
     let realizedPnl = 0;
     let unknownPnlFills = 0;
+    let unknownFeeFills = 0;
     let count = 0;
     for (const perf of Object.values(summary)) {
       realizedPnl += perf.totalPnL;
       unknownPnlFills += perf.unknownPnlFills;
+      unknownFeeFills += perf.unknownFeeFills;
       count += perf.totalTrades;
     }
-    return { realizedPnl, unknownPnlFills, count };
+    return { realizedPnl, unknownPnlFills, unknownFeeFills, count };
   }, [summary]);
 
   // Distinguish loading/error from a genuine zero. While fetching, show a
@@ -147,7 +156,9 @@ export const StrategyOverview: React.FC<StrategyOverviewProps> = ({ bots }) => {
                 : "Realized PnL"
           }
           count={
-            pnlUnavailable ? 0 : Math.round(aggregated.realizedPnl * 100) / 100
+            pnlUnavailable || pnlError
+              ? "—"
+              : Math.round(aggregated.realizedPnl * 100) / 100
           }
           accent={
             aggregated.realizedPnl > 0
@@ -168,7 +179,9 @@ export const StrategyOverview: React.FC<StrategyOverviewProps> = ({ bots }) => {
         <Stat
           icon={<AlertTriangle className="w-4 h-4 text-warning" />}
           label="Unknown-PnL fills"
-          count={pnlUnavailable || pnlError ? 0 : aggregated.unknownPnlFills}
+          count={
+            pnlUnavailable || pnlError ? "—" : aggregated.unknownPnlFills
+          }
           accent="bg-warning/10"
           muted={pnlUnavailable || pnlError}
           title={
@@ -177,6 +190,22 @@ export const StrategyOverview: React.FC<StrategyOverviewProps> = ({ bots }) => {
               : pnlError
                 ? "Unavailable"
                 : `Fills booked with unknown PnL — excluded from realized PnL and win rate${aggregated.unknownPnlFills === 0 ? " (none)" : ""}`
+          }
+        />
+        <Stat
+          icon={<Receipt className="w-4 h-4 text-warning" />}
+          label="Unknown-fee fills"
+          count={
+            pnlUnavailable || pnlError ? "—" : aggregated.unknownFeeFills
+          }
+          accent="bg-warning/10"
+          muted={pnlUnavailable || pnlError}
+          title={
+            pnlUnavailable
+              ? "Loading…"
+              : pnlError
+                ? "Unavailable"
+                : `Fills with unknown fees — fee totals exclude these fills${aggregated.unknownFeeFills === 0 ? " (none)" : ""}`
           }
         />
       </div>
