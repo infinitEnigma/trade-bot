@@ -11,9 +11,27 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
-import type { BotInstance } from "../types/strategies.types";
+import type { BotInstance, StrategyRun } from "../types/strategies.types";
 import { summarizeBotStates } from "../utils/summarizeBotStates";
+import { RunNotionalAllocationTile } from "./RunNotionalAllocationTile";
 import { StrategyOverview } from "./StrategyOverview";
+
+const makeRun = (overrides: Partial<StrategyRun> = {}): StrategyRun => ({
+  id: "run-1",
+  strategy_id: "strategy-1",
+  config_version: 1,
+  config: {},
+  notional_amount: "100",
+  state: "RUNNING",
+  last_error_code: null,
+  created_at: "2026-10-01T10:00:00.000Z",
+  ...overrides,
+});
+
+const makeRunWith = (
+  notional: string,
+  overrides: Partial<StrategyRun> = {}
+): StrategyRun => makeRun({ notional_amount: notional, ...overrides });
 
 vi.mock("../../../infrastructure/api", () => ({
   tradingApi: { getStrategyPerformanceSummary: vi.fn() },
@@ -196,6 +214,94 @@ describe("StrategyOverview", () => {
     await waitFor(() => {
       const label = screen.getByText("Unknown-fee fills");
       expect(label.parentElement?.textContent).toContain("—");
+    });
+  });
+
+  describe("RunNotionalAllocationTile", () => {
+    it("hides when bots are empty", () => {
+      render(<RunNotionalAllocationTile bots={[]} />);
+      expect(screen.queryByText("Configured run notional")).toBeNull();
+    });
+
+    it("shows the complete sum and run count for valid runs", () => {
+      render(
+        <RunNotionalAllocationTile
+          bots={[bot({ runs: [makeRunWith("100"), makeRunWith("50")] })]}
+        />
+      );
+      expect(screen.getByText(/Run notional allocation/)).toBeDefined();
+      expect(screen.getByText(/\$150\.00/)).toBeDefined();
+      expect(screen.getByText(/2 runs/)).toBeDefined();
+    });
+
+    it("shows a real $0.00 for a zero-valued run", () => {
+      render(
+        <RunNotionalAllocationTile bots={[bot({ runs: [makeRunWith("0")] })]} />
+      );
+      expect(screen.getByText(/Run notional allocation/)).toBeDefined();
+      expect(screen.getByText(/\$0\.00/)).toBeDefined();
+    });
+
+    it("shows unavailable for an invalid run", () => {
+      render(
+        <RunNotionalAllocationTile
+          bots={[bot({ runs: [makeRunWith("abc")] })]}
+        />
+      );
+      expect(screen.getByText("Configured run notional")).toBeDefined();
+      expect(screen.getAllByText("—")).toHaveLength(2);
+      expect(screen.getByTitle(/non-numeric/)).toBeDefined();
+    });
+
+    it("shows unavailable for a mix of valid and invalid runs", () => {
+      render(
+        <RunNotionalAllocationTile
+          bots={[bot({ runs: [makeRunWith("100"), makeRunWith("abc")] })]}
+        />
+      );
+      expect(screen.getByText("Configured run notional")).toBeDefined();
+      expect(screen.getAllByText("—")).toHaveLength(2);
+    });
+
+    it("rejects whitespace-only and null notional", () => {
+      const bots = [
+        bot({
+          runs: [
+            makeRun({ notional_amount: "   " }),
+            makeRun({ notional_amount: null as unknown as string }),
+          ],
+        }),
+      ];
+      render(<RunNotionalAllocationTile bots={bots} />);
+      expect(screen.getByText("Configured run notional")).toBeDefined();
+      expect(screen.getAllByText("—")).toHaveLength(2);
+    });
+
+    it("shows unavailable for aggregate overflow", () => {
+      const huge = "1e309"; // overflows Number.MAX_VALUE → Infinity
+      render(
+        <RunNotionalAllocationTile
+          bots={[bot({ runs: [makeRunWith(huge)] })]}
+        />
+      );
+      expect(screen.getByText("Configured run notional")).toBeDefined();
+      expect(screen.getAllByText("—")).toHaveLength(2);
+      expect(screen.getByTitle(/unavailable/)).toBeDefined();
+    });
+
+    it("does not claim any cap or availability", () => {
+      render(
+        <RunNotionalAllocationTile
+          bots={[bot({ runs: [makeRunWith("100")] })]}
+        />
+      );
+      const tile = screen.getByText(/Run notional allocation/);
+      const card = tile.closest(".glass-card");
+      const title = card?.getAttribute("title");
+      expect(title).toContain("configuration fact only");
+      expect(title).not.toContain("cap");
+      expect(title).not.toContain("left");
+      expect(title).not.toContain("%");
     });
   });
 

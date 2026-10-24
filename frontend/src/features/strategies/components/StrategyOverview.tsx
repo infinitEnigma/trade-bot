@@ -14,6 +14,7 @@ import { cn } from "../../../shared/utils";
 import { BotInstance } from "../types/strategies.types";
 import { summarizeBotStates } from "../utils/summarizeBotStates";
 import { useStrategyPerformanceSummary } from "../hooks";
+import { RunNotionalAllocationTile } from "./RunNotionalAllocationTile";
 
 /**
  * StrategyOverview — a compact operational strip: how many bots are Running,
@@ -204,6 +205,7 @@ export const StrategyOverview: React.FC<StrategyOverviewProps> = ({ bots }) => {
                 : `Fills with unknown fees — fee totals exclude these fills${aggregated.unknownFeeFills === 0 ? " (none)" : ""}`
           }
         />
+        <RunNotionalAllocationTile bots={bots} />
       </div>
     </div>
   );
