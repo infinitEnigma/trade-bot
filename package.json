@@ -54,7 +54,8 @@
   },
   "devDependencies": {
     "concurrently": "^10.0.6",
-    "prettier": "^3.9.10"
+    "prettier": "^3.9.10",
+    "vitest": "^4.1.12"
   },
   "engines": {
     "node": "^24.15.0"
