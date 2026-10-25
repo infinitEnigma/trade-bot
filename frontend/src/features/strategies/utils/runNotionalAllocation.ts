@@ -15,7 +15,10 @@
  */
 export function parseNotionalAmount(value: unknown): number | null {
   if (value === null || value === undefined) return null;
-  const str = value as string;
+  // Coerce non-string values (e.g. a number coming straight off the wire) to
+  // string before trimming — `.trim()` does not exist on numbers and would
+  // throw "X.trim is not a function", crashing the Strategies page.
+  const str = typeof value === "string" ? value : String(value);
   const trimmed = str.trim();
   if (trimmed === "") return null;
   const parsed = Number(trimmed);
