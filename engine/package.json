@@ -17,15 +17,15 @@
     "@noble/ed25519": "^3.0.0",
     "@noble/hashes": "^2.0.1",
     "@trade-bot/shared": "file:../shared",
-    "axios": "^1.13.2",
+    "axios": "^1.21.0",
     "bs58": "^6.0.0",
-    "dotenv": "^18.0.8",
+    "dotenv": "^18.0.9",
     "node-cron": "^4.2.1",
     "pg": "^8.23.1",
     "redis": "^5.10.0",
     "uuid": "^14.0.3",
     "winston": "^3.19.0",
-    "ws": "^8.22.0"
+    "ws": "^8.22.1"
   },
   "devDependencies": {
     "@types/jest": "^30.0.0",
